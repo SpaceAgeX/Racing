@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#a8d2ed" />
+    <title>Driving Prototype</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="game-viewport">
+      <canvas id="game" aria-label="Single-player driving prototype. Use W to accelerate, A and D to steer, and S to brake or reverse."></canvas>
+      <section id="lap-display" class="lap-display" aria-label="Lap timing">
+        <span id="active-track-name" class="active-track-name">Default circuit</span>
+        <span class="lap-label">Current</span>
+        <output id="lap-current">00:00.00</output>
+        <div class="lap-row"><span>Best</span><output id="lap-best">--:--.--</output></div>
+        <div class="lap-row"><span>Last</span><output id="lap-last">--:--.--</output></div>
+        <output id="lap-delta" class="lap-delta" hidden></output>
+        <p id="lap-status">Cross the line to start</p>
+        <a href="/map-builder/" class="map-builder-link">Map Builder</a>
+      </section>
+      <canvas id="minimap" class="minimap" role="img" aria-label="Track minimap. The orange arrow shows your car's position and direction; green marks start/finish."></canvas>
+      <p class="controls" aria-label="Driving controls">
+        <span><kbd>W</kbd> Accelerate</span>
+        <span><kbd>A</kbd><kbd>D</kbd> Steer</span>
+        <span><kbd>S</kbd> Brake / reverse</span>
+      </p>
+    </main>
+    <aside id="tuning-panel" class="tuning-panel" aria-label="Vehicle tuning"></aside>
+    <button id="tuning-toggle" class="tuning-toggle" type="button" aria-controls="tuning-panel" aria-expanded="true">Hide</button>
+    <noscript>Enable JavaScript to run the driving prototype.</noscript>
+    <script type="module" src="/assets/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "racing-driving-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node server/index.ts --dev",
+    "build": "npm run typecheck && node scripts/build.ts",
+    "start": "node server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/simulation.test.ts tests/input.test.ts tests/camera.test.ts tests/collision.test.ts tests/lap-timer.test.ts tests/tracks.test.ts",
+    "test:browser": "playwright test"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/express": "5.0.6",
+    "@types/node": "26.6.4",
+    "@types/three": "0.186.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}
