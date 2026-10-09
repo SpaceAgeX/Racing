@@ -1,8 +1,22 @@
 import express from 'express';
+import { createServer } from 'node:http';
 import { access } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { Server } from 'socket.io';
 import type { BuildContext } from 'esbuild';
+import type {
+  ClientToServerEvents,
+  LobbyPlayerSnapshot,
+  LobbyPhase,
+  LobbySettings,
+  LobbySnapshot,
+  LobbySummary,
+  MultiplayerBootstrap,
+  ServerToClientEvents,
+} from '../src/multiplayer/protocol.ts';
+import { getTrackOption, trackOptions } from '../src/multiplayer/protocol.ts';
+import type { VehicleState } from '../src/simulation/types.ts';
 
 const publicDirectory = fileURLToPath(new URL('../public', import.meta.url));
 const bundleDirectory = fileURLToPath(new URL('../dist', import.meta.url));
@@ -29,9 +43,252 @@ app.get('/favicon.ico', (_request, response) => response.sendStatus(204));
 app.use('/assets', express.static(bundleDirectory));
 app.use(express.static(publicDirectory));
 
+interface LobbyPlayerRecord {
+  id: string;
+  name: string;
+  color: string;
+  state: VehicleState | null;
+}
+
+interface LobbyRecord {
+  id: string;
+  name: string;
+  hostId: string;
+  phase: LobbyPhase;
+  settings: LobbySettings;
+  players: Map<string, LobbyPlayerRecord>;
+}
+
+const httpServer = createServer(app);
+const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
+  serveClient: false,
+});
+
+const lobbies = new Map<string, LobbyRecord>();
+const playerLobby = new Map<string, string>();
+
+const lobbyPalette = ['#ee7136', '#6bc5ff', '#8ce5ad', '#f5d76e', '#c38fff', '#ff8ab0'];
+
+function makeLobbyId(): string {
+  return `lobby-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function normalizeName(name: string | undefined, fallback: string): string {
+  const trimmed = name?.trim() ?? '';
+  return trimmed.length ? trimmed.slice(0, 32) : fallback;
+}
+
+function colorForIndex(index: number): string {
+  return lobbyPalette[index % lobbyPalette.length]!;
+}
+
+function createLobbySummary(lobby: LobbyRecord): LobbySummary {
+  const host = lobby.players.get(lobby.hostId);
+  return {
+    id: lobby.id,
+    name: lobby.name,
+    hostName: host?.name ?? 'Host',
+    settings: {
+      trackId: lobby.settings.trackId,
+      trackName: lobby.settings.trackName,
+    },
+    playerCount: lobby.players.size,
+  };
+}
+
+function createLobbySnapshot(lobby: LobbyRecord): LobbySnapshot {
+  return {
+    id: lobby.id,
+    name: lobby.name,
+    hostId: lobby.hostId,
+    hostName: lobby.players.get(lobby.hostId)?.name ?? 'Host',
+    phase: lobby.phase,
+    settings: lobby.settings,
+    players: [...lobby.players.values()].map((player) => ({
+      id: player.id,
+      name: player.name,
+      isHost: player.id === lobby.hostId,
+      color: player.color,
+      state: player.state,
+    })) as LobbyPlayerSnapshot[],
+  };
+}
+
+function broadcastLobbyList(): void {
+  io.emit('multiplayer:lobbies', {
+    lobbies: [...lobbies.values()].filter((lobby) => lobby.phase === 'lobby').map(createLobbySummary),
+  });
+}
+
+function broadcastLobbyRoom(lobby: LobbyRecord): void {
+  io.to(lobby.id).emit('multiplayer:room', { lobby: createLobbySnapshot(lobby) });
+}
+
+function emitBootstrap(socket: Parameters<typeof io.on>[1] extends (arg: infer T) => void ? T : never): void {
+  const bootstrap: MultiplayerBootstrap = {
+    playerId: socket.id,
+    playerName: 'Player',
+    activeLobbyId: playerLobby.get(socket.id) ?? null,
+    activeLobbyPhase: playerLobby.get(socket.id) ? lobbies.get(playerLobby.get(socket.id)!)?.phase ?? null : null,
+    trackOptions,
+    lobbies: [...lobbies.values()].filter((lobby) => lobby.phase === 'lobby').map(createLobbySummary),
+  };
+  socket.emit('multiplayer:bootstrap', bootstrap);
+}
+
+function leaveLobby(socketId: string): void {
+  const lobbyId = playerLobby.get(socketId);
+  if (!lobbyId) return;
+  const lobby = lobbies.get(lobbyId);
+  playerLobby.delete(socketId);
+  if (!lobby) return;
+  lobby.players.delete(socketId);
+  if (lobby.players.size === 0) {
+    lobbies.delete(lobbyId);
+    broadcastLobbyList();
+    return;
+  }
+  if (lobby.hostId === socketId) {
+    lobby.hostId = lobby.players.keys().next().value as string;
+  }
+  broadcastLobbyRoom(lobby);
+  broadcastLobbyList();
+}
+
+function createLobby(socketId: string, playerName: string, lobbyName: string, trackId: string): LobbyRecord {
+  leaveLobby(socketId);
+  const track = getTrackOption(trackId);
+  const lobby: LobbyRecord = {
+    id: makeLobbyId(),
+    name: normalizeName(lobbyName, `${playerName}'s lobby`),
+    hostId: socketId,
+    phase: 'lobby',
+    settings: {
+      trackId: track.id,
+      trackName: track.name,
+      layout: track.layout,
+    },
+    players: new Map(),
+  };
+  lobby.players.set(socketId, {
+    id: socketId,
+    name: normalizeName(playerName, 'Player'),
+    color: colorForIndex(0),
+    state: null,
+  });
+  lobbies.set(lobby.id, lobby);
+  playerLobby.set(socketId, lobby.id);
+  return lobby;
+}
+
+function joinLobby(socketId: string, lobbyId: string, playerName: string): LobbyRecord | null {
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby || lobby.phase !== 'lobby') return null;
+  leaveLobby(socketId);
+  const player = {
+    id: socketId,
+    name: normalizeName(playerName, 'Player'),
+    color: colorForIndex(lobby.players.size),
+    state: null,
+  } satisfies LobbyPlayerRecord;
+  lobby.players.set(socketId, player);
+  playerLobby.set(socketId, lobby.id);
+  return lobby;
+}
+
+function applyState(socketId: string, state: VehicleState): LobbyRecord | null {
+  const lobbyId = playerLobby.get(socketId);
+  if (!lobbyId) return null;
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby) return null;
+  const player = lobby.players.get(socketId);
+  if (!player) return null;
+  player.state = state;
+  return lobby;
+}
+
+function updateLobbySettings(socketId: string, trackId: string): LobbyRecord | null {
+  const lobbyId = playerLobby.get(socketId);
+  if (!lobbyId) return null;
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
+  const track = getTrackOption(trackId);
+  lobby.settings = {
+    trackId: track.id,
+    trackName: track.name,
+    layout: track.layout,
+  };
+  return lobby;
+}
+
+function startLobby(socketId: string): LobbyRecord | null {
+  const lobbyId = playerLobby.get(socketId);
+  if (!lobbyId) return null;
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
+  lobby.phase = 'race';
+  for (const player of lobby.players.values()) player.state = null;
+  return lobby;
+}
+
+io.on('connection', (socket) => {
+  emitBootstrap(socket);
+
+  socket.on('multiplayer:create-lobby', ({ lobbyName, playerName, trackId }) => {
+    const lobby = createLobby(socket.id, playerName, lobbyName, trackId);
+    socket.join(lobby.id);
+    broadcastLobbyRoom(lobby);
+    broadcastLobbyList();
+  });
+
+  socket.on('multiplayer:join-lobby', ({ lobbyId, playerName }) => {
+    const lobby = joinLobby(socket.id, lobbyId, playerName);
+    if (!lobby) {
+      socket.emit('multiplayer:error', { message: 'That lobby no longer exists.' });
+      return;
+    }
+    socket.join(lobby.id);
+    broadcastLobbyRoom(lobby);
+    broadcastLobbyList();
+  });
+
+  socket.on('multiplayer:leave-lobby', () => {
+    leaveLobby(socket.id);
+    socket.emit('multiplayer:room', { lobby: null });
+    broadcastLobbyList();
+  });
+
+  socket.on('multiplayer:update-settings', ({ trackId }) => {
+    const lobby = updateLobbySettings(socket.id, trackId);
+    if (!lobby) return;
+    broadcastLobbyRoom(lobby);
+    broadcastLobbyList();
+  });
+
+  socket.on('multiplayer:start-lobby', () => {
+    const lobby = startLobby(socket.id);
+    if (!lobby) {
+      socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
+      return;
+    }
+    broadcastLobbyRoom(lobby);
+    broadcastLobbyList();
+  });
+
+  socket.on('multiplayer:update-state', ({ state }) => {
+    const lobby = applyState(socket.id, state);
+    if (!lobby) return;
+    socket.to(lobby.id).emit('multiplayer:player-state', { playerId: socket.id, state });
+  });
+
+  socket.on('disconnect', () => {
+    leaveLobby(socket.id);
+  });
+});
+
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
-const server = app.listen(port, host, () => {
+const server = httpServer.listen(port, host, () => {
   console.log(`Driving prototype: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
   if (host === '0.0.0.0') {
     for (const addresses of Object.values(networkInterfaces())) {

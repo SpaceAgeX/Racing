@@ -3,11 +3,11 @@ import type { VehicleState } from '../simulation/types.ts';
 import { vehicleDimensions } from '../simulation/parameters.ts';
 
 /** Visual adapter: replace the box inside this group with a model facing local -Z. */
-export function createCarVisual() {
+export function createCarVisual(color = 0xee7136) {
   const object = new Group();
   object.rotation.order = 'YXZ';
   const geometry = new BoxGeometry(vehicleDimensions.width, vehicleDimensions.height, vehicleDimensions.length);
-  const material = new MeshStandardMaterial({ color: 0xee7136, roughness: 0.85 });
+  const material = new MeshStandardMaterial({ color, roughness: 0.85 });
   const prism = new Mesh(geometry, material);
   prism.position.y = vehicleDimensions.height / 2;
   prism.castShadow = true;
