@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
+import { enterRace } from './race-helpers.ts';
 
 type Prototype = ReturnType<typeof startPrototype>;
 
@@ -23,6 +24,7 @@ async function pixels(page: Page) {
 
 test('new defaults drive the minimap marker, its arrow turns, and falling/respawning updates it', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await expect(page.locator('#minimap')).toBeVisible();
   await expect(page.getByLabel('Acceleration', { exact: true })).toHaveValue('22');
   await expect(page.getByLabel('Top speed limit', { exact: true })).toHaveValue('62');
@@ -58,12 +60,16 @@ test('new defaults drive the minimap marker, its arrow turns, and falling/respaw
 });
 
 test('the minimap loads a saved custom map and stays clear of controls when resized', async ({ page }) => {
+  const sharedLayout = Array.from({ length: 64 }, () => Array(64).fill(0));
+  sharedLayout[32]![32] = 2; sharedLayout[32]![33] = 1; sharedLayout[32]![34] = 1; sharedLayout[33]![34] = 1;
+  const shared = await (await page.request.post('/api/tracks', { data: { name: 'Small corner', layout: sharedLayout } })).json();
   await page.addInitScript(() => {
     const layout = Array.from({ length: 64 }, () => Array(64).fill(0));
     layout[32]![32] = 2; layout[32]![33] = 1; layout[32]![34] = 1; layout[33]![34] = 1;
     localStorage.setItem('racing-active-track-v1', JSON.stringify({ id: 'minimap-test', name: 'Small corner', layout, updatedAt: 1 }));
   });
   await page.goto('/');
+  await enterRace(page, shared.id);
   await expect(page.locator('#active-track-name')).toHaveText('Small corner');
   expect((await pixels(page)).green).toBeGreaterThan(300); // The large custom start tile, rather than the default tiny one.
   for (const viewport of [{ width: 1280, height: 720 }, { width: 830, height: 720 }, { width: 390, height: 720 }, { width: 740, height: 390 }]) {
@@ -78,4 +84,5 @@ test('the minimap loads a saved custom map and stays clear of controls when resi
     await expect.poll(async () => (await pixels(page)).count).toBeGreaterThan(10);
   }
   await page.screenshot({ path: 'test-results/prototype-minimap-narrow.png' });
+  await page.request.delete(`/api/tracks/${shared.id}`);
 });

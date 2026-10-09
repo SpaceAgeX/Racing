@@ -220,11 +220,21 @@ remove.addEventListener('click', async () => {
   } catch (error) { feedback(error instanceof Error ? error.message : 'Could not delete this track.', true); }
   finally { setBusy(false); void refreshSharedTracks(); }
 });
-play.addEventListener('click', () => {
+play.addEventListener('click', async () => {
+  if (busy) return;
+  setBusy(true);
   try {
+    // Race rooms load their map from the server; publish custom/edited drawings first.
+    const preset = trackPresets.find((entry) => `preset:${entry.id}` === selectedId);
+    if (!preset || name.value.trim() !== preset.name || JSON.stringify(layout) !== JSON.stringify(preset.create())) {
+      const record = await saveSharedTrack(name.value, layout);
+      selectedId = record.id;
+      name.value = record.name;
+    }
     selectTrackForPlay(localStorage, name.value, layout, selectedId);
     location.href = '/';
   } catch (error) { feedback(error instanceof Error ? error.message : 'Could not load this track.', true); }
+  finally { setBusy(false); }
 });
 
 updateLibrary();

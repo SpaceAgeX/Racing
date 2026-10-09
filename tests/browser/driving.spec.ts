@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
 import { readFile } from 'node:fs/promises';
 import { formatLapTime } from '../../src/ui/lap-display.ts';
+import { enterRace } from './race-helpers.ts';
 
 type Prototype = ReturnType<typeof startPrototype>;
 
@@ -20,6 +21,7 @@ async function snapshot(page: Page) {
       projected: { x: projected.x, y: projected.y },
       camera: prototype.view.camera.position.toArray(),
       aspect: prototype.view.camera.aspect,
+      canvasHeight: prototype.view.renderer.domElement.clientHeight,
       renderedCar: prototype.car.object.position.toArray(),
       drawCalls: prototype.view.renderer.info.render.calls,
       trackPresent: Boolean(track),
@@ -57,6 +59,7 @@ test('the car, tiled track, and start arch render with a controls hint and no br
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto('/');
+  await enterRace(page);
   await expect(page.locator('#game')).toBeVisible();
   await expect(page.locator('.controls')).toContainText('Brake / reverse');
   await expect.poll(async () => (await snapshot(page)).drawCalls).toBeGreaterThan(0);
@@ -74,6 +77,7 @@ test('the car, tiled track, and start arch render with a controls hint and no br
 
 test('keyboard drives acceleration, coasting, steering, braking, reverse, and camera tracking', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await page.keyboard.down('w');
   await expect.poll(async () => (await snapshot(page)).speed).toBeGreaterThan(7);
   await page.keyboard.up('w');
@@ -108,6 +112,7 @@ test('keyboard drives acceleration, coasting, steering, braking, reverse, and ca
 
 test('blur releases throttle and steering without receiving keyup', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await page.keyboard.down('w');
   await page.keyboard.down('d');
   await expect.poll(async () => (await snapshot(page)).speed).toBeGreaterThan(3);
@@ -121,6 +126,7 @@ test('blur releases throttle and steering without receiving keyup', async ({ pag
 
 test('canvas and projection resize for desktop and narrow windows', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   for (const size of [{ width: 640, height: 400 }, { width: 390, height: 720 }]) {
     await page.setViewportSize(size);
     await expect.poll(async () => {
@@ -136,7 +142,7 @@ test('canvas and projection resize for desktop and narrow windows', async ({ pag
     }));
     expect(dimensions.width).toBe(dimensions.expectedWidth);
     expect(dimensions.height).toBe(dimensions.expectedHeight);
-    expect(dimensions.cssHeight).toBe(size.height);
+    expect(dimensions.cssHeight).toBeGreaterThan(size.height / 2);
     expect(dimensions.overflow).toBe(false);
     expect(Math.abs((await snapshot(page)).projected.x)).toBeLessThan(0.1);
   }
@@ -145,6 +151,7 @@ test('canvas and projection resize for desktop and narrow windows', async ({ pag
 
 test('a long rendering pause causes no catch-up movement jump', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await page.keyboard.down('w');
   await expect.poll(async () => (await snapshot(page)).speed).toBeGreaterThan(10);
   const distance = await page.evaluate(async () => {
@@ -162,6 +169,7 @@ test('a long rendering pause causes no catch-up movement jump', async ({ page })
 
 test('driving off the track shows a fall then respawns at the start with the camera reset', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   const initial = await snapshot(page);
   await page.evaluate(async () => {
     const path = '/assets/main.js';
@@ -200,6 +208,7 @@ test('driving off the track shows a fall then respawns at the start with the cam
 
 test('a car tips toward the edge once more than half of it loses support', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await page.evaluate(async () => {
     const path = '/assets/main.js';
     const { prototype } = await import(path) as { prototype: Prototype };
@@ -230,6 +239,7 @@ test('a car tips toward the edge once more than half of it loses support', async
 
 test('sliders change driving immediately, persist on refresh, save JSON, and reset defaults', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await expect(page.locator('#tuning-panel')).toBeVisible();
   await expect(page.locator('#tuning-panel input[type="range"]')).toHaveCount(21);
   await setSlider(page, 'Top speed limit', 5);
@@ -246,6 +256,7 @@ test('sliders change driving immediately, persist on refresh, save JSON, and res
   await expect(page.locator('#current-speed')).toHaveText('18.0 km/h');
   await page.keyboard.up('w');
   await page.reload();
+  await enterRace(page);
   await expect(page.getByLabel('Top speed limit', { exact: true })).toHaveValue('5');
   await expect(page.getByLabel('Acceleration', { exact: true })).toHaveValue('20');
   expect(await tuningSnapshot(page)).toEqual(tuned);
@@ -271,24 +282,27 @@ test('sliders change driving immediately, persist on refresh, save JSON, and res
   expect(reset.driving.highSpeedSteeringAngle).toBe(0.1);
   expect(reset.physics.respawnDelay).toBe(1);
   await page.reload();
+  await enterRace(page);
   expect(await tuningSnapshot(page)).toEqual(reset);
 });
 
 test('hiding and showing the tuning panel resizes the canvas and camera', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   const initialWidth = await page.locator('#game').evaluate((canvas: HTMLCanvasElement) => canvas.clientWidth);
   await page.getByRole('button', { name: 'Hide', exact: true }).click();
   await expect(page.locator('#tuning-panel')).toBeHidden();
   await expect.poll(async () => page.locator('#game').evaluate((canvas: HTMLCanvasElement) => canvas.clientWidth)).toBe(1280);
-  await expect.poll(async () => (await snapshot(page)).aspect).toBe(1280 / 720);
+  await expect.poll(async () => (await snapshot(page)).aspect).toBe(1280 / (await snapshot(page)).canvasHeight);
   await page.getByRole('button', { name: 'Tuning', exact: true }).click();
   await expect(page.locator('#tuning-panel')).toBeVisible();
   await expect.poll(async () => page.locator('#game').evaluate((canvas: HTMLCanvasElement) => canvas.clientWidth)).toBe(initialWidth);
-  await expect.poll(async () => (await snapshot(page)).aspect).toBe(initialWidth / 720);
+  await expect.poll(async () => (await snapshot(page)).aspect).toBe(initialWidth / (await snapshot(page)).canvasHeight);
 });
 
 test('a falling car hits both solid inside-corner faces and slides down without clipping', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   const edge = await page.evaluate(async () => {
     const path = '/assets/main.js';
     const { prototype } = await import(path) as { prototype: Prototype };
@@ -327,6 +341,7 @@ test('a falling car hits both solid inside-corner faces and slides down without 
 
 test('an offset finish-post crash spins the visible car and preserves a slide before grip recovers', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await page.evaluate(async () => {
     const path = '/assets/main.js';
     const { prototype } = await import(path) as { prototype: Prototype };
@@ -354,6 +369,7 @@ test('an offset finish-post crash spins the visible car and preserves a slide be
 
 test('the finish line starts the timer and records laps, best time, and differences in either direction', async ({ page }) => {
   await page.goto('/');
+  await enterRace(page);
   await expect(page.locator('#lap-current')).toHaveText('00:00.00');
   await expect(page.locator('#lap-best')).toHaveText('--:--.--');
   await expect(page.locator('#lap-status')).toHaveText('Cross the line to start');

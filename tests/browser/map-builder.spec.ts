@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
+import { enterRace } from './race-helpers.ts';
 
 async function paint(page: Page, row: number, column: number): Promise<void> {
   const box = await page.locator('#map-canvas').boundingBox();
@@ -51,6 +52,7 @@ test('builder enforces one start and saves, loads, plays, and deletes multiple t
   await expect(page.getByLabel('Track name', { exact: true })).toHaveValue('Test track A');
   await page.getByRole('button', { name: 'Play track', exact: true }).click();
   await expect(page).toHaveURL('http://127.0.0.1:3100/');
+  await enterRace(page);
   await expect(page.locator('#active-track-name')).toHaveText('Test track A');
   const game = await page.evaluate(async () => {
     const path = '/assets/main.js';
@@ -108,6 +110,8 @@ test('a track saved in one browser is playable in another and deleting it update
     await other.getByRole('button', { name: 'Load track', exact: true }).click();
     await expect(other.locator('#map-summary')).toContainText('2 tiles');
     await other.getByRole('button', { name: 'Play track', exact: true }).click();
+    await expect(other).toHaveURL('http://127.0.0.1:3100/');
+    await enterRace(other);
     await expect(other.locator('#active-track-name')).toHaveText('Shared browser track');
     const result = await other.evaluate(async () => {
       const path = '/assets/main.js';

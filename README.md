@@ -1,6 +1,6 @@
 # Driving prototype
 
-A single-player browser prototype using Three.js and TypeScript, served by Node.js and Express. The scene contains one rectangular car, a track made from square tiles, a start/finish arch, sunlight, ambient light, and a smooth following camera.
+A browser racing prototype using Three.js and TypeScript, served by Node.js and Express with Socket.IO race rooms. The scene contains rectangular cars, a track made from square tiles, a start/finish arch, sunlight, ambient light, and a smooth following camera.
 
 ## Run locally
 
@@ -15,7 +15,7 @@ Open **http://127.0.0.1:3000**. In Windows PowerShell with script execution disa
 
 The development command builds the browser bundle with esbuild, serves it through Express, and watches TypeScript changes. Refresh the page after editing. Set `PORT` to change the port and `HOST` to change the bind address.
 
-Express listens on all IPv4 network interfaces by default (`0.0.0.0`). Other devices on the same network can open **http://YOUR-COMPUTER-IP:3000**; startup prints the available network URLs. Keep the server running while they play. If Windows Firewall asks, allow Node.js on your private network. Each browser runs its own single-player game. To restrict access to this computer, set `HOST=127.0.0.1`. Devices outside your local network require additional router/network configuration.
+Express listens on all IPv4 network interfaces by default (`0.0.0.0`). Other devices on the same network can open **http://YOUR-COMPUTER-IP:3000**; startup prints the available network URLs. Keep the server running while they play. If Windows Firewall asks, allow Node.js on your private network. Players can create or join the same race room. To restrict access to this computer, set `HOST=127.0.0.1`. Devices outside your local network require additional router/network configuration.
 
 For a production bundle:
 
@@ -23,6 +23,14 @@ For a production bundle:
 npm run build
 npm start
 ```
+
+## Race rooms
+
+The home screen lists open lobbies. Enter a player name, choose a preset or a shared saved track, and **Create lobby**, or join an existing lobby. The host can change the track and **Start race**; other players see the same room settings. The map and cars load when the host starts. A one-player room can be used for solo testing. **Leave lobby** or **Leave game** returns to the home screen. Rooms exist in memory and disappear when everyone leaves or the server restarts.
+
+Map Builder is available from the home screen and race HUD. **Play track** publishes a custom/edited drawing to the shared library and returns home with that map selected for lobby creation. Saved or deleted maps update connected players' track selectors. Each room keeps its own map snapshot, so library changes do not replace a race in progress.
+
+This multiplayer implementation relays client-simulated car states to other players in the same room. It is not yet server-authoritative and has no player-to-player collisions. The pure driving simulation remains reusable for that future step. Live Handling values affect the local player's simulation.
 
 ## Controls and tuning
 
@@ -97,7 +105,7 @@ Units are **meters, seconds, and radians**, with **Y-up**. At heading zero the v
 
 `src/simulation/fixed-step.ts` accumulates rendering time into **120 Hz** simulation steps. Catch-up is limited to 100 ms per frame; pauses longer than 250 ms are discarded. Visibility changes reset timing, and rendering interpolates previous/current snapshots, including heading across the angle boundary. Camera smoothing uses elapsed-time-based exponential damping.
 
-Keyboard input, car visuals, camera behavior, track data, scene setup, and application wiring are in separate modules. `src/rendering/car.ts` is the visual adapter: a future model can replace the prism inside its group, with its ground origin and local forward axis aligned to the documented convention. Express serves the browser app and shared track library. Multiplayer driving, imported assets, and advanced physics are outside this prototype.
+Keyboard input, car visuals, camera behavior, track data, scene setup, and application wiring are in separate modules. `src/rendering/car.ts` is the visual adapter: a future model can replace the prism inside its group, with its ground origin and local forward axis aligned to the documented convention. Express serves the browser app, shared track library, and Socket.IO room connections. Imported assets and advanced physics remain future work.
 
 ## Verification
 
@@ -110,5 +118,7 @@ npm run test:browser
 The Node tests cover driving, fixed-step timing, input clearing, camera following/reset, tile seams and holes, the 50% support threshold, tipping, rotated body geometry, solid contacts, gravity, respawn timing, inclined ground queries, arch collisions, lap timing, custom driving parameters, map validation/painting, preset connectivity, and track storage. Browser tests exercise keyboard driving, rendering, camera tracking, focus loss, long frame pauses, resizing, falling/tipping/respawning, solid side contacts, lap timing, live sliders, settings persistence/download/reset, panel collapse, and builder paint/save/load/play/delete flows on desktop and narrow screens.
 
 Shared-library tests verify persistence across reopening, simultaneous saves, durable deletes, corrupt-file preservation, write failures, API validation, and separate HTTP clients. Browser tests verify sharing between independent browser contexts, publishing older local maps, and retaining drawings after a failed server save. Browser tests use a separate storage file under `test-results/` so they do not change the real library.
+
+Driving browser checks enter a real one-player lobby and start it. Multiplayer browser checks cover live shared-track options, host/guest settings and race starts, remote car updates, leaving rooms, and isolation after switching rooms.
 
 Browser tests use installed Microsoft Edge on Windows. On other platforms, install the test browser with `npx playwright install chromium`. Set `PLAYWRIGHT_CHANNEL=chrome` or `msedge` to select an installed browser explicitly. Browser tests start their own Express server on port 3100 and save desktop/narrow screenshots in `test-results/`.
