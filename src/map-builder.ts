@@ -2,7 +2,9 @@ import { trackLayout } from './track/layout.ts';
 import type { TrackTile } from './track/layout.ts';
 import { cloneTrack, emptyTrack, MAP_SIZE, paintTrack, paintTrackStroke, trackSummary } from './track/model.ts';
 import { trackPresets } from './track/presets.ts';
-import { deleteTrack, listSavedTracks, loadActiveTrack, saveTrack, selectTrackForPlay } from './track/storage.ts';
+import { clearActiveTrack, listBrowserTracks, loadActiveTrack, selectTrackForPlay } from './track/storage.ts';
+import { deleteSharedTrack, getSharedTrack, listSharedTracks, saveSharedTrack } from './track/api.ts';
+import type { SavedTrack } from './track/records.ts';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#map-canvas')!;
 const canvasArea = canvas.parentElement!;
@@ -15,10 +17,19 @@ const message = document.querySelector<HTMLElement>('#builder-message')!;
 const save = document.querySelector<HTMLButtonElement>('#save-track')!;
 const play = document.querySelector<HTMLButtonElement>('#play-track')!;
 const remove = document.querySelector<HTMLButtonElement>('#delete-track')!;
+const load = document.querySelector<HTMLButtonElement>('#load-track')!;
+const newTrack = document.querySelector<HTMLButtonElement>('#new-track')!;
+const browserTracks = listBrowserTracks(localStorage);
+let sharedTracks: SavedTrack[] = [];
+let busy = false;
+let libraryRequest = 0;
+let librarySelectionChanged = false;
+let libraryReadPending = false;
 const active = loadActiveTrack(localStorage);
 let layout = cloneTrack(active?.layout ?? trackLayout);
 name.value = active?.name ?? 'Default circuit';
 let selectedId = active?.id ?? 'preset:default';
+if (browserTracks.some((record) => record.id === selectedId)) selectedId = `browser:${selectedId}`;
 let tool: TrackTile = 1;
 let dragging = false;
 let lastCell: { row: number; column: number } | null = null;
@@ -31,8 +42,21 @@ function feedback(text: string, error = false): void {
 function updateSummary(): void {
   const info = trackSummary(layout);
   summary.value = `${info.tileCount} tiles · Start / finish: ${info.startCount}/1`;
-  save.disabled = !info.playable || !name.value.trim();
-  play.disabled = !info.playable;
+  save.disabled = busy || !info.playable || !name.value.trim();
+  play.disabled = busy || !info.playable;
+}
+
+function updateDeleteButton(): void {
+  remove.disabled = busy || !sharedTracks.some((record) => record.id === library.value);
+}
+
+function setBusy(value: boolean): void {
+  busy = value;
+  if (value) libraryRequest++; // Discard library reads started before this operation.
+  for (const element of [name, library, load, newTrack, ...document.querySelectorAll<HTMLButtonElement>('[data-tool]')]) element.disabled = value;
+  canvas.setAttribute('aria-busy', String(value));
+  updateSummary();
+  updateDeleteButton();
 }
 
 function draw(): void {
@@ -81,7 +105,7 @@ function cellAt(event: PointerEvent) {
 }
 
 canvas.addEventListener('pointerdown', (event) => {
-  if (event.button !== 0) return;
+  if (busy || event.button !== 0) return;
   const cell = cellAt(event);
   if (!cell) return;
   event.preventDefault();
@@ -95,7 +119,7 @@ canvas.addEventListener('pointerdown', (event) => {
 canvas.addEventListener('pointermove', (event) => {
   const cell = cellAt(event);
   coordinates.value = cell ? `Row ${cell.row + 1} · Column ${cell.column + 1}` : 'Click and drag to paint';
-  if (!dragging || !cell || tool === 2) return;
+  if (busy || !dragging || !cell || tool === 2) return;
   paintTrackStroke(layout, lastCell ?? cell, cell, tool);
   lastCell = cell;
   draw();
@@ -114,50 +138,87 @@ function updateLibrary(selectValue = selectedId): void {
   library.replaceChildren();
   const presets = document.createElement('optgroup'); presets.label = 'Presets';
   for (const preset of trackPresets) presets.append(new Option(preset.name, `preset:${preset.id}`));
-  const saved = document.createElement('optgroup'); saved.label = 'Saved tracks';
-  for (const record of listSavedTracks(localStorage)) saved.append(new Option(record.name, record.id));
+  const saved = document.createElement('optgroup'); saved.label = 'Shared tracks';
+  for (const record of sharedTracks) saved.append(new Option(record.name, record.id));
   library.append(presets, saved);
+  if (browserTracks.length) {
+    const old = document.createElement('optgroup'); old.label = 'Older browser tracks — save to share';
+    for (const record of browserTracks) old.append(new Option(record.name, `browser:${record.id}`));
+    library.append(old);
+  }
   library.value = selectValue;
   if (!library.value) library.value = 'preset:default';
-  remove.disabled = library.value.startsWith('preset:');
+  updateDeleteButton();
 }
-library.addEventListener('change', () => { remove.disabled = library.value.startsWith('preset:'); });
+library.addEventListener('change', () => { librarySelectionChanged = true; updateDeleteButton(); });
 
-document.querySelector('#load-track')!.addEventListener('click', () => {
-  const preset = trackPresets.find((entry) => `preset:${entry.id}` === library.value);
-  const saved = listSavedTracks(localStorage).find((entry) => entry.id === library.value);
-  if (!preset && !saved) return;
-  layout = preset ? preset.create() : cloneTrack(saved!.layout);
-  name.value = preset?.name ?? saved!.name;
-  selectedId = library.value;
-  feedback(`Loaded ${name.value}.`);
-  draw();
+async function refreshSharedTracks(showErrors = false): Promise<void> {
+  if (busy || libraryReadPending) return;
+  libraryReadPending = true;
+  const revision = ++libraryRequest;
+  try {
+    const records = await listSharedTracks();
+    if (revision !== libraryRequest || busy) return;
+    sharedTracks = records;
+    updateLibrary(librarySelectionChanged ? library.value || selectedId : selectedId);
+  } catch (error) {
+    if (showErrors && revision === libraryRequest && !busy) feedback(error instanceof Error ? error.message : 'Could not load shared tracks.', true);
+  }
+  finally { libraryReadPending = false; }
+}
+
+load.addEventListener('click', async () => {
+  if (busy) return;
+  const id = library.value;
+  const preset = trackPresets.find((entry) => `preset:${entry.id}` === id);
+  const old = browserTracks.find((entry) => `browser:${entry.id}` === id);
+  setBusy(true);
+  try {
+    const saved = preset || old ? old : await getSharedTrack(id);
+    layout = preset ? preset.create() : cloneTrack(saved!.layout);
+    name.value = preset?.name ?? saved!.name;
+    selectedId = id;
+    feedback(old ? `Loaded ${name.value}. Save track to share it with everyone.` : `Loaded ${name.value}.`);
+    draw();
+  } catch (error) { feedback(error instanceof Error ? error.message : 'Could not load this track.', true); }
+  finally { setBusy(false); void refreshSharedTracks(); }
 });
-document.querySelector('#new-track')!.addEventListener('click', () => {
+
+newTrack.addEventListener('click', () => {
   layout = emptyTrack();
   name.value = 'New track';
   selectedId = 'draft';
   feedback('Place a start/finish tile and paint your track.');
   draw();
 });
-save.addEventListener('click', () => {
+save.addEventListener('click', async () => {
+  if (busy) return;
+  setBusy(true);
+  feedback('Saving to the shared library…');
   try {
-    const record = saveTrack(localStorage, name.value, layout);
+    const record = await saveSharedTrack(name.value, layout);
+    sharedTracks = [...sharedTracks.filter((entry) => entry.id !== record.id), record];
     selectedId = record.id;
     name.value = record.name;
     updateLibrary();
-    feedback(`Saved ${record.name}.`);
+    feedback(`Saved ${record.name}. Everyone on this server can play it.`);
   } catch (error) { feedback(error instanceof Error ? error.message : 'Could not save this track.', true); }
+  finally { setBusy(false); void refreshSharedTracks(); }
 });
-remove.addEventListener('click', () => {
-  if (library.value.startsWith('preset:')) return;
+remove.addEventListener('click', async () => {
+  if (busy) return;
+  const record = sharedTracks.find((entry) => entry.id === library.value);
+  if (!record) return;
+  setBusy(true);
   try {
-    const record = listSavedTracks(localStorage).find((entry) => entry.id === library.value);
-    deleteTrack(localStorage, library.value);
+    await deleteSharedTrack(record.id);
+    sharedTracks = sharedTracks.filter((entry) => entry.id !== record.id);
+    clearActiveTrack(localStorage, record.id);
     selectedId = 'draft';
     updateLibrary();
-    feedback(`Deleted ${record?.name ?? 'track'}. The current drawing is still available.`);
-  } catch { feedback('Could not delete this track.', true); }
+    feedback(`Deleted ${record.name} from the shared library. The current drawing is still available.`);
+  } catch (error) { feedback(error instanceof Error ? error.message : 'Could not delete this track.', true); }
+  finally { setBusy(false); void refreshSharedTracks(); }
 });
 play.addEventListener('click', () => {
   try {
@@ -168,3 +229,8 @@ play.addEventListener('click', () => {
 
 updateLibrary();
 resize();
+void refreshSharedTracks(true);
+window.addEventListener('focus', () => { void refreshSharedTracks(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshSharedTracks(); });
+// Pick up saves and deletions made by other browsers without reloading the drawing.
+setInterval(() => { if (!document.hidden) void refreshSharedTracks(); }, 5000);

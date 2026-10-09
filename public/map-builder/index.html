@@ -20,9 +20,9 @@
           <button type="button" data-tool="2" aria-pressed="false"><span class="swatch start"></span>Start / finish</button>
           <button type="button" data-tool="0" aria-pressed="false"><span class="swatch empty"></span>Erase</button>
         </div><p class="help">Placing a new start moves the old one. Saved tracks need exactly one.</p><output id="map-summary"></output></section>
-        <section><h2>Save this track</h2><label for="track-name">Track name</label><input id="track-name" maxlength="60" value="Default circuit" autocomplete="off" /><button id="save-track" type="button">Save track</button><p class="help">Saving an existing name updates that track.</p></section>
+        <section><h2>Save this track</h2><label for="track-name">Track name</label><input id="track-name" maxlength="60" value="Default circuit" autocomplete="off" /><button id="save-track" type="button">Save track</button><p class="help">Saving an existing name updates the shared track.</p></section>
         <section><h2>Track library</h2><label for="track-library">Presets and saved tracks</label><select id="track-library"></select><div class="button-row"><button id="load-track" type="button">Load track</button><button id="delete-track" type="button">Delete track</button></div><button id="new-track" type="button" class="secondary">New blank track</button></section>
-        <section class="play-section"><button id="play-track" type="button" class="primary">Play track</button><p class="help">Tracks are saved in this browser.</p><p id="builder-message" role="status" aria-live="polite">Ready to build.</p></section>
+        <section class="play-section"><button id="play-track" type="button" class="primary">Play track</button><p class="help">Saved tracks are shared with everyone on this server.</p><p id="builder-message" role="status" aria-live="polite">Ready to build.</p></section>
       </aside>
     </main>
     <script type="module" src="/assets/map-builder.js"></script>

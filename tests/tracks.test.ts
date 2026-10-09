@@ -4,7 +4,7 @@ import { Euler, Vector3 } from 'three';
 import { bodyAxes } from '../src/simulation/box.ts';
 import { cloneTrack, emptyTrack, isTrackGrid, paintTrack, paintTrackStroke, playableTrackError, trackSummary } from '../src/track/model.ts';
 import { trackPresets } from '../src/track/presets.ts';
-import { deleteTrack, listSavedTracks, loadActiveTrack, saveTrack, selectTrackForPlay } from '../src/track/storage.ts';
+import { clearActiveTrack, listBrowserTracks, loadActiveTrack, selectTrackForPlay } from '../src/track/storage.ts';
 
 function storage() {
   const data = new Map<string, string>();
@@ -35,7 +35,7 @@ test('fast drag strokes fill every intermediate cell and ignore out-of-grid pain
 test('saved tracks require the 64 square grid and exactly one start', () => {
   const grid = emptyTrack();
   assert.equal(isTrackGrid(grid), true);
-  assert.throws(() => saveTrack(storage(), 'Empty', grid));
+  assert.throws(() => selectTrackForPlay(storage(), 'Empty', grid));
   grid[1]![1] = 2;
   grid[2]![2] = 2;
   assert.throws(() => selectTrackForPlay(storage(), 'Two starts', grid));
@@ -44,25 +44,21 @@ test('saved tracks require the 64 square grid and exactly one start', () => {
   assert.equal(playableTrackError(grid), null);
 });
 
-test('multiple saves, updates by name, loading, and deleting retain independent layouts', () => {
+test('active track selection is per browser and older browser maps remain readable', () => {
   const store = storage();
   const grid = emptyTrack();
   paintTrack(grid, 32, 32, 2);
-  const first = saveTrack(store, 'Alpha', grid);
+  const first = { id: 'old-alpha', name: 'Alpha', layout: cloneTrack(grid), updatedAt: 1 };
+  store.setItem('racing-track-library-v1', JSON.stringify([first]));
   paintTrack(grid, 32, 33, 1);
-  const second = saveTrack(store, 'Beta', grid);
-  assert.equal(listSavedTracks(store).length, 2);
-  assert.equal(listSavedTracks(store)[0]!.layout[32]![33], 0);
-  const updated = saveTrack(store, 'alpha', grid);
-  assert.equal(updated.id, first.id);
-  assert.equal(listSavedTracks(store).length, 2);
-  selectTrackForPlay(store, updated.name, updated.layout, updated.id);
-  deleteTrack(store, second.id);
-  assert.equal(listSavedTracks(store).length, 1);
+  assert.equal(listBrowserTracks(store)[0]!.layout[32]![33], 0);
+  selectTrackForPlay(store, first.name, grid, first.id);
+  assert.equal(loadActiveTrack(storage()), null);
+  clearActiveTrack(store, 'other-track');
   assert.equal(loadActiveTrack(store)?.id, first.id);
-  deleteTrack(store, first.id);
+  clearActiveTrack(store, first.id);
   assert.equal(loadActiveTrack(store), null);
-  assert.equal(listSavedTracks(store).length, 0);
+  assert.equal(listBrowserTracks(store).length, 1);
 });
 
 test('preset layouts have one start and a connected rounded course; default differs from simple loop', () => {
@@ -96,7 +92,7 @@ test('invalid stored data falls back safely and cannot become an active track', 
   const store = storage();
   store.setItem('racing-track-library-v1', '{broken');
   store.setItem('racing-active-track-v1', JSON.stringify({ id: 'bad', name: 'Bad', layout: [[2]], updatedAt: 1 }));
-  assert.deepEqual(listSavedTracks(store), []);
+  assert.deepEqual(listBrowserTracks(store), []);
   assert.equal(loadActiveTrack(store), null);
 });
 

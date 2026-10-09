@@ -3,6 +3,8 @@ import { access } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { BuildContext } from 'esbuild';
+import { createTrackStore } from './track-store.ts';
+import { createTracksApi } from './tracks-api.ts';
 
 const publicDirectory = fileURLToPath(new URL('../public', import.meta.url));
 const bundleDirectory = fileURLToPath(new URL('../dist', import.meta.url));
@@ -25,6 +27,9 @@ if (development) {
 
 const app = express();
 app.disable('x-powered-by');
+const trackFile = process.env.TRACKS_FILE ?? fileURLToPath(new URL('../data/tracks.json', import.meta.url));
+const trackStore = await createTrackStore(trackFile);
+app.use('/api/tracks', createTracksApi(trackStore));
 app.get('/favicon.ico', (_request, response) => response.sendStatus(204));
 app.use('/assets', express.static(bundleDirectory));
 app.use(express.static(publicDirectory));
@@ -46,7 +51,8 @@ const server = app.listen(port, host, () => {
 });
 
 async function shutdown(): Promise<void> {
-  server.close();
+  await new Promise<void>((closed, reject) => server.close((error) => error ? reject(error) : closed()));
+  await trackStore.flush();
   await bundler?.dispose();
   process.exit(0);
 }

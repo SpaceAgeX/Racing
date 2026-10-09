@@ -11,7 +11,7 @@
     "build": "npm run typecheck && node scripts/build.ts",
     "start": "node server/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/simulation.test.ts tests/input.test.ts tests/camera.test.ts tests/collision.test.ts tests/lap-timer.test.ts tests/tracks.test.ts",
+    "test": "node --test tests/simulation.test.ts tests/input.test.ts tests/camera.test.ts tests/collision.test.ts tests/lap-timer.test.ts tests/tracks.test.ts tests/server-tracks.test.ts",
     "test:browser": "playwright test"
   },
   "dependencies": {

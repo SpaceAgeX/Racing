@@ -35,7 +35,7 @@ test('builder enforces one start and saves, loads, plays, and deletes multiple t
   await page.getByLabel('Track name', { exact: true }).fill('Test track A');
   await page.getByRole('button', { name: 'Save track', exact: true }).click();
   await expect(page.locator('#builder-message')).toContainText('Saved Test track A');
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('racing-track-library-v1')!));
+  const saved = await (await page.request.get('/api/tracks')).json();
   expect(saved[0].layout[10][10]).toBe(1);
   expect(saved[0].layout[11][11]).toBe(2);
   expect(saved[0].layout[11].slice(12, 19)).toEqual(Array(7).fill(1));
@@ -86,4 +86,69 @@ test('the full builder fits desktop, narrow, and short windows without scrolling
   await paint(page, 20, 20);
   await expect(page.locator('#map-summary')).toContainText('Start / finish: 1/1');
   await page.screenshot({ path: 'test-results/map-builder-narrow.png', fullPage: true });
+});
+
+test('a track saved in one browser is playable in another and deleting it updates the shared library', async ({ page, browser }) => {
+  const otherContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3100' });
+  try {
+    const other = await otherContext.newPage();
+    await other.goto('/map-builder/');
+    await page.goto('/map-builder/');
+    await page.getByRole('button', { name: 'New blank track', exact: true }).click();
+    await page.getByRole('button', { name: 'Start / finish', exact: true }).click();
+    await paint(page, 32, 32);
+    await page.getByRole('button', { name: 'Track', exact: true }).click();
+    await paint(page, 31, 32);
+    await page.getByLabel('Track name', { exact: true }).fill('Shared browser track');
+    await page.getByRole('button', { name: 'Save track', exact: true }).click();
+    await expect(page.locator('#builder-message')).toContainText('Saved Shared browser track');
+    await other.bringToFront();
+    await expect(other.locator('#track-library option').filter({ hasText: /^Shared browser track$/ })).toHaveCount(1);
+    await other.getByLabel('Presets and saved tracks').selectOption({ label: 'Shared browser track' });
+    await other.getByRole('button', { name: 'Load track', exact: true }).click();
+    await expect(other.locator('#map-summary')).toContainText('2 tiles');
+    await other.getByRole('button', { name: 'Play track', exact: true }).click();
+    await expect(other.locator('#active-track-name')).toHaveText('Shared browser track');
+    const result = await other.evaluate(async () => {
+      const path = '/assets/main.js';
+      const { prototype } = await import(path) as { prototype: ReturnType<typeof startPrototype> };
+      return { tiles: prototype.view.trackTiles.length, starts: prototype.layout[32]![32], localLibrary: localStorage.getItem('racing-track-library-v1') };
+    });
+    expect(result).toEqual({ tiles: 2, starts: 2, localLibrary: null });
+    await other.getByRole('link', { name: 'Map Builder', exact: true }).click();
+    await page.bringToFront();
+    await page.getByRole('button', { name: 'Delete track', exact: true }).click();
+    await expect(page.locator('#builder-message')).toContainText('Deleted Shared browser track');
+    await other.bringToFront();
+    await expect(other.locator('#track-library option').filter({ hasText: /^Shared browser track$/ })).toHaveCount(0);
+  } finally { await otherContext.close(); }
+});
+
+test('an older browser map can be shared and a failed server save retains the drawing for retry', async ({ page }) => {
+  await page.addInitScript(() => {
+    const layout = Array.from({ length: 64 }, () => Array(64).fill(0));
+    layout[20]![20] = 2;
+    localStorage.setItem('racing-track-library-v1', JSON.stringify([{ id: 'legacy', name: 'Legacy browser map', layout, updatedAt: 1 }]));
+  });
+  await page.goto('/map-builder/');
+  await page.getByLabel('Presets and saved tracks').selectOption('browser:legacy');
+  await page.getByRole('button', { name: 'Load track', exact: true }).click();
+  await expect(page.locator('#builder-message')).toContainText('Save track to share');
+  await page.route('**/api/tracks', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 503, json: { error: 'Server save temporarily unavailable.' } });
+    else await route.continue();
+  });
+  await page.getByRole('button', { name: 'Save track', exact: true }).click();
+  await expect(page.locator('#builder-message')).toHaveText('Server save temporarily unavailable.');
+  await expect(page.getByLabel('Track name', { exact: true })).toHaveValue('Legacy browser map');
+  await expect(page.locator('#map-summary')).toContainText('1 tiles');
+  await expect(page.getByRole('button', { name: 'Play track', exact: true })).toBeEnabled();
+  await page.unroute('**/api/tracks');
+  await page.getByRole('button', { name: 'Save track', exact: true }).click();
+  await expect(page.locator('#builder-message')).toContainText('Saved Legacy browser map');
+  const records = await (await page.request.get('/api/tracks')).json();
+  const record = records.find((entry: { name: string }) => entry.name === 'Legacy browser map');
+  expect(record.layout[20][20]).toBe(2);
+  await page.getByRole('button', { name: 'Delete track', exact: true }).click();
+  await expect(page.locator('#builder-message')).toContainText('Deleted Legacy browser map');
 });
