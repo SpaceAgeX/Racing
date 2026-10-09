@@ -7,6 +7,7 @@ import { FixedStepClock, PAUSE_THRESHOLD } from './simulation/fixed-step.ts';
 import { createLapTimer, resetCurrentLap, stepLapTimer } from './simulation/lap-timer.ts';
 import { createMinimap } from './ui/minimap.ts';
 import { createLapDisplay } from './ui/lap-display.ts';
+import { createPerformanceStats } from './ui/performance-stats.ts';
 import { createTuningPanel } from './ui/tuning.ts';
 import type { TuningParameters } from './ui/tuning.ts';
 import { loadActiveTrack } from './track/storage.ts';
@@ -64,6 +65,8 @@ interface HomeScreenController {
   getPlayerName(): string;
   getLobbyName(): string;
   getSelectedTrackId(): string;
+  showLanding(): void;
+  showMultiplayer(): void;
   dispose(): void;
 }
 
@@ -235,24 +238,26 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
 }
 
 function createHomeScreen(root: HTMLElement, callbacks: {
+  onTimeTrial(): void;
+  onMultiplayer(): void;
+  onBackToLanding(): void;
   onCreateLobby(payload: CreateLobbyPayload): void;
   onJoinLobby(payload: JoinLobbyPayload): void;
 }, preferredTrackId = ''): HomeScreenController {
   root.innerHTML = `
     <div class="home-shell">
-      <section class="home-hero">
-        <div class="hero-card">
-          <h1>Race rooms on your network.</h1>
-          <a href="/map-builder/" class="map-builder-link">Map Builder</a>
-          <p>Create a lobby, pick a track, and only load the map once the host starts the race. Until then, this is the home screen.</p>
-          <div class="hero-stats">
-            <div class="hero-stat"><strong>Lobby</strong><span>Waiting room before any driving begins</span></div>
-            <div class="hero-stat"><strong>Race</strong><span>The map loads only after the host starts</span></div>
-            <div class="hero-stat"><strong>Leave</strong><span>Return here from both lobby and race</span></div>
-          </div>
+      <section id="home-landing" class="home-landing">
+        <div class="hero-card home-title"><h1>Choose your race</h1><p>Race alone, meet friends in a room, or build a track.</p></div>
+        <div class="home-choice-grid">
+          <button id="home-time-trial" class="home-choice" type="button"><strong>Time Trial</strong><span>Race immediately on your selected track.</span></button>
+          <button id="home-multiplayer" class="home-choice" type="button"><strong>Multiplayer Race</strong><span>Create a room or join an open lobby.</span></button>
+          <a class="home-choice home-choice-link" href="/map-builder/"><strong>Map Builder</strong><span>Design and share a track.</span></a>
         </div>
+      </section>
+      <section id="home-multiplayer-menu" class="home-multiplayer" hidden>
+        <div class="hero-card"><button id="home-back" class="back-button" type="button">← Back</button><h1>Multiplayer race</h1><p>Create a lobby for friends or join a room that is waiting for players.</p></div>
         <div class="panel-card">
-          <h2>Quick setup</h2>
+          <h2>Create a lobby</h2>
           <div class="multiplayer-launch">
             <label>Player name<input id="home-player-name" type="text" maxlength="32" /></label>
             <label>Lobby name<input id="home-lobby-name" type="text" maxlength="32" /></label>
@@ -261,12 +266,9 @@ function createHomeScreen(root: HTMLElement, callbacks: {
               <button id="home-create-lobby" type="button">Create lobby</button>
             </div>
           </div>
-          <div id="home-status" class="multiplayer-status">Connected to the server.</div>
         </div>
-      </section>
-      <section class="lobby-list-card">
-        <h2>Open lobbies</h2>
-        <div id="home-lobby-list" class="lobby-list"></div>
+        <section class="lobby-list-card"><h2>Join a lobby</h2><div id="home-lobby-list" class="lobby-list"></div></section>
+        <div id="home-status" class="multiplayer-status">Connect to view open lobbies.</div>
       </section>
     </div>
   `;
@@ -277,6 +279,11 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   const trackSelect = root.querySelector<HTMLSelectElement>('#home-track-select')!;
   const createButton = root.querySelector<HTMLButtonElement>('#home-create-lobby')!;
   const lobbyList = root.querySelector<HTMLElement>('#home-lobby-list')!;
+  const landing = root.querySelector<HTMLElement>('#home-landing')!;
+  const multiplayerMenu = root.querySelector<HTMLElement>('#home-multiplayer-menu')!;
+  root.querySelector<HTMLButtonElement>('#home-time-trial')!.addEventListener('click', callbacks.onTimeTrial);
+  root.querySelector<HTMLButtonElement>('#home-multiplayer')!.addEventListener('click', callbacks.onMultiplayer);
+  root.querySelector<HTMLButtonElement>('#home-back')!.addEventListener('click', () => { callbacks.onBackToLanding(); });
   let trackOptions: TrackOption[] = [];
 
   function selectedName(): string {
@@ -349,6 +356,8 @@ function createHomeScreen(root: HTMLElement, callbacks: {
     getPlayerName(): string { return selectedName(); },
     getLobbyName(): string { return selectedLobbyName(); },
     getSelectedTrackId(): string { return selectedTrackId(); },
+    showLanding(): void { landing.hidden = false; multiplayerMenu.hidden = true; },
+    showMultiplayer(): void { landing.hidden = true; multiplayerMenu.hidden = false; },
     dispose(): void { createButton.replaceWith(createButton.cloneNode(true)); },
   };
 }
@@ -490,8 +499,9 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   const raceLeaveButton = document.querySelector<HTMLButtonElement>('#race-leave');
   const raceRoomName = document.querySelector<HTMLElement>('#race-room-name');
   const raceRoomStatus = document.querySelector<HTMLElement>('#race-room-status');
+  const performanceStatsElement = document.querySelector<HTMLElement>('#performance-stats');
 
-  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !raceRoomName || !raceRoomStatus) {
+  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !raceRoomName || !raceRoomStatus || !performanceStatsElement) {
     throw new Error('Multiplayer UI is missing.');
   }
 
@@ -503,6 +513,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   const raceLeaveButtonElement = raceLeaveButton;
   const raceRoomNameElement = raceRoomName;
   const raceRoomStatusElement = raceRoomStatus;
+  const performanceStats = createPerformanceStats(performanceStatsElement);
 
   const tuningPanel = createTuningPanel(tuningPanelElement, tuningToggle);
   const input = createKeyboardInput(window, document);
@@ -511,21 +522,24 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   let homeScreen: HomeScreenController;
   let lobbyScreen: LobbyScreenController;
   let session: DrivingSession | null = null;
-  let currentMode: 'home' | 'lobby' | 'race' = 'home';
+  let currentMode: 'home' | 'multiplayer' | 'lobby' | 'race' = 'home';
   let activeRoom: LobbySnapshot | null = null;
   let localPlayerId = '';
   let bootstrap: MultiplayerBootstrap | null = null;
   let animationFrame = 0;
   let lastFrameTime: number | null = null;
 
-  function setMode(mode: 'home' | 'lobby' | 'race'): void {
+  function setMode(mode: 'home' | 'multiplayer' | 'lobby' | 'race'): void {
     currentMode = mode;
-    setScreenVisibility(homeScreenRoot, mode === 'home');
+    setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer');
     setScreenVisibility(lobbyScreenRoot, mode === 'lobby');
     setScreenVisibility(raceScreenRoot, mode === 'race');
-    tuningPanelRoot.hidden = mode !== 'race' || document.body.classList.contains('tuning-collapsed');
-    tuningToggleButton.hidden = mode !== 'race';
-    if (mode !== 'race') input.clear();
+    const isTimeTrial = mode === 'race' && activeRoom === null;
+    tuningPanelRoot.hidden = !isTimeTrial || document.body.classList.contains('tuning-collapsed');
+    tuningToggleButton.hidden = !isTimeTrial;
+    raceScreenRoot.classList.toggle('multiplayer-race', mode === 'race' && activeRoom !== null);
+    input.setEnabled(mode === 'race');
+    performanceStats.setActive(mode === 'race');
   }
 
   function disposeSession(): void {
@@ -547,6 +561,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   function enterHomeScreen(message = 'Choose a lobby or create a new one.'): void {
     disposeSession();
     setMode('home');
+    homeScreen.showLanding();
     homeScreen.setStatus(message);
     homeScreen.setLobbies(bootstrap?.lobbies ?? []);
     activeRoom = null;
@@ -575,6 +590,23 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     saveMultiplayerPreferences({ playerName: homeScreen.getPlayerName(), lobbyId: room.id });
   }
 
+  function enterTimeTrial(): void {
+    activeRoom = null;
+    if (socket.connected) socket.emit('multiplayer:leave-lobby');
+    socket.disconnect();
+    setMode('race');
+    raceRoomNameElement.textContent = 'Time Trial';
+    raceRoomStatusElement.textContent = 'Solo session';
+    ensureSession(null);
+  }
+
+  function enterMultiplayerMenu(): void {
+    homeScreen.showMultiplayer();
+    setMode('multiplayer');
+    homeScreen.setStatus('Connecting to multiplayer...');
+    if (!socket.connected) socket.connect();
+  }
+
   function syncRoom(room: LobbySnapshot | null): void {
     if (!room) {
       enterHomeScreen('You left the room. Pick another lobby or create one.');
@@ -597,9 +629,16 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     }
   }
 
-  const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io();
+  const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({ autoConnect: false });
 
   homeScreen = createHomeScreen(homeRoot, {
+    onTimeTrial() { enterTimeTrial(); },
+    onMultiplayer() { enterMultiplayerMenu(); },
+    onBackToLanding() {
+      if (socket.connected) socket.disconnect();
+      homeScreen.showLanding();
+      setMode('home');
+    },
     onCreateLobby(payload) {
       saveMultiplayerPreferences({ playerName: payload.playerName, lobbyId: null });
       socket.emit('multiplayer:create-lobby', payload);
@@ -682,8 +721,12 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   });
 
   raceLeaveButtonElement.addEventListener('click', () => {
-    socket.emit('multiplayer:leave-lobby');
-    enterHomeScreen('Leaving game...');
+    if (activeRoom && socket.connected) {
+      socket.emit('multiplayer:leave-lobby');
+      enterHomeScreen('Leaving game...');
+    } else {
+      enterHomeScreen('Choose another mode.');
+    }
   });
 
   function resetTiming(): void {
@@ -706,6 +749,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
         socket.emit('multiplayer:update-state', { state: session.state });
       }
       refreshSessionFromRoom();
+      performanceStats.rendered(performance.now());
     }
   }
 
@@ -728,6 +772,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
       document.removeEventListener('visibilitychange', resetTiming);
       window.removeEventListener('blur', resetTiming);
       input.dispose();
+      performanceStats.dispose();
       socket.disconnect();
       disposeSession();
       tuningPanel.dispose();

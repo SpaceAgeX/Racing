@@ -45,6 +45,10 @@ app.disable('x-powered-by');
 const trackFile = process.env.TRACKS_FILE ?? fileURLToPath(new URL('../data/tracks.json', import.meta.url));
 const trackStore = await createTrackStore(trackFile);
 app.use('/api/tracks', createTracksApi(trackStore, broadcastTrackOptions));
+app.get('/api/ping', (_request, response) => {
+  response.setHeader('Cache-Control', 'no-store');
+  response.json({ time: Date.now() });
+});
 app.get('/favicon.ico', (_request, response) => response.sendStatus(204));
 app.use('/assets', express.static(bundleDirectory));
 app.use(express.static(publicDirectory));

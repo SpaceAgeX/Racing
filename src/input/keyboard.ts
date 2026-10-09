@@ -4,14 +4,18 @@ const drivingKeys = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
 
 export function createKeyboardInput(windowTarget: Window, documentTarget: Document) {
   const held = new Set<string>();
+  let enabled = false;
+
+  const isTextInput = (target: EventTarget | null): boolean => target instanceof HTMLElement
+    && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (!drivingKeys.has(event.code)) return;
+    if (!enabled || isTextInput(event.target) || !drivingKeys.has(event.code)) return;
     event.preventDefault();
     held.add(event.code);
   };
   const onKeyUp = (event: KeyboardEvent): void => {
-    if (!drivingKeys.has(event.code)) return;
+    if (!enabled || isTextInput(event.target) || !drivingKeys.has(event.code)) return;
     event.preventDefault();
     held.delete(event.code);
   };
@@ -34,6 +38,10 @@ export function createKeyboardInput(windowTarget: Window, documentTarget: Docume
         steering: (Number(held.has('KeyA')) - Number(held.has('KeyD'))) as DrivingControls['steering'],
         brake: forward && reverse,
       };
+    },
+    setEnabled(value: boolean): void {
+      enabled = value;
+      if (!enabled) clear();
     },
     clear,
     dispose(): void {
