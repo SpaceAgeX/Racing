@@ -45,28 +45,30 @@ export function createMinimap(canvas: HTMLCanvasElement, layout: TrackLayout, ti
     }
   }
 
-  function update(state: Readonly<VehicleState>): void {
+  function update(markers: ReadonlyArray<{ state: Readonly<VehicleState>; color: string }>): void {
     context!.setTransform(ratio, 0, 0, ratio, 0, 0);
     context!.clearRect(0, 0, size, size);
     context!.drawImage(background, 0, 0, size, size);
-    const point = mapPoint(state.position.x, state.position.z);
-    // Keep the indicator visible if a crash carries the car beyond the map bounds.
+    // Keep each indicator visible if a crash carries a car beyond the map bounds.
     const margin = 9;
-    context!.save();
-    context!.translate(Math.max(margin, Math.min(size - margin, point.x)), Math.max(margin, Math.min(size - margin, point.y)));
-    context!.rotate(-state.heading);
-    context!.beginPath();
-    context!.moveTo(0, -7);
-    context!.lineTo(4.5, 4.5);
-    context!.lineTo(0, 2.5);
-    context!.lineTo(-4.5, 4.5);
-    context!.closePath();
-    context!.fillStyle = '#ff8a3d';
-    context!.strokeStyle = '#fff';
-    context!.lineWidth = 1.3;
-    context!.fill();
-    context!.stroke();
-    context!.restore();
+    for (const marker of markers) {
+      const point = mapPoint(marker.state.position.x, marker.state.position.z);
+      context!.save();
+      context!.translate(Math.max(margin, Math.min(size - margin, point.x)), Math.max(margin, Math.min(size - margin, point.y)));
+      context!.rotate(-marker.state.heading);
+      context!.beginPath();
+      context!.moveTo(0, -7);
+      context!.lineTo(4.5, 4.5);
+      context!.lineTo(0, 2.5);
+      context!.lineTo(-4.5, 4.5);
+      context!.closePath();
+      context!.fillStyle = marker.color;
+      context!.strokeStyle = '#fff';
+      context!.lineWidth = 1.3;
+      context!.fill();
+      context!.stroke();
+      context!.restore();
+    }
   }
 
   const observer = new ResizeObserver(resize);

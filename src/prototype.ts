@@ -41,12 +41,14 @@ interface RemoteCarEntry {
   visual: ReturnType<typeof createCarVisual>;
   state: VehicleState;
   color: string;
+  visible: boolean;
 }
 
 interface DrivingSession {
   trackId: string;
   trackName: string;
   layout: TrackLayout;
+  playerColor: string;
   state: VehicleState;
   view: ReturnType<typeof createScene>;
   car: ReturnType<typeof createCarVisual>;
@@ -107,11 +109,15 @@ function colorToNumber(color: string): number {
   return Number.parseInt(color.slice(1), 16);
 }
 
+function localPlayerColor(room: LobbySnapshot | null, playerId: string): string {
+  return room?.players.find((player) => player.id === playerId)?.color ?? '#ee7136';
+}
+
 function setScreenVisibility(screen: HTMLElement, visible: boolean): void {
   screen.hidden = !visible;
 }
 
-function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters): DrivingSession {
+function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters, playerColor: string): DrivingSession {
   document.querySelector('#active-track-name')!.textContent = trackName;
   const lapContainer = document.querySelector<HTMLElement>('#lap-display');
   if (!lapContainer) throw new Error('Lap display is missing.');
@@ -132,14 +138,22 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap');
   if (!minimapCanvas) throw new Error('Minimap canvas is missing.');
   const minimap = createMinimap(minimapCanvas, layout, trackTileSize);
-  minimap.update(rendered);
 
   const clock = new FixedStepClock();
   const view = createScene(canvas, layout, trackTileSize);
-  const car = createCarVisual();
+  const car = createCarVisual(colorToNumber(playerColor));
   const followCamera = createFollowCamera(view.camera, state);
   view.scene.add(car.object);
   const remoteCars = new Map<string, RemoteCarEntry>();
+
+  function updateMinimap(): void {
+    const markers: { state: Readonly<VehicleState>; color: string }[] = [{ state: rendered, color: playerColor }];
+    for (const remote of remoteCars.values()) {
+      if (!remote.visible) continue;
+      markers.push({ state: remote.state, color: remote.color });
+    }
+    minimap.update(markers);
+  }
 
   function syncRemotePlayers(players: LobbyPlayerSnapshot[], localPlayerId: string): void {
     const wantedIds = new Set(players.filter((player) => player.id !== localPlayerId).map((player) => player.id));
@@ -162,7 +176,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
         const visual = createCarVisual(colorToNumber(player.color));
         visual.object.visible = false;
         view.scene.add(visual.object);
-        remoteCars.set(player.id, { visual, state: createVehicleState(), color: player.color });
+        remoteCars.set(player.id, { visual, state: createVehicleState(), color: player.color, visible: false });
       }
       const remote = remoteCars.get(player.id)!;
       remote.color = player.color;
@@ -170,10 +184,13 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
         copyVehicleState(player.state, remote.state);
         remote.visual.object.visible = true;
         remote.visual.update(remote.state);
+        remote.visible = true;
       } else {
         remote.visual.object.visible = false;
+        remote.visible = false;
       }
     }
+    updateMinimap();
   }
 
   function updateRemotePlayer(playerId: string, snapshot: VehicleState): void {
@@ -181,12 +198,14 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     if (!remote) {
       const visual = createCarVisual(0x8ca0ab);
       view.scene.add(visual.object);
-      remote = { visual, state: createVehicleState(), color: '#8ca0ab' };
+      remote = { visual, state: createVehicleState(), color: '#8ca0ab', visible: true };
       remoteCars.set(playerId, remote);
     }
     copyVehicleState(snapshot, remote.state);
     remote.visual.object.visible = true;
     remote.visual.update(remote.state);
+    remote.visible = true;
+    updateMinimap();
   }
 
   function step(elapsed: number, controls: Readonly<DrivingControls>): void {
@@ -210,13 +229,14 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     view.followSun(rendered.position);
     view.renderer.render(view.scene, view.camera);
     lapDisplay.update(lapTimer);
-    minimap.update(rendered);
+    updateMinimap();
   }
 
   return {
     trackId,
     trackName,
     layout,
+    playerColor,
     state,
     view,
     car,
@@ -551,9 +571,10 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     const desiredLayout = room?.settings.layout ?? fallbackLayout;
     const desiredTrackName = room?.settings.trackName ?? fallbackTrackName;
     const desiredTrackId = room?.settings.trackId ?? fallbackTrackId;
-    if (!session || session.trackId !== desiredTrackId) {
+    const desiredColor = localPlayerColor(room, localPlayerId);
+    if (!session || session.trackId !== desiredTrackId || session.playerColor !== desiredColor) {
       disposeSession();
-      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, tuningPanel.parameters);
+      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, tuningPanel.parameters, desiredColor);
     }
     return session;
   }
@@ -623,9 +644,10 @@ export function startPrototype(canvas: HTMLCanvasElement) {
 
   function refreshSessionFromRoom(): void {
     if (!session || !activeRoom || currentMode !== 'race') return;
-    if (session.trackId !== activeRoom.settings.trackId) {
+    const desiredColor = localPlayerColor(activeRoom, localPlayerId);
+    if (session.trackId !== activeRoom.settings.trackId || session.playerColor !== desiredColor) {
       session.dispose();
-      session = createDrivingSession(canvas, activeRoom.settings.layout, activeRoom.settings.trackName, activeRoom.settings.trackId, tuningPanel.parameters);
+      session = createDrivingSession(canvas, activeRoom.settings.layout, activeRoom.settings.trackName, activeRoom.settings.trackId, tuningPanel.parameters, desiredColor);
     }
   }
 

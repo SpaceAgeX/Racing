@@ -19,7 +19,10 @@ import type {
   TrackOption,
 } from '../src/multiplayer/protocol.ts';
 import { trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
+import { getTrackSpawn } from '../src/track/grid.ts';
+import { trackTileSize } from '../src/track/layout.ts';
 import type { VehicleState } from '../src/simulation/types.ts';
+import { createVehicleState } from '../src/simulation/vehicle.ts';
 
 const publicDirectory = fileURLToPath(new URL('../public', import.meta.url));
 const bundleDirectory = fileURLToPath(new URL('../dist', import.meta.url));
@@ -134,6 +137,23 @@ function broadcastLobbyRoom(lobby: LobbyRecord): void {
   io.to(lobby.id).emit('multiplayer:room', { lobby: createLobbySnapshot(lobby) });
 }
 
+function destroyLobby(lobbyId: string): void {
+  const lobby = lobbies.get(lobbyId);
+  if (!lobby) return;
+
+  for (const playerId of lobby.players.keys()) {
+    playerLobby.delete(playerId);
+    const socket = io.sockets.sockets.get(playerId);
+    if (socket) {
+      void socket.leave(lobbyId);
+      socket.emit('multiplayer:room', { lobby: null });
+    }
+  }
+
+  lobbies.delete(lobbyId);
+  broadcastLobbyList();
+}
+
 async function availableTracks(): Promise<TrackOption[]> {
   return [...presetTrackOptions, ...await trackStore.list()];
 }
@@ -166,16 +186,19 @@ function leaveLobby(socketId: string): void {
   if (!lobbyId) return;
   void io.sockets.sockets.get(socketId)?.leave(lobbyId);
   const lobby = lobbies.get(lobbyId);
-  playerLobby.delete(socketId);
   if (!lobby) return;
+
+  if (lobby.hostId === socketId) {
+    destroyLobby(lobbyId);
+    return;
+  }
+
+  playerLobby.delete(socketId);
   lobby.players.delete(socketId);
   if (lobby.players.size === 0) {
     lobbies.delete(lobbyId);
     broadcastLobbyList();
     return;
-  }
-  if (lobby.hostId === socketId) {
-    lobby.hostId = lobby.players.keys().next().value as string;
   }
   broadcastLobbyRoom(lobby);
   broadcastLobbyList();
@@ -255,7 +278,19 @@ function startLobby(socketId: string): LobbyRecord | null {
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
   lobby.phase = 'race';
-  for (const player of lobby.players.values()) player.state = null;
+  const spawn = getTrackSpawn(lobby.settings.layout, trackTileSize);
+  const players = [...lobby.players.values()];
+  const spread = Math.min(2.4, trackTileSize / Math.max(3, players.length + 1));
+  for (let index = 0; index < players.length; index++) {
+    const player = players[index]!;
+    const offset = index - (players.length - 1) / 2;
+    const state = createVehicleState();
+    state.position.x = spawn.position.x + offset * spread;
+    state.position.y = spawn.position.y;
+    state.position.z = spawn.position.z + 2.5;
+    state.heading = spawn.heading;
+    player.state = state;
+  }
   return lobby;
 }
 
