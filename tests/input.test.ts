@@ -6,6 +6,7 @@ function fixture() {
   const windowTarget = new EventTarget();
   const documentTarget = Object.assign(new EventTarget(), { hidden: false });
   const input = createKeyboardInput(windowTarget as Window, documentTarget as unknown as Document);
+  input.setEnabled(true);
   return {
     windowTarget, documentTarget, input,
     key(type: 'keydown' | 'keyup', code: string): Event {

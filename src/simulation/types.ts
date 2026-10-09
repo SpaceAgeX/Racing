@@ -62,3 +62,8 @@ export interface DrivingParameters {
   steeringSpeed: number;
   steeringReturnSpeed: number;
 }
+
+export interface HandlingParameters {
+  driving: DrivingParameters;
+  physics: PhysicsParameters;
+}

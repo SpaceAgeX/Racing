@@ -1,4 +1,4 @@
-import type { VehicleState } from '../simulation/types.ts';
+import type { HandlingParameters, VehicleState } from '../simulation/types.ts';
 import type { TrackLayout } from '../track/layout.ts';
 import { trackPresets } from '../track/presets.ts';
 
@@ -22,6 +22,7 @@ export interface LobbySettings {
   trackId: string;
   trackName: string;
   layout: TrackLayout;
+  handling: HandlingParameters;
 }
 
 export type LobbyPhase = 'lobby' | 'race';
@@ -65,6 +66,7 @@ export interface CreateLobbyPayload {
   lobbyName: string;
   playerName: string;
   trackId: string;
+  handling?: HandlingParameters;
 }
 
 export interface JoinLobbyPayload {
@@ -73,7 +75,8 @@ export interface JoinLobbyPayload {
 }
 
 export interface UpdateLobbySettingsPayload {
-  trackId: string;
+  trackId?: string;
+  handling?: HandlingParameters;
 }
 
 export interface StartLobbyPayload {

@@ -40,6 +40,14 @@ test('shared maps appear live in multiplayer selectors; host settings, start, an
     await expect(page.locator('#lobby-player-list .player-entry')).toHaveCount(2);
     await expect(guest.getByRole('button', { name: 'Start race', exact: true })).toBeHidden();
     await expect(guest.locator('#lobby-track-select')).toBeDisabled();
+    await expect(page.locator('#lobby-handling-acceleration')).toBeEnabled();
+    await expect(guest.locator('#lobby-handling-acceleration')).toBeDisabled();
+    await page.locator('#lobby-handling-acceleration').evaluate((element: HTMLInputElement) => {
+      element.value = '1';
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await expect(guest.locator('#lobby-handling-acceleration')).toHaveValue('1');
     await page.locator('#lobby-track-select').selectOption('simple-loop');
     await expect(guest.locator('#lobby-track-select')).toHaveValue('simple-loop');
     await page.locator('#lobby-track-select').selectOption(trackId);
@@ -49,6 +57,14 @@ test('shared maps appear live in multiplayer selectors; host settings, start, an
     await expect(guest.locator('#race-screen')).toBeVisible();
     await expect(guest.locator('#active-track-name')).toHaveText('Multiplayer shared map');
     await page.bringToFront();
+    await page.keyboard.down('w');
+    await page.waitForTimeout(250);
+    const hostSpeed = await page.evaluate(async () => {
+      const path = '/assets/main.js'; const { prototype } = await import(path) as { prototype: ReturnType<typeof startPrototype> };
+      return prototype.state.speed;
+    });
+    expect(hostSpeed).toBeLessThan(1);
+    await page.keyboard.up('w');
     const before = await page.evaluate(async () => {
       const path = '/assets/main.js'; const { prototype } = await import(path) as { prototype: ReturnType<typeof startPrototype> };
       return prototype.state.position.z;

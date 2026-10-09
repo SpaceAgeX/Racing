@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PerspectiveCamera, Vector3 } from 'three';
-import { createFollowCamera } from '../src/rendering/camera.ts';
+import { cameraParameters, createFollowCamera } from '../src/rendering/camera.ts';
 import { createVehicleState } from '../src/simulation/vehicle.ts';
 
 test('camera starts above and behind the car and looks toward its body', () => {
@@ -9,7 +9,7 @@ test('camera starts above and behind the car and looks toward its body', () => {
   const camera = new PerspectiveCamera();
   createFollowCamera(camera, state);
   assert.ok(camera.position.y > 0 && camera.position.z > 0);
-  const expected = new Vector3(0, 0.4, 0).sub(camera.position).normalize();
+  const expected = new Vector3(0, cameraParameters.targetHeight, 0).sub(camera.position).normalize();
   assert.ok(camera.getWorldDirection(new Vector3()).distanceTo(expected) < 1e-10);
 });
 
@@ -34,9 +34,9 @@ test('camera follows a changed heading and stays aimed at the car', () => {
   const follow = createFollowCamera(camera, state);
   state.heading = Math.PI / 2;
   for (let frame = 0; frame < 180; frame++) follow.update(state, 1 / 60);
-  assert.ok(camera.position.x > 7.99);
+  assert.ok(camera.position.x > cameraParameters.distance - 0.01);
   assert.ok(Math.abs(camera.position.z) < 0.01);
-  const projected = new Vector3(0, 0.4, 0).project(camera);
+  const projected = new Vector3(0, cameraParameters.targetHeight, 0).project(camera);
   assert.ok(Math.abs(projected.x) < 1e-8 && Math.abs(projected.y) < 1e-8);
 });
 
@@ -62,6 +62,27 @@ test('respawn resets camera position and target immediately instead of smoothing
   for (let frame = 0; frame < 60; frame++) follow.update(state, 1 / 60);
   follow.reset(createVehicleState());
   assert.ok(camera.position.distanceTo(initialPosition) < 1e-10);
-  const expected = new Vector3(0, 0.4, 0).sub(camera.position).normalize();
+  const expected = new Vector3(0, cameraParameters.targetHeight, 0).sub(camera.position).normalize();
   assert.ok(camera.getWorldDirection(new Vector3()).distanceTo(expected) < 1e-10);
+});
+
+test('first-person camera stays centered and fixed to the car during acceleration and body tilt', () => {
+  const state = createVehicleState();
+  const camera = new PerspectiveCamera();
+  const follow = createFollowCamera(camera, state);
+  follow.toggleMode();
+  follow.update(state, 1 / 60);
+  const relativePosition = camera.position.clone().sub(new Vector3(state.position.x, state.position.y, state.position.z));
+  assert.equal(relativePosition.x, 0);
+  assert.equal(relativePosition.y, cameraParameters.firstPersonOffset.y);
+  assert.equal(relativePosition.z, cameraParameters.firstPersonOffset.z);
+
+  state.position.x = 12;
+  state.position.z = -18;
+  state.pitch = 0.6;
+  state.roll = -0.4;
+  follow.update(state, 1 / 60);
+  const movedRelativePosition = camera.position.clone().sub(new Vector3(state.position.x, state.position.y, state.position.z));
+  assert.ok(movedRelativePosition.distanceTo(relativePosition) < 1e-10);
+  assert.ok(camera.getWorldDirection(new Vector3()).x === 0);
 });

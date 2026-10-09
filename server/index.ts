@@ -17,11 +17,14 @@ import type {
   MultiplayerBootstrap,
   ServerToClientEvents,
   TrackOption,
+  UpdateLobbySettingsPayload,
 } from '../src/multiplayer/protocol.ts';
 import { trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
 import { getTrackSpawn } from '../src/track/grid.ts';
 import { trackTileSize } from '../src/track/layout.ts';
 import type { VehicleState } from '../src/simulation/types.ts';
+import type { DrivingParameters, HandlingParameters, PhysicsParameters } from '../src/simulation/types.ts';
+import { drivingParameters, physicsParameters } from '../src/simulation/parameters.ts';
 import { createVehicleState } from '../src/simulation/vehicle.ts';
 
 const publicDirectory = fileURLToPath(new URL('../public', import.meta.url));
@@ -70,6 +73,43 @@ interface LobbyRecord {
   phase: LobbyPhase;
   settings: LobbySettings;
   players: Map<string, LobbyPlayerRecord>;
+}
+
+const drivingBounds: Record<keyof DrivingParameters, readonly [number, number]> = {
+  acceleration: [1, 40], reverseAcceleration: [0.5, 25], braking: [1, 80], maxSpeed: [1, 80],
+  maxReverseSpeed: [0.5, 30], rollingDrag: [0, 5], linearDrag: [0, 1], quadraticDrag: [0, 0.03],
+  wheelbase: [0.5, 6], maxSteeringAngle: [0.05, 1.2], highSpeedSteeringAngle: [0, 1.2],
+  steeringLimitSpeed: [1, 80], steeringSpeed: [0.1, 8], steeringReturnSpeed: [0.1, 10],
+};
+const physicsBounds: Record<keyof PhysicsParameters, readonly [number, number]> = {
+  gravity: [0, 30], respawnDelay: [0.2, 5], groundSnapDistance: [0.01, 1],
+  collisionRestitution: [0, 0.8], spinDamping: [0.1, 8], crashGrip: [0.1, 12], crashRecoveryTime: [0.1, 4],
+};
+
+function normalizeNumericSettings<T extends object>(
+  value: unknown,
+  defaults: Readonly<T>,
+  bounds: Readonly<Record<keyof T, readonly [number, number]>>,
+): T | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const result = { ...defaults } as T;
+  for (const key of Object.keys(defaults) as (keyof T)[]) {
+    const number = candidate[String(key)];
+    const [minimum, maximum] = bounds[key];
+    if (typeof number !== 'number' || !Number.isFinite(number) || number < minimum || number > maximum) return null;
+    result[key] = number as T[keyof T];
+  }
+  return result;
+}
+
+function normalizeHandling(value: unknown): HandlingParameters | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  const driving = normalizeNumericSettings(candidate.driving, drivingParameters, drivingBounds);
+  const physics = normalizeNumericSettings(candidate.physics, physicsParameters, physicsBounds);
+  if (!driving || !physics || driving.highSpeedSteeringAngle > driving.maxSteeringAngle) return null;
+  return { driving, physics };
 }
 
 const httpServer = createServer(app);
@@ -204,8 +244,9 @@ function leaveLobby(socketId: string): void {
   broadcastLobbyList();
 }
 
-async function createLobby(socketId: string, playerName: string, lobbyName: string, trackId: string): Promise<LobbyRecord> {
+async function createLobby(socketId: string, playerName: string, lobbyName: string, trackId: string, requestedHandling: unknown): Promise<LobbyRecord> {
   const track = await resolveTrack(trackId);
+  const handling = normalizeHandling(requestedHandling) ?? { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
   if (!io.sockets.sockets.has(socketId)) throw new Error('The player disconnected.');
   leaveLobby(socketId);
   const lobby: LobbyRecord = {
@@ -217,6 +258,7 @@ async function createLobby(socketId: string, playerName: string, lobbyName: stri
       trackId: track.id,
       trackName: track.name,
       layout: track.layout,
+      handling,
     },
     players: new Map(),
   };
@@ -257,17 +299,20 @@ function applyState(socketId: string, state: VehicleState): LobbyRecord | null {
   return lobby;
 }
 
-async function updateLobbySettings(socketId: string, trackId: string): Promise<LobbyRecord | null> {
+async function updateLobbySettings(socketId: string, { trackId, handling: requestedHandling }: UpdateLobbySettingsPayload): Promise<LobbyRecord | null> {
   const lobbyId = playerLobby.get(socketId);
   if (!lobbyId) return null;
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
-  const track = await resolveTrack(trackId);
+  const handling = requestedHandling === undefined ? null : normalizeHandling(requestedHandling);
+  if (requestedHandling !== undefined && !handling) throw new Error('The handling settings are invalid.');
+  const track = trackId === undefined ? null : await resolveTrack(trackId);
   if (lobbies.get(lobbyId) !== lobby || playerLobby.get(socketId) !== lobbyId || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
   lobby.settings = {
-    trackId: track.id,
-    trackName: track.name,
-    layout: track.layout,
+    trackId: track?.id ?? lobby.settings.trackId,
+    trackName: track?.name ?? lobby.settings.trackName,
+    layout: track?.layout ?? lobby.settings.layout,
+    handling: handling ?? lobby.settings.handling,
   };
   return lobby;
 }
@@ -297,9 +342,9 @@ function startLobby(socketId: string): LobbyRecord | null {
 io.on('connection', (socket) => {
   void emitBootstrap(socket).catch(() => socket.emit('multiplayer:error', { message: 'Could not load available tracks.' }));
 
-  socket.on('multiplayer:create-lobby', async ({ lobbyName, playerName, trackId }) => {
+  socket.on('multiplayer:create-lobby', async ({ lobbyName, playerName, trackId, handling }) => {
     try {
-      const lobby = await createLobby(socket.id, playerName, lobbyName, trackId);
+      const lobby = await createLobby(socket.id, playerName, lobbyName, trackId, handling);
       await socket.join(lobby.id);
       broadcastLobbyRoom(lobby);
       broadcastLobbyList();
@@ -323,9 +368,9 @@ io.on('connection', (socket) => {
     broadcastLobbyList();
   });
 
-  socket.on('multiplayer:update-settings', async ({ trackId }) => {
+  socket.on('multiplayer:update-settings', async (settings) => {
     try {
-      const lobby = await updateLobbySettings(socket.id, trackId);
+      const lobby = await updateLobbySettings(socket.id, settings);
       if (!lobby) return;
       broadcastLobbyRoom(lobby);
       broadcastLobbyList();
