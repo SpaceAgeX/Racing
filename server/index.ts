@@ -76,7 +76,9 @@ app.get('/favicon.ico', (_request, response) => response.sendStatus(204));
 app.use('/assets', express.static(bundleDirectory, {
   setHeaders(response) { response.setHeader('Cache-Control', 'no-cache'); },
 }));
-app.use(express.static(publicDirectory));
+app.use(express.static(publicDirectory, {
+  setHeaders(response) { response.setHeader('Cache-Control', 'no-cache'); },
+}));
 
 interface LobbyPlayerRecord {
   id: string;
