@@ -699,3 +699,16 @@ kbd {
   appearance: none; opacity: .5; background: #20282d; color: #b0b9bf;
   border-color: #ffffff16; cursor: not-allowed;
 }
+
+.room-chat { position: fixed; right: 20px; bottom: 20px; z-index: 150; width: min(380px, calc(100vw - 40px)); color: #edf4f7; }
+.room-chat [hidden], .room-chat[hidden] { display: none; }
+.room-chat button { color: #edf4f7; background: #263b45; border: 1px solid #647881; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.chat-toggle { float: right; }
+.chat-panel { clear: both; padding: 14px; background: rgba(14, 25, 31, .96); border: 1px solid #647881; border-radius: 12px; }
+.chat-panel header { display: flex; justify-content: space-between; align-items: center; }
+.chat-messages { height: min(230px, 30vh); overflow-y: auto; overflow-wrap: anywhere; padding: 10px 0; }
+.chat-messages > div { margin-bottom: 8px; }
+.chat-messages strong { color: #6bc5ff; }
+.chat-panel form { display: flex; gap: 8px; }
+.chat-panel input { min-width: 0; flex: 1; padding: 10px; color: white; background: #17252d; border: 1px solid #647881; border-radius: 8px; }
+.chat-panel small { display: block; margin-top: 8px; color: #acbec7; }

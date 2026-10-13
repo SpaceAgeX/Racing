@@ -489,6 +489,18 @@ io.on('connection', (socket) => {
     socket.emit('debug:telemetry', getServerDiagnostics(socket));
   });
 
+  let lastChatAt = -Infinity;
+  socket.on('multiplayer:chat', (text) => {
+    const roomId = playerLobby.get(socket.id);
+    const room = roomId ? lobbies.get(roomId) : undefined;
+    const player = room?.players.get(socket.id);
+    if (!room || !player || typeof text !== 'string' || text.length > 300) return;
+    const cleaned = text.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+    if (!cleaned || performance.now() - lastChatAt < 500) return;
+    lastChatAt = performance.now();
+    io.to(room.id).emit('multiplayer:chat', { roomId: room.id, playerId: socket.id, name: player.name, text: cleaned });
+  });
+
   socket.on('multiplayer:create-lobby', async (payload) => {
     try {
       const { lobbyName, playerName, trackId, handling } = payload;

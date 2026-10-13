@@ -132,7 +132,10 @@ export interface ServerDiagnosticsSnapshot {
   lobbies: { id: string; name: string; phase: LobbyPhase; players: number }[];
 }
 
+export interface ChatMessage { roomId: string; playerId: string; name: string; text: string; }
+
 export interface ClientToServerEvents {
+  'multiplayer:chat': (text: string) => void;
   'multiplayer:create-lobby': (payload: CreateLobbyPayload) => void;
   'multiplayer:join-lobby': (payload: JoinLobbyPayload) => void;
   'multiplayer:leave-lobby': () => void;
@@ -144,6 +147,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
+  'multiplayer:chat': (message: ChatMessage) => void;
   'recording:probe': (reply: (report: RecordingClientReport) => void) => void;
   'multiplayer:tracks': (payload: { trackOptions: TrackOption[] }) => void;
   'multiplayer:bootstrap': (payload: MultiplayerBootstrap) => void;

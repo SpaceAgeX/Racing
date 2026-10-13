@@ -1,6 +1,7 @@
 import { createLobbyScreen } from './ui/lobby.ts';
 import { io, type Socket } from 'socket.io-client';
 import { createKeyboardInput } from './input/keyboard.ts';
+import { createChat } from './ui/chat.ts';
 import { createCarVisual } from './rendering/car.ts';
 import { createFollowCamera } from './rendering/camera.ts';
 import { createScene } from './rendering/scene.ts';
@@ -562,6 +563,8 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   let animationFrame = 0;
   let lastFrameTime: number | null = null;
   let lastStateSentAt = Number.NEGATIVE_INFINITY;
+  const chat = createChat(text => { if (socket.connected) socket.emit('multiplayer:chat', text); },
+    open => input.setEnabled(currentMode === 'race' && !open));
   const networkStats = {
     startedAt: performance.now(),
     stateMessagesSent: 0, stateMessagesReceived: 0, approximateJsonBytesSent: 0, approximateJsonBytesReceived: 0,
@@ -580,7 +583,8 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     tuningPanelRoot.hidden = !isTimeTrial || document.body.classList.contains('tuning-collapsed');
     tuningToggleButton.hidden = !isTimeTrial;
     raceScreenRoot.classList.toggle('multiplayer-race', mode === 'race' && activeRoom !== null);
-    input.setEnabled(mode === 'race');
+    chat.setRoom((mode === 'lobby' || mode === 'race') ? activeRoom?.id ?? null : null);
+    input.setEnabled(mode === 'race' && !chat.isOpen);
     performanceStats.setActive(mode === 'race');
   }
 
@@ -843,6 +847,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     lobbyScreen.setTrackOptions(trackOptions);
   });
 
+  socket.on('multiplayer:chat', message => chat.receive(message));
   socket.on('multiplayer:room', ({ lobby }) => {
     networkStats.roomEventsReceived++;
     if (bootstrap) bootstrap = { ...bootstrap, activeLobbyId: lobby?.id ?? null, activeLobbyPhase: lobby?.phase ?? null };
@@ -870,6 +875,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   });
 
   socket.on('disconnect', () => {
+    chat.setRoom(null);
     networkStats.disconnects++;
     homeScreen.setStatus('Disconnected. Reconnecting...');
     lobbyScreen.setStatus('Disconnected. Reconnecting...');
@@ -949,6 +955,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
       document.removeEventListener('visibilitychange', resetTiming);
       window.removeEventListener('blur', resetTiming);
       input.dispose();
+      chat.dispose();
       performanceStats.dispose();
       developerConsole.dispose();
       timeTrialSetup.dispose();
