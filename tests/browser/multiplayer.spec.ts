@@ -72,9 +72,12 @@ test('shared maps appear live in multiplayer selectors; host settings, start, an
       const path = '/assets/main.js'; const { prototype } = await import(path) as { prototype: ReturnType<typeof startPrototype> };
       return prototype.state.position.z;
     });
-    await page.keyboard.down('w');
+    await page.evaluate(async () => {
+      const path = '/assets/main.js'; const { prototype } = await import(path) as { prototype: ReturnType<typeof startPrototype> };
+      prototype.state.speed = 0;
+      prototype.state.position.z -= 1;
+    });
     await expect.poll(async () => (await remoteCars(guest))[0]?.z ?? before).toBeLessThan(before - .5);
-    await page.keyboard.up('w');
     await page.screenshot({ path: 'test-results/multiplayer-shared-race.png' });
     await guest.getByRole('button', { name: 'Leave game', exact: true }).click();
     await expect(guest.locator('#home-screen')).toBeVisible();

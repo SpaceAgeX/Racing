@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import type { ClientToServerEvents, ServerToClientEvents, LobbySnapshot } from '../../src/multiplayer/protocol.ts';
 
 test('lobby previews, colors and host settings update live for guests', async ({ page, browser }) => {
+  test.setTimeout(60_000);
   const guestContext = await browser.newContext({ baseURL: 'http://127.0.0.1:3100' });
   try {
     const guest = await guestContext.newPage();

@@ -1,5 +1,7 @@
 # Driving prototype
 
+Pi deployment, the global 15-session admission limit, Cloudflare setup, and benchmark recorder commands are documented in [deploy/README.md](deploy/README.md).
+
 A browser racing prototype using Three.js and TypeScript, served by Node.js and Express with Socket.IO race rooms. The scene contains rectangular cars, a track made from square tiles, a start/finish arch, sunlight, ambient light, and a smooth following camera.
 
 ## Run locally

@@ -9,6 +9,7 @@ import type { BuildContext } from 'esbuild';
 import { createTrackStore } from './track-store.ts';
 import { createTracksApi } from './tracks-api.ts';
 import { createGameRecorder } from './game-recorder.ts';
+import { createAdmission } from './admission.ts';
 import type {
   ClientToServerEvents,
   LobbyPlayerSnapshot,
@@ -51,6 +52,19 @@ if (development) {
 
 const app = express();
 app.disable('x-powered-by');
+app.use((request, response, next) => {
+  const started = performance.now();
+  response.once('finish', () => {
+    const length = Number(response.getHeader('content-length'));
+    recorder.http(request.path.startsWith('/assets/') ? 'assets' : request.path.startsWith('/api/') ? 'api' : 'pages',
+      response.statusCode, Number.isFinite(length) ? length : null, performance.now() - started);
+  });
+  next();
+});
+const admission = createAdmission(Number(process.env.MAX_BROWSER_SESSIONS ?? 15));
+app.get('/healthz', (_request, response) => response.json({ ok: true }));
+app.use(admission.middleware);
+app.post('/api/session/heartbeat', (_request, response) => response.sendStatus(204));
 const trackFile = process.env.TRACKS_FILE ?? fileURLToPath(new URL('../data/tracks.json', import.meta.url));
 const trackStore = await createTrackStore(trackFile);
 app.use('/api/tracks', createTracksApi(trackStore, broadcastTrackOptions));
@@ -120,6 +134,13 @@ function normalizeHandling(value: unknown): HandlingParameters | null {
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   serveClient: false,
+  allowRequest: (request, done) => done(null, admission.authorized(request)),
+});
+io.use((socket, next) => {
+  const error = admission.socket(socket.request, socket.id, () => socket.disconnect(true));
+  if (error) { next(new Error(error)); return; }
+  socket.on('disconnect', () => admission.releaseSocket(socket.request, socket.id));
+  next();
 });
 
 const lobbies = new Map<string, LobbyRecord>();
@@ -448,6 +469,7 @@ function startLobby(socketId: string): LobbyRecord | null {
 }
 
 io.on('connection', (socket) => {
+  let pendingSettings: Promise<void> = Promise.resolve();
   recorder.connection(socket.id, true);
   trafficWindows.set(socket.id, {
     startedAt: performance.now(),
@@ -467,8 +489,9 @@ io.on('connection', (socket) => {
     socket.emit('debug:telemetry', getServerDiagnostics(socket));
   });
 
-  socket.on('multiplayer:create-lobby', async ({ lobbyName, playerName, trackId, handling }) => {
+  socket.on('multiplayer:create-lobby', async (payload) => {
     try {
+      const { lobbyName, playerName, trackId, handling } = payload;
       const lobby = await createLobby(socket.id, playerName, lobbyName, trackId, handling);
       await socket.join(lobby.id);
       broadcastLobbyRoom(lobby);
@@ -476,7 +499,9 @@ io.on('connection', (socket) => {
     } catch (error) { socket.emit('multiplayer:error', { message: error instanceof Error ? error.message : 'Could not create lobby.' }); }
   });
 
-  socket.on('multiplayer:join-lobby', ({ lobbyId, playerName }) => {
+  socket.on('multiplayer:join-lobby', (payload) => {
+    if (!payload || typeof payload.lobbyId !== 'string' || typeof payload.playerName !== 'string') return;
+    const { lobbyId, playerName } = payload;
     const lobby = joinLobby(socket.id, lobbyId, playerName);
     if (!lobby) {
       socket.emit('multiplayer:error', { message: 'That lobby is full, already racing, or no longer exists.' });
@@ -493,13 +518,15 @@ io.on('connection', (socket) => {
     broadcastLobbyList();
   });
 
-  socket.on('multiplayer:update-settings', async (settings) => {
+  socket.on('multiplayer:update-settings', (settings) => {
+    pendingSettings = pendingSettings.then(async () => {
     try {
       const lobby = await updateLobbySettings(socket.id, settings);
       if (!lobby) return;
       broadcastLobbyRoom(lobby);
       broadcastLobbyList();
     } catch (error) { socket.emit('multiplayer:error', { message: error instanceof Error ? error.message : 'Could not change track.' }); }
+    });
   });
 
   socket.on('multiplayer:set-color', (payload) => {
@@ -520,7 +547,8 @@ io.on('connection', (socket) => {
     broadcastLobbyRoom(lobby);
   });
 
-  socket.on('multiplayer:start-lobby', () => {
+  socket.on('multiplayer:start-lobby', async () => {
+    await pendingSettings;
     const lobby = startLobby(socket.id);
     if (!lobby) {
       socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
@@ -530,7 +558,20 @@ io.on('connection', (socket) => {
     broadcastLobbyList();
   });
 
-  socket.on('multiplayer:update-state', ({ state }) => {
+  socket.on('multiplayer:update-state', (message) => {
+    if (!message?.state || typeof message.state !== 'object') return;
+    const state = createVehicleState();
+    for (const key of Object.keys(state) as (keyof VehicleState)[]) {
+      const value = message.state[key];
+      if (key === 'position') {
+        const position = message.state.position;
+        if (!position || ![position.x, position.y, position.z].every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 1e7)) return;
+        state.position = { x: position.x, y: position.y, z: position.z };
+      } else {
+        if (typeof value !== typeof state[key] || (typeof value === 'number' && (!Number.isFinite(value) || Math.abs(value) > 1e7))) return;
+        Object.assign(state, { [key]: value });
+      }
+    }
     const lobby = applyState(socket.id, state);
     if (!lobby) return;
     const incomingBytes = Buffer.byteLength(JSON.stringify(state));
@@ -566,6 +607,7 @@ io.on('connection', (socket) => {
 });
 
 const recorder = createGameRecorder(() => ({
+  admittedSessions: admission.count,
   clients: [...io.sockets.sockets.values()],
   rooms: [...lobbies.values()].map(room => ({ id: room.id, phase: room.phase, players: room.players.size, trackId: room.settings.trackId })),
   roomForPlayer: id => playerLobby.get(id) ?? null,
@@ -588,6 +630,7 @@ const server = httpServer.listen(port, host, () => {
 });
 
 async function shutdown(): Promise<void> {
+  admission.close();
   await recorder.close();
   await new Promise<void>((closed) => io.close(() => closed()));
   await trackStore.flush();

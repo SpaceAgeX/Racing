@@ -1,0 +1,23 @@
+[Unit]
+Description=Cloudflare tunnel for racing only
+After=network-online.target racing.service
+Wants=network-online.target
+ConditionPathExists=/etc/racing/tunnel-token
+
+[Service]
+Type=simple
+User=racing
+Group=racing
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --config /etc/racing/cloudflared.yml --metrics 127.0.0.1:20242 run --token-file /etc/racing/tunnel-token
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+MemoryMax=256M
+CPUWeight=25
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

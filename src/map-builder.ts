@@ -1,4 +1,6 @@
 import { trackLayout } from './track/layout.ts';
+import { startAdmissionHeartbeat } from './admission.ts';
+startAdmissionHeartbeat();
 import type { TrackTile } from './track/layout.ts';
 import { cloneTrack, emptyTrack, MAP_SIZE, paintTrack, paintTrackStroke, trackSummary } from './track/model.ts';
 import { trackPresets } from './track/presets.ts';

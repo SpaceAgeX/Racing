@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: {
     command: 'node server/index.ts --dev',
     url: 'http://127.0.0.1:3100',
-    env: { PORT: '3100', HOST: '127.0.0.1', TRACKS_FILE: resolve('test-results', `tracks-${randomUUID()}.json`) },
+    env: { PORT: '3100', HOST: '127.0.0.1', MAX_BROWSER_SESSIONS: '0', RACING_RECORDINGS_DIR: resolve('test-results', 'recordings'), TRACKS_FILE: resolve('test-results', `tracks-${randomUUID()}.json`) },
     reuseExistingServer: false,
     timeout: 30_000,
   },

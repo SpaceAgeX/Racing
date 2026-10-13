@@ -8,6 +8,7 @@ import { planIsActive, readPlan, recordingDirectory, type RecordingPlan } from '
 
 type Client = Socket<ClientToServerEvents, ServerToClientEvents>;
 interface Context {
+  admittedSessions?: number;
   clients: Client[];
   rooms: { id: string; phase: string; players: number; trackId: string }[];
   roomForPlayer(id: string): string | null;
@@ -53,6 +54,7 @@ export function createGameRecorder(getContext: () => Context, directory = record
   const pending = new Set<string>();
   const timeouts = new Map<string, number>();
   let events: { at: string; type: string; id: string; reason?: string }[] = [];
+  let http: Record<string, { requests: number; errors: number; contentBytes: number; unknownLengths: number; totalMs: number }> = {};
 
   function entry(id: string): Traffic {
     let record = traffic.get(id);
@@ -80,7 +82,7 @@ export function createGameRecorder(getContext: () => Context, directory = record
   async function stop(reason: string): Promise<void> {
     if (!active) return;
     try { await write({ type: 'end', at: new Date().toISOString(), reason, events }); }
-    finally { active = null; file = ''; histogram.disable(); traffic.clear(); reports.clear(); pending.clear(); timeouts.clear(); events = []; }
+    finally { active = null; file = ''; histogram.disable(); traffic.clear(); reports.clear(); pending.clear(); timeouts.clear(); events = []; http = {}; }
   }
   async function status(error?: string): Promise<void> {
     await mkdir(directory, { recursive: true });
@@ -120,6 +122,7 @@ export function createGameRecorder(getContext: () => Context, directory = record
         arrivalGapMeanMs: mean, arrivalGapMaxMs: t.gaps ? t.gapMax : null,
         arrivalJitterMs: mean === null ? null : Math.sqrt(Math.max(0, t.gapSquares / t.gaps - mean * mean)),
         reportAgeMs: report ? Date.now() - report.at : null,
+        reportAt: report?.at ?? null,
         rttMs: report?.rttMs ?? null, probeTimeouts: timeouts.get(socket.id) ?? 0,
         client: report && Date.now() - report.at < 5000 ? report.data : null,
       };
@@ -149,11 +152,12 @@ export function createGameRecorder(getContext: () => Context, directory = record
         cpuPercent, rssBytes: process.memoryUsage().rss, heapUsedBytes: process.memoryUsage().heapUsed,
         eventLoopMeanMs: toMs(histogram.mean), eventLoopP95Ms: toMs(histogram.percentile(95)), eventLoopMaxMs: toMs(histogram.max),
         hostLoadAverage: loadavg(), connectedClients: context.clients.length, players: context.rooms.reduce((n, room) => n + room.players, 0),
+        admittedSessions: context.admittedSessions ?? null,
         inBytes, outBytes, inBytesPerSecond: inBytes / seconds, outBytesPerSecond: outBytes / seconds,
       },
-      rooms: context.rooms, clients, events,
+      rooms: context.rooms, clients, events, http,
     };
-    events = []; histogram.reset();
+    events = []; http = {}; histogram.reset();
     await write(snapshot);
     await status();
   }
@@ -171,6 +175,12 @@ export function createGameRecorder(getContext: () => Context, directory = record
   timer.unref();
   run();
   return {
+    http(group: string, status: number, bytes: number | null, ms: number): void {
+      if (!active) return;
+      const row = http[group] ??= { requests: 0, errors: 0, contentBytes: 0, unknownLengths: 0, totalMs: 0 };
+      row.requests++; row.errors += status >= 400 ? 1 : 0; row.contentBytes += bytes ?? 0;
+      row.unknownLengths += bytes === null ? 1 : 0; row.totalMs += ms;
+    },
     received(id: string, bytes: number): void {
       if (!active) return;
       const t = entry(id);
