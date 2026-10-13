@@ -2,11 +2,13 @@ import express from 'express';
 import { createServer } from 'node:http';
 import { access } from 'node:fs/promises';
 import { networkInterfaces } from 'node:os';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import type { BuildContext } from 'esbuild';
 import { createTrackStore } from './track-store.ts';
 import { createTracksApi } from './tracks-api.ts';
+import { createGameRecorder } from './game-recorder.ts';
 import type {
   ClientToServerEvents,
   LobbyPlayerSnapshot,
@@ -17,9 +19,10 @@ import type {
   MultiplayerBootstrap,
   ServerToClientEvents,
   TrackOption,
+  ServerDiagnosticsSnapshot,
   UpdateLobbySettingsPayload,
 } from '../src/multiplayer/protocol.ts';
-import { trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
+import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
 import { getTrackSpawn } from '../src/track/grid.ts';
 import { trackTileSize } from '../src/track/layout.ts';
 import type { VehicleState } from '../src/simulation/types.ts';
@@ -56,7 +59,9 @@ app.get('/api/ping', (_request, response) => {
   response.json({ time: Date.now() });
 });
 app.get('/favicon.ico', (_request, response) => response.sendStatus(204));
-app.use('/assets', express.static(bundleDirectory));
+app.use('/assets', express.static(bundleDirectory, {
+  setHeaders(response) { response.setHeader('Cache-Control', 'no-cache'); },
+}));
 app.use(express.static(publicDirectory));
 
 interface LobbyPlayerRecord {
@@ -120,7 +125,106 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 const lobbies = new Map<string, LobbyRecord>();
 const playerLobby = new Map<string, string>();
 
-const lobbyPalette = ['#ee7136', '#6bc5ff', '#8ce5ad', '#f5d76e', '#c38fff', '#ff8ab0'];
+interface TrafficWindow {
+  startedAt: number;
+  receivedStateMessages: number;
+  relayedStateMessages: number;
+  approximateJsonBytesReceived: number;
+  approximateJsonBytesSent: number;
+  lastTelemetryAt: number;
+}
+
+const trafficWindows = new Map<string, TrafficWindow>();
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+eventLoopDelay.enable();
+let stateMessagesReceivedTotal = 0;
+let stateMessagesRelayedTotal = 0;
+let approximateJsonBytesReceivedTotal = 0;
+let approximateJsonBytesRelayedTotal = 0;
+let previousCpuUsage = process.cpuUsage();
+let previousCpuSampleAt = performance.now();
+
+function getServerDiagnostics(socket: Parameters<typeof io.on>[1] extends (arg: infer T) => void ? T : never): ServerDiagnosticsSnapshot {
+  const now = performance.now();
+  const traffic = trafficWindows.get(socket.id) ?? {
+    startedAt: now,
+    receivedStateMessages: 0,
+    relayedStateMessages: 0,
+    approximateJsonBytesReceived: 0,
+    approximateJsonBytesSent: 0,
+    lastTelemetryAt: Number.NEGATIVE_INFINITY,
+  };
+  const sampleDurationSeconds = Math.max(0.001, (now - traffic.startedAt) / 1000);
+  const cpuNow = process.cpuUsage();
+  const cpuElapsedMicroseconds = (now - previousCpuSampleAt) * 1000;
+  const cpuPercent = cpuElapsedMicroseconds > 0
+    ? ((cpuNow.user - previousCpuUsage.user + cpuNow.system - previousCpuUsage.system) / cpuElapsedMicroseconds) * 100
+    : null;
+  previousCpuUsage = cpuNow;
+  previousCpuSampleAt = now;
+
+  const currentLobbyId = playerLobby.get(socket.id) ?? null;
+  const memory = process.memoryUsage();
+  const asMilliseconds = (nanoseconds: number): number | null => Number.isFinite(nanoseconds) ? nanoseconds / 1e6 : null;
+  const p95 = eventLoopDelay.percentile(95);
+  const snapshot: ServerDiagnosticsSnapshot = {
+    capturedAt: Date.now(),
+    server: {
+      pid: process.pid,
+      nodeVersion: process.version,
+      platform: `${process.platform}/${process.arch}`,
+      uptimeSeconds: process.uptime(),
+      cpuPercent,
+      memoryBytes: memory,
+      eventLoopDelayMs: {
+        mean: asMilliseconds(eventLoopDelay.mean),
+        p95: asMilliseconds(p95),
+        max: asMilliseconds(eventLoopDelay.max),
+      },
+      authoritativeSimulation: false,
+      simulationTickRateHz: 0,
+      connectedSockets: io.engine.clientsCount,
+      lobbyCount: lobbies.size,
+      playerCount: [...lobbies.values()].reduce((total, lobby) => total + lobby.players.size, 0),
+      stateMessagesReceivedTotal,
+      stateMessagesRelayedTotal,
+      approximateJsonBytesReceivedTotal,
+      approximateJsonBytesRelayedTotal,
+    },
+    connection: {
+      id: socket.id,
+      transport: socket.conn.transport.name,
+      readyState: socket.conn.readyState,
+      lobbyId: currentLobbyId,
+      receivedStateMessages: traffic.receivedStateMessages,
+      relayedStateMessages: traffic.relayedStateMessages,
+      approximateJsonBytesReceived: traffic.approximateJsonBytesReceived,
+      approximateJsonBytesSent: traffic.approximateJsonBytesSent,
+      sampleDurationSeconds,
+      receivedStateHz: traffic.receivedStateMessages / sampleDurationSeconds,
+      relayedStateHz: traffic.relayedStateMessages / sampleDurationSeconds,
+      approximateJsonBytesInPerSecond: traffic.approximateJsonBytesReceived / sampleDurationSeconds,
+      approximateJsonBytesOutPerSecond: traffic.approximateJsonBytesSent / sampleDurationSeconds,
+    },
+    lobbies: [...lobbies.values()].map((lobby) => ({
+      id: lobby.id,
+      name: lobby.name,
+      phase: lobby.phase,
+      players: lobby.players.size,
+    })),
+  };
+
+  traffic.startedAt = now;
+  traffic.receivedStateMessages = 0;
+  traffic.relayedStateMessages = 0;
+  traffic.approximateJsonBytesReceived = 0;
+  traffic.approximateJsonBytesSent = 0;
+  trafficWindows.set(socket.id, traffic);
+  eventLoopDelay.reset();
+  return snapshot;
+}
+
+const lobbyPalette = playerColorPalette;
 
 function makeLobbyId(): string {
   return `lobby-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -276,11 +380,15 @@ async function createLobby(socketId: string, playerName: string, lobbyName: stri
 function joinLobby(socketId: string, lobbyId: string, playerName: string): LobbyRecord | null {
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.phase !== 'lobby') return null;
+  if (lobby.players.has(socketId)) return lobby;
+  if (lobby.players.size >= maxLobbyPlayers) return null;
+  const color = lobbyPalette.find(color => ![...lobby.players.values()].some(player => player.color === color));
+  if (!color) return null;
   leaveLobby(socketId);
   const player = {
     id: socketId,
     name: normalizeName(playerName, 'Player'),
-    color: colorForIndex(lobby.players.size),
+    color,
     state: null,
   } satisfies LobbyPlayerRecord;
   lobby.players.set(socketId, player);
@@ -340,7 +448,24 @@ function startLobby(socketId: string): LobbyRecord | null {
 }
 
 io.on('connection', (socket) => {
+  recorder.connection(socket.id, true);
+  trafficWindows.set(socket.id, {
+    startedAt: performance.now(),
+    receivedStateMessages: 0,
+    relayedStateMessages: 0,
+    approximateJsonBytesReceived: 0,
+    approximateJsonBytesSent: 0,
+    lastTelemetryAt: Number.NEGATIVE_INFINITY,
+  });
   void emitBootstrap(socket).catch(() => socket.emit('multiplayer:error', { message: 'Could not load available tracks.' }));
+
+  socket.on('debug:telemetry-request', () => {
+    const traffic = trafficWindows.get(socket.id);
+    const now = performance.now();
+    if (!traffic || now - traffic.lastTelemetryAt < 250) return;
+    traffic.lastTelemetryAt = now;
+    socket.emit('debug:telemetry', getServerDiagnostics(socket));
+  });
 
   socket.on('multiplayer:create-lobby', async ({ lobbyName, playerName, trackId, handling }) => {
     try {
@@ -354,7 +479,7 @@ io.on('connection', (socket) => {
   socket.on('multiplayer:join-lobby', ({ lobbyId, playerName }) => {
     const lobby = joinLobby(socket.id, lobbyId, playerName);
     if (!lobby) {
-      socket.emit('multiplayer:error', { message: 'That lobby no longer exists.' });
+      socket.emit('multiplayer:error', { message: 'That lobby is full, already racing, or no longer exists.' });
       return;
     }
     socket.join(lobby.id);
@@ -377,6 +502,24 @@ io.on('connection', (socket) => {
     } catch (error) { socket.emit('multiplayer:error', { message: error instanceof Error ? error.message : 'Could not change track.' }); }
   });
 
+  socket.on('multiplayer:set-color', (payload) => {
+    const lobbyId = playerLobby.get(socket.id);
+    const lobby = lobbyId ? lobbies.get(lobbyId) : undefined;
+    const player = lobby?.players.get(socket.id);
+    if (!lobby || !player || lobby.phase !== 'lobby') return;
+    const color = payload?.color;
+    if (!playerColorPalette.some(value => value === color)) {
+      socket.emit('multiplayer:error', { message: 'Choose a color from the palette.' });
+      return;
+    }
+    if ([...lobby.players.values()].some(other => other.id !== socket.id && other.color === color)) {
+      socket.emit('multiplayer:error', { message: 'That color is already taken.' });
+      return;
+    }
+    player.color = color;
+    broadcastLobbyRoom(lobby);
+  });
+
   socket.on('multiplayer:start-lobby', () => {
     const lobby = startLobby(socket.id);
     if (!lobby) {
@@ -390,13 +533,43 @@ io.on('connection', (socket) => {
   socket.on('multiplayer:update-state', ({ state }) => {
     const lobby = applyState(socket.id, state);
     if (!lobby) return;
-    socket.to(lobby.id).emit('multiplayer:player-state', { playerId: socket.id, state });
+    const incomingBytes = Buffer.byteLength(JSON.stringify(state));
+    recorder.received(socket.id, incomingBytes);
+    stateMessagesReceivedTotal++;
+    approximateJsonBytesReceivedTotal += incomingBytes;
+    const senderTraffic = trafficWindows.get(socket.id);
+    if (senderTraffic) {
+      senderTraffic.receivedStateMessages++;
+      senderTraffic.approximateJsonBytesReceived += incomingBytes;
+    }
+    const payload = { playerId: socket.id, state };
+    const relayedBytes = Buffer.byteLength(JSON.stringify(payload));
+    for (const playerId of lobby.players.keys()) {
+      if (playerId === socket.id || !io.sockets.sockets.has(playerId)) continue;
+      const recipientTraffic = trafficWindows.get(playerId);
+      recorder.sent(playerId, relayedBytes);
+      if (recipientTraffic) {
+        recipientTraffic.relayedStateMessages++;
+        recipientTraffic.approximateJsonBytesSent += relayedBytes;
+      }
+      stateMessagesRelayedTotal++;
+      approximateJsonBytesRelayedTotal += relayedBytes;
+    }
+    socket.to(lobby.id).emit('multiplayer:player-state', payload);
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
+    recorder.connection(socket.id, false, reason);
+    trafficWindows.delete(socket.id);
     leaveLobby(socket.id);
   });
 });
+
+const recorder = createGameRecorder(() => ({
+  clients: [...io.sockets.sockets.values()],
+  rooms: [...lobbies.values()].map(room => ({ id: room.id, phase: room.phase, players: room.players.size, trackId: room.settings.trackId })),
+  roomForPlayer: id => playerLobby.get(id) ?? null,
+}));
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -415,6 +588,7 @@ const server = httpServer.listen(port, host, () => {
 });
 
 async function shutdown(): Promise<void> {
+  await recorder.close();
   await new Promise<void>((closed) => io.close(() => closed()));
   await trackStore.flush();
   await bundler?.dispose();

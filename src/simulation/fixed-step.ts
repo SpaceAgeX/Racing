@@ -6,6 +6,8 @@ export const PAUSE_THRESHOLD = 0.25;
 export class FixedStepClock {
   private accumulator = 0;
 
+  get pendingSeconds(): number { return this.accumulator; }
+
   reset(): void {
     this.accumulator = 0;
   }

@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node server/index.ts --dev",
+    "dev": "node --watch --watch-path=server --watch-path=src/multiplayer --watch-path=src/simulation --watch-path=src/track server/index.ts --dev",
     "build": "npm run typecheck && node scripts/build.ts",
     "start": "node server/index.ts",
     "typecheck": "tsc --noEmit",

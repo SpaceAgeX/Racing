@@ -21,6 +21,7 @@ export function createMinimap(canvas: HTMLCanvasElement, layout: TrackLayout, ti
   const span = Math.max(maxX - minX, maxZ - minZ) + tileSize * 2;
   const centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
   let size = 1, ratio = 1, scale = 1;
+  let latestMarkers: ReadonlyArray<{ state: Readonly<VehicleState>; color: string }> = [];
 
   function mapPoint(x: number, z: number) {
     return { x: size / 2 + (x - centerX) * scale, y: size / 2 + (z - centerZ) * scale };
@@ -43,9 +44,11 @@ export function createMinimap(canvas: HTMLCanvasElement, layout: TrackLayout, ti
         mapContext.fillRect(point.x, point.y + tileWidth * .45, tileWidth, Math.max(1, tileWidth * .1));
       }
     }
+    update(latestMarkers);
   }
 
   function update(markers: ReadonlyArray<{ state: Readonly<VehicleState>; color: string }>): void {
+    latestMarkers = markers;
     context!.setTransform(ratio, 0, 0, ratio, 0, 0);
     context!.clearRect(0, 0, size, size);
     context!.drawImage(background, 0, 0, size, size);

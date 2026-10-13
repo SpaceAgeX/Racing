@@ -1,16 +1,21 @@
+import { createLobbyScreen } from './ui/lobby.ts';
 import { io, type Socket } from 'socket.io-client';
 import { createKeyboardInput } from './input/keyboard.ts';
 import { createCarVisual } from './rendering/car.ts';
 import { createFollowCamera } from './rendering/camera.ts';
 import { createScene } from './rendering/scene.ts';
-import { FixedStepClock, PAUSE_THRESHOLD } from './simulation/fixed-step.ts';
+import { createMenuBackdrop } from './rendering/menu-backdrop.ts';
+import { FixedStepClock, FIXED_TIMESTEP, PAUSE_THRESHOLD } from './simulation/fixed-step.ts';
 import { createLapTimer, resetCurrentLap, stepLapTimer } from './simulation/lap-timer.ts';
 import { createMinimap } from './ui/minimap.ts';
 import { createLapDisplay } from './ui/lap-display.ts';
 import { createPerformanceStats } from './ui/performance-stats.ts';
-import { copyTuningParameters, createLobbyHandlingEditor, createTuningPanel } from './ui/tuning.ts';
+import { createDeveloperConsole } from './ui/developer-console.ts';
+import { createTimeTrialSetup } from './ui/time-trial-setup.ts';
+import { copyTuningParameters, createTuningPanel } from './ui/tuning.ts';
 import type { TuningParameters } from './ui/tuning.ts';
-import { loadActiveTrack } from './track/storage.ts';
+import { listBrowserTracks, loadActiveTrack, selectTrackForPlay } from './track/storage.ts';
+import { listSharedTracks } from './track/api.ts';
 import { trackLayout, trackTileSize } from './track/layout.ts';
 import { getFinishLine, getTrackSpawn } from './track/grid.ts';
 import { createTrackCollisionWorld } from './track/collision.ts';
@@ -28,11 +33,11 @@ import type {
   LobbySnapshot,
   LobbySummary,
   MultiplayerBootstrap,
+  RecordingClientReport,
   ServerToClientEvents,
-  StartLobbyPayload,
   TrackOption,
-  UpdateLobbySettingsPayload,
 } from './multiplayer/protocol.ts';
+import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from './multiplayer/protocol.ts';
 
 interface MultiplayerPreferences {
   playerName: string;
@@ -43,6 +48,11 @@ interface RemoteCarEntry {
   visual: ReturnType<typeof createCarVisual>;
   state: VehicleState;
   snapshots: { state: VehicleState; receivedAt: number }[];
+  arrivalIntervalsMs: number[];
+  lastSnapshotAt: number | null;
+  snapshotsReceived: number;
+  bufferUnderruns: number;
+  extrapolating: boolean;
   color: string;
   visible: boolean;
 }
@@ -65,6 +75,7 @@ interface DrivingSession {
   toggleCamera(): void;
   syncRemotePlayers(players: LobbyPlayerSnapshot[], localPlayerId: string): void;
   updateRemotePlayer(playerId: string, state: VehicleState): void;
+  getDiagnostics(): unknown;
   dispose(): void;
 }
 
@@ -78,6 +89,7 @@ interface HomeScreenController {
   getSelectedTrackId(): string;
   showLanding(): void;
   showMultiplayer(): void;
+  showTimeTrialSetup(): void;
   dispose(): void;
 }
 
@@ -154,6 +166,11 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   const followCamera = createFollowCamera(view.camera, state);
   view.scene.add(car.object);
   const remoteCars = new Map<string, RemoteCarEntry>();
+  let simulationTicks = 0;
+  let lastFrameSteps = 0;
+  let lastFramePhysicsMs = 0;
+  let lastFrameElapsedMs = 0;
+  let latestControls: Readonly<DrivingControls> = { throttle: 0, steering: 0, brake: false };
 
   function updateMinimap(): void {
     const markers: { state: Readonly<VehicleState>; color: string }[] = [{ state: rendered, color: playerColor }];
@@ -185,7 +202,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
         const visual = createCarVisual(colorToNumber(player.color));
         visual.object.visible = false;
         view.scene.add(visual.object);
-        remoteCars.set(player.id, { visual, state: createVehicleState(), snapshots: [], color: player.color, visible: false });
+        remoteCars.set(player.id, {
+          visual, state: createVehicleState(), snapshots: [], arrivalIntervalsMs: [], lastSnapshotAt: null,
+          snapshotsReceived: 0, bufferUnderruns: 0, extrapolating: false, color: player.color, visible: false,
+        });
       }
       const remote = remoteCars.get(player.id)!;
       remote.color = player.color;
@@ -204,7 +224,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     if (!remote) {
       const visual = createCarVisual(0x8ca0ab);
       view.scene.add(visual.object);
-      remote = { visual, state: createVehicleState(), snapshots: [], color: '#8ca0ab', visible: true };
+      remote = {
+        visual, state: createVehicleState(), snapshots: [], arrivalIntervalsMs: [], lastSnapshotAt: null,
+        snapshotsReceived: 0, bufferUnderruns: 0, extrapolating: false, color: '#8ca0ab', visible: true,
+      };
       remoteCars.set(playerId, remote);
     }
     pushRemoteSnapshot(remote, snapshot);
@@ -217,7 +240,18 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     const latest = remote.snapshots.at(-1);
     const teleported = latest !== undefined
       && Math.hypot(state.position.x - latest.state.position.x, state.position.z - latest.state.position.z) > trackTileSize * 2;
-    if (teleported) remote.snapshots.length = 0;
+    if (teleported) {
+      remote.snapshots.length = 0;
+      remote.arrivalIntervalsMs.length = 0;
+      remote.lastSnapshotAt = null;
+      remote.extrapolating = false;
+    }
+    if (remote.lastSnapshotAt !== null) {
+      remote.arrivalIntervalsMs.push(receivedAt - remote.lastSnapshotAt);
+      if (remote.arrivalIntervalsMs.length > 30) remote.arrivalIntervalsMs.shift();
+    }
+    remote.lastSnapshotAt = receivedAt;
+    remote.snapshotsReceived++;
     remote.snapshots.push({ state, receivedAt });
     if (remote.snapshots.length > 12) remote.snapshots.splice(0, remote.snapshots.length - 12);
     remote.visible = true;
@@ -236,6 +270,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       while (snapshots.length > 2 && snapshots[1]!.receivedAt <= renderTime) snapshots.shift();
       const older = snapshots[0]!;
       const newer = snapshots[1];
+      const newest = snapshots.at(-1)!;
+      const underrun = renderTime > newest.receivedAt;
+      if (underrun && !remote.extrapolating) remote.bufferUnderruns++;
+      remote.extrapolating = underrun;
       if (newer && renderTime <= newer.receivedAt) {
         const span = newer.receivedAt - older.receivedAt;
         const alpha = span > 0 ? Math.max(0, Math.min(1, (renderTime - older.receivedAt) / span)) : 1;
@@ -257,9 +295,14 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   }
 
   function step(elapsed: number, controls: Readonly<DrivingControls>): void {
+    latestControls = { ...controls };
     if (elapsed > PAUSE_THRESHOLD) copyVehicleState(state, previous);
     let respawned = false;
+    lastFrameSteps = 0;
+    lastFramePhysicsMs = 0;
+    lastFrameElapsedMs = elapsed * 1000;
     const alpha = clock.advance(elapsed, (timestep) => {
+      const physicsStartedAt = performance.now();
       copyVehicleState(state, previous);
       if (stepVehicleInWorld(state, controls, timestep, collisionWorld, spawn, tuning.physics, tuning.driving)) {
         resetCurrentLap(lapTimer);
@@ -268,6 +311,9 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       } else {
         stepLapTimer(lapTimer, previous.position, state.position, timestep, finishLine);
       }
+      lastFramePhysicsMs += performance.now() - physicsStartedAt;
+      lastFrameSteps++;
+      simulationTicks++;
     });
 
     interpolateVehicleState(previous, state, alpha, rendered);
@@ -279,6 +325,28 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     view.renderer.render(view.scene, view.camera);
     lapDisplay.update(lapTimer);
     updateMinimap();
+  }
+
+  function getDiagnostics(): unknown {
+    const now = performance.now();
+    const renderer = view.renderer;
+    const drawStats = renderer.info.render;
+    const memoryStats = renderer.info.memory;
+    return {
+      vehicle: { speedMps: state.speed, speedKph: Math.abs(state.speed) * 3.6, grounded: state.grounded,
+        airborneSeconds: state.airborneTime, headingRadians: state.heading },
+      simulation: { tickRateHz: 1 / FIXED_TIMESTEP, totalTicks: simulationTicks,
+        stepsLastFrame: lastFrameSteps, physicsMsLastFrame: lastFramePhysicsMs, frameDeltaMs: lastFrameElapsedMs },
+      renderer: { pixelRatio: renderer.getPixelRatio(), drawCalls: drawStats.calls, triangles: drawStats.triangles,
+        geometries: memoryStats.geometries, textures: memoryStats.textures, trackTileMeshes: view.trackTiles.length },
+      remotePlayers: [...remoteCars].map(([id, remote]) => {
+        const intervals = remote.arrivalIntervalsMs;
+        const mean = intervals.length ? intervals.reduce((sum, value) => sum + value, 0) / intervals.length : null;
+        const jitter = mean === null ? null : Math.sqrt(intervals.reduce((sum, value) => sum + (value - mean) ** 2, 0) / intervals.length);
+        return { id, snapshotAgeMs: remote.lastSnapshotAt === null ? null : now - remote.lastSnapshotAt,
+          interarrivalJitterMs: jitter, bufferUnderruns: remote.bufferUnderruns, extrapolating: remote.extrapolating };
+      }),
+    };
   }
 
   return {
@@ -295,6 +363,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     toggleCamera(): void { followCamera.toggleMode(); },
     syncRemotePlayers,
     updateRemotePlayer,
+    getDiagnostics,
     dispose(): void {
       for (const remote of remoteCars.values()) {
         view.scene.remove(remote.visual.object);
@@ -318,27 +387,30 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   root.innerHTML = `
     <div class="home-shell">
       <section id="home-landing" class="home-landing">
-        <div class="hero-card home-title"><h1>Choose your race</h1><p>Race alone, meet friends in a room, or build a track.</p></div>
-        <div class="home-choice-grid">
-          <button id="home-time-trial" class="home-choice" type="button"><strong>Time Trial</strong><span>Race immediately on your selected track.</span></button>
+        <div class="home-title"><span class="menu-eyebrow">RACING</span><h1>Select an Option</h1></div>
+        <nav class="home-choice-grid" aria-label="Main options">
+          <button id="home-time-trial" class="home-choice" type="button"><strong>Time Trial</strong><span>Race solo on a track.</span></button>
           <button id="home-multiplayer" class="home-choice" type="button"><strong>Multiplayer Race</strong><span>Create a room or join an open lobby.</span></button>
           <a class="home-choice home-choice-link" href="/map-builder/"><strong>Map Builder</strong><span>Design and share a track.</span></a>
-        </div>
+        </nav>
       </section>
       <section id="home-multiplayer-menu" class="home-multiplayer" hidden>
-        <div class="hero-card"><button id="home-back" class="back-button" type="button">← Back</button><h1>Multiplayer race</h1><p>Create a lobby for friends or join a room that is waiting for players.</p></div>
-        <div class="panel-card">
-          <h2>Create a lobby</h2>
-          <div class="multiplayer-launch">
-            <label>Player name<input id="home-player-name" type="text" maxlength="32" /></label>
-            <label>Lobby name<input id="home-lobby-name" type="text" maxlength="32" /></label>
-            <label>Track<select id="home-track-select"></select></label>
-            <div class="multiplayer-actions">
-              <button id="home-create-lobby" type="button">Create lobby</button>
-            </div>
-          </div>
+        <header class="multiplayer-entry-header">
+          <button id="home-back" class="back-button" type="button">&#8592; Back</button>
+          <span class="menu-eyebrow">MULTIPLAYER</span><h1>Create or join a lobby</h1>
+          <label>Player name<input id="home-player-name" type="text" maxlength="32" /></label>
+        </header>
+        <div class="multiplayer-entry-tabs" aria-label="Lobby options">
+          <button id="home-create-tab" type="button" aria-pressed="false">Create</button>
+          <button id="home-join-tab" type="button" aria-pressed="true">Join</button>
         </div>
-        <section class="lobby-list-card"><h2>Join a lobby</h2><div id="home-lobby-list" class="lobby-list"></div></section>
+        <section id="home-create-panel" hidden>
+          <div class="multiplayer-launch">
+            <label>Lobby name<input id="home-lobby-name" type="text" maxlength="32" /></label>
+            <button id="home-create-lobby" class="trial-start-button" type="button">Create lobby</button>
+          </div>
+        </section>
+        <section id="home-join-panel"><h2>Open lobbies</h2><div id="home-lobby-list" class="lobby-list"></div></section>
         <div id="home-status" class="multiplayer-status">Connect to view open lobbies.</div>
       </section>
     </div>
@@ -347,14 +419,24 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   const status = root.querySelector<HTMLElement>('#home-status')!;
   const playerNameInput = root.querySelector<HTMLInputElement>('#home-player-name')!;
   const lobbyNameInput = root.querySelector<HTMLInputElement>('#home-lobby-name')!;
-  const trackSelect = root.querySelector<HTMLSelectElement>('#home-track-select')!;
   const createButton = root.querySelector<HTMLButtonElement>('#home-create-lobby')!;
   const lobbyList = root.querySelector<HTMLElement>('#home-lobby-list')!;
+  const homeShell = root.querySelector<HTMLElement>('.home-shell')!;
   const landing = root.querySelector<HTMLElement>('#home-landing')!;
   const multiplayerMenu = root.querySelector<HTMLElement>('#home-multiplayer-menu')!;
   root.querySelector<HTMLButtonElement>('#home-time-trial')!.addEventListener('click', callbacks.onTimeTrial);
   root.querySelector<HTMLButtonElement>('#home-multiplayer')!.addEventListener('click', callbacks.onMultiplayer);
   root.querySelector<HTMLButtonElement>('#home-back')!.addEventListener('click', () => { callbacks.onBackToLanding(); });
+  const createTab = root.querySelector<HTMLButtonElement>('#home-create-tab')!;
+  const joinTab = root.querySelector<HTMLButtonElement>('#home-join-tab')!;
+  function showEntryTab(create: boolean): void {
+    root.querySelector<HTMLElement>('#home-create-panel')!.hidden = !create;
+    root.querySelector<HTMLElement>('#home-join-panel')!.hidden = create;
+    createTab.setAttribute('aria-pressed', String(create));
+    joinTab.setAttribute('aria-pressed', String(!create));
+  }
+  createTab.addEventListener('click', () => showEntryTab(true));
+  joinTab.addEventListener('click', () => showEntryTab(false));
   let trackOptions: TrackOption[] = [];
 
   function selectedName(): string {
@@ -366,19 +448,7 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   }
 
   function selectedTrackId(): string {
-    return trackSelect.value || trackOptions[0]?.id || 'default';
-  }
-
-  function renderTrackOptions(): void {
-    const selectedId = trackSelect.value || preferredTrackId;
-    trackSelect.innerHTML = '';
-    for (const option of trackOptions) {
-      const item = document.createElement('option');
-      item.value = option.id;
-      item.textContent = option.name;
-      trackSelect.append(item);
-    }
-    trackSelect.value = trackOptions.some((option) => option.id === selectedId) ? selectedId : trackOptions[0]?.id ?? '';
+    return trackOptions.find(track => track.id === preferredTrackId)?.id ?? trackOptions[0]?.id ?? 'default';
   }
 
   function renderLobbies(lobbies: LobbySummary[]): void {
@@ -396,10 +466,11 @@ function createHomeScreen(root: HTMLElement, callbacks: {
       const title = document.createElement('strong');
       title.textContent = lobby.name;
       const meta = document.createElement('small');
-      meta.textContent = `${lobby.settings.trackName} · ${lobby.playerCount} player${lobby.playerCount === 1 ? '' : 's'} · host ${lobby.hostName}`;
+      meta.textContent = `${lobby.playerCount} / ${maxLobbyPlayers} players ? Host: ${lobby.hostName}`;
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = 'Join lobby';
+      button.textContent = lobby.playerCount >= maxLobbyPlayers ? 'Lobby full' : 'Join lobby';
+      button.disabled = lobby.playerCount >= maxLobbyPlayers;
       button.addEventListener('click', () => callbacks.onJoinLobby({ lobbyId: lobby.id, playerName: selectedName() }));
       card.append(title, meta, button);
       lobbyList.append(card);
@@ -420,150 +491,16 @@ function createHomeScreen(root: HTMLElement, callbacks: {
     setStatus(message: string): void { status.textContent = message; },
     setTrackOptions(options: TrackOption[]): void {
       trackOptions = options;
-      renderTrackOptions();
     },
     setLobbies(lobbies: LobbySummary[]): void { renderLobbies(lobbies); },
     setPlayerName(name: string): void { playerNameInput.value = name; },
     getPlayerName(): string { return selectedName(); },
     getLobbyName(): string { return selectedLobbyName(); },
     getSelectedTrackId(): string { return selectedTrackId(); },
-    showLanding(): void { landing.hidden = false; multiplayerMenu.hidden = true; },
-    showMultiplayer(): void { landing.hidden = true; multiplayerMenu.hidden = false; },
+    showLanding(): void { homeShell.hidden = false; landing.hidden = false; multiplayerMenu.hidden = true; },
+    showMultiplayer(): void { showEntryTab(false); homeShell.hidden = false; landing.hidden = true; multiplayerMenu.hidden = false; },
+    showTimeTrialSetup(): void { homeShell.hidden = true; landing.hidden = true; multiplayerMenu.hidden = true; },
     dispose(): void { createButton.replaceWith(createButton.cloneNode(true)); },
-  };
-}
-
-function createLobbyScreen(root: HTMLElement, callbacks: {
-  onStartLobby(payload: StartLobbyPayload): void;
-  onLeaveLobby(): void;
-  onUpdateSettings(payload: UpdateLobbySettingsPayload): void;
-}): LobbyScreenController {
-  root.innerHTML = `
-    <div class="lobby-shell">
-      <section class="lobby-card">
-        <div class="room-header">
-          <strong id="lobby-room-name">Lobby</strong>
-          <span id="lobby-room-meta">Waiting for players</span>
-        </div>
-        <p id="lobby-room-message">This lobby is not racing yet. Players can gather here, change the track if they host, and start when ready.</p>
-        <div class="lobby-grid">
-          <div class="lobby-details">
-            <section>
-              <h2>Lobby settings</h2>
-              <div class="lobby-settings">
-                <label>Track<select id="lobby-track-select"></select></label>
-              </div>
-            </section>
-            <section class="lobby-handling-section">
-              <h2>Race handling</h2>
-              <div id="lobby-handling-editor"></div>
-            </section>
-            <section>
-              <h2>Players</h2>
-              <div id="lobby-player-list" class="lobby-players"></div>
-            </section>
-          </div>
-          <div class="panel-card">
-            <h2>Actions</h2>
-            <div class="multiplayer-actions">
-              <button id="lobby-start" type="button">Start race</button>
-              <button id="lobby-leave" type="button">Leave lobby</button>
-            </div>
-            <div id="lobby-status" class="lobby-status">Ready to start when the host says so.</div>
-          </div>
-        </div>
-      </section>
-    </div>
-  `;
-
-  const roomName = root.querySelector<HTMLElement>('#lobby-room-name')!;
-  const roomMeta = root.querySelector<HTMLElement>('#lobby-room-meta')!;
-  const roomMessage = root.querySelector<HTMLElement>('#lobby-room-message')!;
-  const status = root.querySelector<HTMLElement>('#lobby-status')!;
-  const trackSelect = root.querySelector<HTMLSelectElement>('#lobby-track-select')!;
-  const playerList = root.querySelector<HTMLElement>('#lobby-player-list')!;
-  const startButton = root.querySelector<HTMLButtonElement>('#lobby-start')!;
-  const leaveButton = root.querySelector<HTMLButtonElement>('#lobby-leave')!;
-  const handlingEditor = createLobbyHandlingEditor(root.querySelector<HTMLElement>('#lobby-handling-editor')!, (handling) => {
-    callbacks.onUpdateSettings({ handling });
-  });
-  let trackOptions: TrackOption[] = [];
-  let currentRoom: LobbySnapshot | null = null;
-  let localPlayerId = '';
-
-  function renderTrackOptions(selectedId: string): void {
-    trackSelect.innerHTML = '';
-    for (const option of trackOptions) {
-      const item = document.createElement('option');
-      item.value = option.id;
-      item.textContent = option.name;
-      trackSelect.append(item);
-    }
-    if (selectedId) trackSelect.value = selectedId;
-  }
-
-  function renderPlayers(room: LobbySnapshot): void {
-    playerList.innerHTML = '';
-    for (const player of room.players) {
-      const row = document.createElement('div');
-      row.className = 'player-entry';
-      const name = document.createElement('strong');
-      name.textContent = `${player.name}${player.isHost ? ' (host)' : ''}`;
-      const marker = document.createElement('span');
-      marker.className = 'player-dot';
-      marker.style.background = player.color;
-      row.append(name, marker);
-      playerList.append(row);
-    }
-  }
-
-  startButton.addEventListener('click', () => callbacks.onStartLobby({ start: true }));
-  leaveButton.addEventListener('click', () => callbacks.onLeaveLobby());
-  trackSelect.addEventListener('change', () => {
-    const localPlayer = currentRoom?.players.find((player) => player.id === localPlayerId);
-    if (!currentRoom || !(localPlayer?.isHost ?? currentRoom.hostId === localPlayerId)) return;
-    callbacks.onUpdateSettings({ trackId: trackSelect.value });
-  });
-
-  return {
-    setRoom(room: LobbySnapshot | null, playerId: string): void {
-      currentRoom = room;
-      localPlayerId = playerId;
-      if (!room) {
-        roomName.textContent = 'Lobby';
-        roomMeta.textContent = 'Waiting for players';
-        roomMessage.textContent = 'No lobby is active. Go back home, create one, or join another room.';
-        status.textContent = 'Not in a lobby.';
-        playerList.innerHTML = '';
-        startButton.hidden = true;
-        trackSelect.disabled = true;
-        leaveButton.hidden = true;
-        handlingEditor.setRoomHandling({ driving: { ...drivingParameters }, physics: { ...physicsParameters } }, false);
-        return;
-      }
-
-      roomName.textContent = room.name;
-      roomMeta.textContent = `${room.phase === 'race' ? 'Race in progress' : 'Waiting lobby'} · ${room.players.length} player${room.players.length === 1 ? '' : 's'}`;
-      roomMessage.textContent = room.phase === 'race'
-        ? 'The race is live. Drive on the loaded track and leave back to the home screen whenever you want.'
-        : 'This room is still a lobby. Track and cars stay out of view until the host starts the race.';
-      status.textContent = room.phase === 'race' ? 'Race started.' : 'Waiting for the host to start the race.';
-      renderPlayers(room);
-      renderTrackOptions(room.settings.trackId);
-      const localPlayer = room.players.find((player) => player.id === localPlayerId);
-      const isHost = localPlayer?.isHost ?? room.hostId === localPlayerId;
-      startButton.hidden = !isHost || room.phase === 'race';
-      trackSelect.disabled = !isHost || room.phase === 'race';
-      handlingEditor.setRoomHandling(room.settings.handling, isHost && room.phase === 'lobby');
-      leaveButton.hidden = false;
-    },
-    setTrackOptions(options: TrackOption[]): void {
-      trackOptions = options;
-      renderTrackOptions(currentRoom?.settings.trackId ?? options[0]?.id ?? '');
-      if (currentRoom) renderPlayers(currentRoom);
-    },
-    setStatus(message: string): void { status.textContent = message; },
-    dispose(): void { handlingEditor.dispose(); startButton.replaceWith(startButton.cloneNode(true)); },
   };
 }
 
@@ -572,6 +509,13 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   const fallbackLayout = selectedTrack?.layout ?? trackLayout;
   const fallbackTrackName = selectedTrack?.name ?? 'Default circuit';
   const fallbackTrackId = selectedTrack?.id ?? 'local-default';
+  const timeTrialColorKey = 'racing-time-trial-color-v1';
+  let timeTrialColor: string = playerColorPalette[0];
+  try {
+    const storedColor = localStorage.getItem(timeTrialColorKey);
+    if (playerColorPalette.includes(storedColor as typeof playerColorPalette[number])) timeTrialColor = storedColor as typeof timeTrialColor;
+  } catch { /* Color preferences are optional. */ }
+  let timeTrialTrack: TrackOption = { id: fallbackTrackId, name: fallbackTrackName, layout: fallbackLayout };
 
   const homeRoot = document.querySelector<HTMLElement>('#home-screen');
   const lobbyRoot = document.querySelector<HTMLElement>('#lobby-screen');
@@ -582,6 +526,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   const raceRoomName = document.querySelector<HTMLElement>('#race-room-name');
   const raceRoomStatus = document.querySelector<HTMLElement>('#race-room-status');
   const performanceStatsElement = document.querySelector<HTMLElement>('#performance-stats');
+  const multiplayerSpeed = document.querySelector<HTMLOutputElement>('#multiplayer-speed')!;
 
   if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !raceRoomName || !raceRoomStatus || !performanceStatsElement) {
     throw new Error('Multiplayer UI is missing.');
@@ -596,6 +541,11 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   const raceRoomNameElement = raceRoomName;
   const raceRoomStatusElement = raceRoomStatus;
   const performanceStats = createPerformanceStats(performanceStatsElement);
+  const menuBackdropCanvas = document.createElement('canvas');
+  menuBackdropCanvas.className = 'menu-car-backdrop';
+  menuBackdropCanvas.setAttribute('aria-hidden', 'true');
+  document.body.prepend(menuBackdropCanvas);
+  const menuBackdrop = createMenuBackdrop(menuBackdropCanvas);
 
   const tuningPanel = createTuningPanel(tuningPanelElement, tuningToggle);
   const input = createKeyboardInput(window, document);
@@ -603,18 +553,27 @@ export function startPrototype(canvas: HTMLCanvasElement) {
 
   let homeScreen: HomeScreenController;
   let lobbyScreen: LobbyScreenController;
+  let timeTrialSetup: ReturnType<typeof createTimeTrialSetup>;
   let session: DrivingSession | null = null;
-  let currentMode: 'home' | 'multiplayer' | 'lobby' | 'race' = 'home';
+  let currentMode: 'home' | 'multiplayer' | 'time-trial-setup' | 'lobby' | 'race' = 'home';
   let activeRoom: LobbySnapshot | null = null;
   let localPlayerId = '';
   let bootstrap: MultiplayerBootstrap | null = null;
   let animationFrame = 0;
   let lastFrameTime: number | null = null;
   let lastStateSentAt = Number.NEGATIVE_INFINITY;
+  const networkStats = {
+    startedAt: performance.now(),
+    stateMessagesSent: 0, stateMessagesReceived: 0, approximateJsonBytesSent: 0, approximateJsonBytesReceived: 0,
+    roomEventsReceived: 0, lobbyListEventsReceived: 0, trackListEventsReceived: 0, bootstrapEventsReceived: 0,
+    errorsReceived: 0, disconnects: 0, connects: 0, lastStateReceivedAt: null as number | null,
+    stateArrivalIntervalsMs: [] as number[],
+  };
 
-  function setMode(mode: 'home' | 'multiplayer' | 'lobby' | 'race'): void {
+  function setMode(mode: 'home' | 'multiplayer' | 'time-trial-setup' | 'lobby' | 'race'): void {
     currentMode = mode;
-    setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer');
+    menuBackdrop.setActive(mode !== 'race');
+    setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer' || mode === 'time-trial-setup');
     setScreenVisibility(lobbyScreenRoot, mode === 'lobby');
     setScreenVisibility(raceScreenRoot, mode === 'race');
     const isTimeTrial = mode === 'race' && activeRoom === null;
@@ -631,10 +590,10 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   }
 
   function ensureSession(room: LobbySnapshot | null): DrivingSession {
-    const desiredLayout = room?.settings.layout ?? fallbackLayout;
-    const desiredTrackName = room?.settings.trackName ?? fallbackTrackName;
-    const desiredTrackId = room?.settings.trackId ?? fallbackTrackId;
-    const desiredColor = localPlayerColor(room, localPlayerId);
+    const desiredLayout = room?.settings.layout ?? timeTrialTrack.layout;
+    const desiredTrackName = room?.settings.trackName ?? timeTrialTrack.name;
+    const desiredTrackId = room?.settings.trackId ?? timeTrialTrack.id;
+    const desiredColor = room ? localPlayerColor(room, localPlayerId) : timeTrialColor;
     if (!session || session.trackId !== desiredTrackId || session.playerColor !== desiredColor) {
       disposeSession();
       session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor);
@@ -645,6 +604,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   function enterHomeScreen(message = 'Choose a lobby or create a new one.'): void {
     disposeSession();
     setMode('home');
+    timeTrialSetup?.hide();
     homeScreen.showLanding();
     homeScreen.setStatus(message);
     homeScreen.setLobbies(bootstrap?.lobbies ?? []);
@@ -674,8 +634,15 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     saveMultiplayerPreferences({ playerName: homeScreen.getPlayerName(), lobbyId: room.id });
   }
 
-  function enterTimeTrial(): void {
+  function enterTimeTrial(track: TrackOption, color: string): void {
     activeRoom = null;
+    timeTrialTrack = track;
+    timeTrialColor = color;
+    timeTrialSetup.hide();
+    try {
+      selectTrackForPlay(localStorage, track.name, track.layout, track.id);
+      localStorage.setItem(timeTrialColorKey, color);
+    } catch { /* The current session still uses this selection if storage is unavailable. */ }
     if (socket.connected) socket.emit('multiplayer:leave-lobby');
     socket.disconnect();
     setMode('race');
@@ -684,10 +651,40 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     ensureSession(null);
   }
 
+  function availableTimeTrialTracks(sharedTracks: Awaited<ReturnType<typeof listSharedTracks>> = []): TrackOption[] {
+    const unique = new Map<string, TrackOption>();
+    for (const track of presetTrackOptions) unique.set(track.id, track);
+    for (const track of listBrowserTracks(localStorage)) unique.set(track.id, { id: track.id, name: track.name, layout: track.layout });
+    if (selectedTrack) unique.set(selectedTrack.id, { id: selectedTrack.id, name: selectedTrack.name, layout: selectedTrack.layout });
+    for (const track of sharedTracks) unique.set(track.id, { id: track.id, name: track.name, layout: track.layout });
+    const layouts = new Set<string>();
+    return [...unique.values()].filter(track => {
+      const key = JSON.stringify(track.layout);
+      if (layouts.has(key)) return false;
+      layouts.add(key);
+      return true;
+    });
+  }
+
+  async function refreshTimeTrialTracks(): Promise<void> {
+    const localTracks = availableTimeTrialTracks();
+    const preferredId = localTracks.find(track => JSON.stringify(track.layout) === JSON.stringify(timeTrialTrack.layout))?.id ?? timeTrialTrack.id;
+    timeTrialSetup.setTracks(localTracks, preferredId);
+    timeTrialSetup.setStatus('Loading shared tracks…');
+    try {
+      const sharedTracks = await listSharedTracks();
+      // Keep a user's choice if the shared-track request completes after they select a map.
+      timeTrialSetup.setTracks(availableTimeTrialTracks(sharedTracks));
+      timeTrialSetup.setStatus('');
+    } catch {
+      timeTrialSetup.setStatus('Shared tracks could not be loaded. Presets and locally saved tracks are available.');
+    }
+  }
+
   function enterMultiplayerMenu(): void {
     homeScreen.showMultiplayer();
     setMode('multiplayer');
-    homeScreen.setStatus('Connecting to multiplayer...');
+    homeScreen.setStatus(socket.connected ? 'Choose a lobby or create one.' : 'Connecting to multiplayer...');
     if (!socket.connected) socket.connect();
   }
 
@@ -717,8 +714,51 @@ export function startPrototype(canvas: HTMLCanvasElement) {
 
   const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({ autoConnect: false });
 
+  const developerConsole = createDeveloperConsole({
+    requestServerTelemetry(): void {
+      if (socket.connected) socket.emit('debug:telemetry-request');
+    },
+    readClientData() {
+      const transport = socket.io.engine?.transport;
+      const intervals = networkStats.stateArrivalIntervalsMs;
+      const intervalMean = intervals.length ? intervals.reduce((sum, value) => sum + value, 0) / intervals.length : null;
+      const intervalJitter = intervalMean === null ? null : Math.sqrt(intervals.reduce((sum, value) => sum + (value - intervalMean) ** 2, 0) / intervals.length);
+      const now = performance.now();
+      const sessionStats = session?.getDiagnostics() as {
+        vehicle?: { speedMps: number; speedKph: number; grounded: boolean; airborneSeconds: number; headingRadians: number };
+        simulation?: { tickRateHz: number; stepsLastFrame: number; physicsMsLastFrame: number; frameDeltaMs: number };
+        renderer?: { pixelRatio: number; drawCalls: number; triangles: number; geometries: number; textures: number; trackTileMeshes: number };
+        remotePlayers?: { id: string; snapshotAgeMs: number | null; interarrivalJitterMs: number | null; bufferUnderruns: number; extrapolating: boolean }[];
+      } | null;
+      const elapsedSeconds = Math.max(0.001, (now - networkStats.startedAt) / 1000);
+      return {
+        mode: currentMode,
+        room: activeRoom ? { phase: activeRoom.phase, players: activeRoom.players.length, track: activeRoom.settings.trackName } : null,
+        performance: performanceStats.diagnostics,
+        socket: { connected: socket.connected, transport: transport?.name ?? null },
+        traffic: {
+          stateSentHz: networkStats.stateMessagesSent / elapsedSeconds,
+          stateReceivedHz: networkStats.stateMessagesReceived / elapsedSeconds,
+          approximateBytesSentPerSecond: networkStats.approximateJsonBytesSent / elapsedSeconds,
+          approximateBytesReceivedPerSecond: networkStats.approximateJsonBytesReceived / elapsedSeconds,
+          stateArrivalJitterMs: intervalJitter,
+          lastStateAgeMs: networkStats.lastStateReceivedAt === null ? null : now - networkStats.lastStateReceivedAt,
+        },
+        vehicle: sessionStats?.vehicle ?? null,
+        simulation: sessionStats?.simulation ?? null,
+        renderer: sessionStats?.renderer ?? null,
+        remotePlayers: sessionStats?.remotePlayers ?? [],
+      };
+    },
+  });
+
   homeScreen = createHomeScreen(homeRoot, {
-    onTimeTrial() { enterTimeTrial(); },
+    onTimeTrial() {
+      homeScreen.showTimeTrialSetup();
+      timeTrialSetup.show();
+      setMode('time-trial-setup');
+      void refreshTimeTrialTracks();
+    },
     onMultiplayer() { enterMultiplayerMenu(); },
     onBackToLanding() {
       if (socket.connected) socket.disconnect();
@@ -737,6 +777,15 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     },
   }, fallbackTrackId.replace(/^preset:/, ''));
 
+  timeTrialSetup = createTimeTrialSetup(homeRoot, {
+    onBack() {
+      timeTrialSetup.hide();
+      homeScreen.showLanding();
+      setMode('home');
+    },
+    onStart(track, color) { enterTimeTrial(track, color); },
+  }, timeTrialColor);
+
   lobbyScreen = createLobbyScreen(lobbyRoot, {
     onStartLobby(payload) {
       socket.emit('multiplayer:start-lobby', payload);
@@ -746,6 +795,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
       socket.emit('multiplayer:leave-lobby');
       enterHomeScreen('Leaving lobby...');
     },
+    onColor(color) { socket.emit('multiplayer:set-color', { color }); },
     onUpdateSettings(payload) {
       socket.emit('multiplayer:update-settings', payload);
       lobbyScreen.setStatus('Updating lobby settings...');
@@ -755,6 +805,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   homeScreen.setPlayerName(preferences.playerName);
 
   socket.on('multiplayer:bootstrap', (payload) => {
+    networkStats.bootstrapEventsReceived++;
     bootstrap = payload;
     localPlayerId = payload.playerId;
     homeScreen.setPlayerName(preferences.playerName);
@@ -776,43 +827,66 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     const lobbyId = payload.activeLobbyId ?? preferences.lobbyId;
     if (lobbyId) {
       socket.emit('multiplayer:join-lobby', { lobbyId, playerName: preferences.playerName });
-    } else {
-      enterHomeScreen();
     }
   });
 
   socket.on('multiplayer:lobbies', ({ lobbies }) => {
+    networkStats.lobbyListEventsReceived++;
     bootstrap = bootstrap ? { ...bootstrap, lobbies } : bootstrap;
     homeScreen.setLobbies(lobbies);
   });
 
   socket.on('multiplayer:tracks', ({ trackOptions }) => {
+    networkStats.trackListEventsReceived++;
     if (bootstrap) bootstrap = { ...bootstrap, trackOptions };
     homeScreen.setTrackOptions(trackOptions);
     lobbyScreen.setTrackOptions(trackOptions);
   });
 
   socket.on('multiplayer:room', ({ lobby }) => {
+    networkStats.roomEventsReceived++;
     if (bootstrap) bootstrap = { ...bootstrap, activeLobbyId: lobby?.id ?? null, activeLobbyPhase: lobby?.phase ?? null };
     syncRoom(lobby);
   });
 
   socket.on('multiplayer:player-state', ({ playerId, state }) => {
+    const receivedAt = performance.now();
+    networkStats.stateMessagesReceived++;
+    networkStats.approximateJsonBytesReceived += new TextEncoder().encode(JSON.stringify({ playerId, state })).byteLength;
+    if (networkStats.lastStateReceivedAt !== null) {
+      networkStats.stateArrivalIntervalsMs.push(receivedAt - networkStats.lastStateReceivedAt);
+      if (networkStats.stateArrivalIntervalsMs.length > 60) networkStats.stateArrivalIntervalsMs.shift();
+    }
+    networkStats.lastStateReceivedAt = receivedAt;
     if (playerId === localPlayerId || !session) return;
     session.updateRemotePlayer(playerId, state);
   });
 
   socket.on('multiplayer:error', ({ message }) => {
+    networkStats.errorsReceived++;
     homeScreen.setStatus(message);
     lobbyScreen.setStatus(message);
     saveMultiplayerPreferences({ playerName: homeScreen.getPlayerName(), lobbyId: null });
   });
 
   socket.on('disconnect', () => {
+    networkStats.disconnects++;
     homeScreen.setStatus('Disconnected. Reconnecting...');
     lobbyScreen.setStatus('Disconnected. Reconnecting...');
     raceRoomStatusElement.textContent = 'Disconnected. Reconnecting...';
   });
+
+  socket.on('connect', () => { networkStats.connects++; });
+  socket.on('recording:probe', reply => {
+    const stats = performanceStats.diagnostics;
+    const sessionStats = session?.getDiagnostics() as { remotePlayers: RecordingClientReport['remotePlayers'] } | undefined;
+    reply({
+      visible: !document.hidden, racing: currentMode === 'race', fps: stats.fps,
+      frameMs: stats.averageFrameIntervalMs, httpPingMs: stats.httpPingMs,
+      remotePlayers: sessionStats?.remotePlayers ?? [],
+    });
+  });
+  socket.on('debug:telemetry', (snapshot) => developerConsole.setServerData(snapshot));
 
   raceLeaveButtonElement.addEventListener('click', () => {
     if (activeRoom && socket.connected) {
@@ -840,8 +914,15 @@ export function startPrototype(canvas: HTMLCanvasElement) {
       if (input.consumeCameraToggle()) session.toggleCamera();
       session.step(elapsed, input.sample());
       tuningPanel.update(session.state);
+      if (activeRoom) {
+        const speed = String(Math.round(Math.hypot(session.state.speed, session.state.lateralSpeed) * 3.6));
+        if (multiplayerSpeed.value !== speed) multiplayerSpeed.value = speed;
+      }
       if (activeRoom && socket.connected && time - lastStateSentAt >= multiplayerStateInterval) {
-        socket.emit('multiplayer:update-state', { state: session.state });
+        const payload = { state: session.state };
+        socket.emit('multiplayer:update-state', payload);
+        networkStats.stateMessagesSent++;
+        networkStats.approximateJsonBytesSent += new TextEncoder().encode(JSON.stringify(payload)).byteLength;
         lastStateSentAt = time;
       }
       refreshSessionFromRoom();
@@ -869,6 +950,9 @@ export function startPrototype(canvas: HTMLCanvasElement) {
       window.removeEventListener('blur', resetTiming);
       input.dispose();
       performanceStats.dispose();
+      developerConsole.dispose();
+      timeTrialSetup.dispose();
+      menuBackdrop.dispose();
       socket.disconnect();
       disposeSession();
       tuningPanel.dispose();

@@ -2,9 +2,11 @@ import type { BuildOptions } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 
 export const browserBuildOptions: BuildOptions = {
-  absWorkingDir: fileURLToPath(new URL('..', import.meta.url)),
-  entryPoints: { main: './src/main.ts', 'map-builder': './src/map-builder.ts' },
-  outdir: 'dist',
+  entryPoints: {
+    main: fileURLToPath(new URL('../src/main.ts', import.meta.url)),
+    'map-builder': fileURLToPath(new URL('../src/map-builder.ts', import.meta.url)),
+  },
+  outdir: fileURLToPath(new URL('../dist/', import.meta.url)),
   bundle: true,
   format: 'esm',
   platform: 'browser',

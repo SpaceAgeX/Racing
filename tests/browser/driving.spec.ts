@@ -4,6 +4,7 @@ import type { startPrototype } from '../../src/prototype.ts';
 import { readFile } from 'node:fs/promises';
 import { formatLapTime } from '../../src/ui/lap-display.ts';
 import { enterRace } from './race-helpers.ts';
+import { trackOptions } from '../../src/multiplayer/protocol.ts';
 
 type Prototype = ReturnType<typeof startPrototype>;
 
@@ -73,6 +74,44 @@ test('the car, tiled track, and start arch render with a controls hint and no br
   expect(initial.camera[2]).toBeGreaterThan(initial.position.z);
   await page.screenshot({ path: 'test-results/prototype-desktop.png' });
   expect(errors).toEqual([]);
+});
+
+test('time trial setup previews shared maps, selects car color, and starts solo on the chosen track', async ({ page }) => {
+  const duplicate = { ...trackOptions[0]!, id: 'old-default-copy', updatedAt: 1 };
+  await page.addInitScript(record => {
+    localStorage.setItem('racing-active-track-v1', JSON.stringify(record));
+    localStorage.setItem('racing-track-library-v1', JSON.stringify([record]));
+  }, duplicate);
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: /Map Builder/ })).toBeVisible();
+  await page.getByRole('button', { name: /Time Trial/ }).click();
+  await expect(page.getByRole('heading', { name: 'Choose your track' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Sky blue', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#home-screen .trial-color-swatch')).toHaveCount(15);
+  const trackSelect = page.locator('#time-trial-track-select');
+  await expect(trackSelect.locator('option')).not.toHaveCount(0);
+  await expect(trackSelect.locator('option').filter({ hasText: 'Default circuit' })).toHaveCount(1);
+  await trackSelect.selectOption('simple-loop');
+  await expect(page.locator('[data-track-name]')).toHaveText('Simple loop track');
+  await expect(page.locator('[data-preview]')).toBeVisible();
+  await page.getByRole('button', { name: 'Pink', exact: true }).click();
+  await page.getByRole('button', { name: 'Start Time Trial' }).click();
+  await expect(page.locator('#race-screen')).toBeVisible();
+  await expect(page.locator('#active-track-name')).toHaveText('Simple loop track');
+  const choices = await page.evaluate(() => ({
+    color: localStorage.getItem('racing-time-trial-color-v1'),
+    track: JSON.parse(localStorage.getItem('racing-active-track-v1') ?? 'null') as { id?: string } | null,
+  }));
+  expect(choices.color).toBe('#ff8ab0');
+  expect(choices.track?.id).toBe('simple-loop');
+});
+
+test('connecting to multiplayer keeps the lobby browser visible', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: /Multiplayer Race/ }).click();
+  await expect(page.locator('#home-status')).toContainText('Connected');
+  await expect(page.locator('#home-multiplayer-menu')).toBeVisible();
+  await expect(page.locator('#home-landing')).toBeHidden();
 });
 
 test('keyboard drives acceleration, coasting, steering, braking, reverse, and camera tracking', async ({ page }) => {

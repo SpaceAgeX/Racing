@@ -275,8 +275,12 @@ export function createLobbyHandlingEditor(root: HTMLElement, onCommit: (paramete
       row.append(heading, input);
       group.append(row);
       controls.push({ definition, input, output });
-      input.addEventListener('input', () => { setValue(definition, Number(input.value)); sync(); });
-      input.addEventListener('change', () => onCommit(copyTuningParameters(parameters)));
+      input.addEventListener('input', () => {
+        if (input.disabled) return;
+        setValue(definition, Number(input.value));
+        sync();
+        onCommit(copyTuningParameters(parameters));
+      });
     }
     fields.append(group);
   }

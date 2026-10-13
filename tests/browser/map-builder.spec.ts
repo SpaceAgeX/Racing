@@ -61,7 +61,7 @@ test('builder enforces one start and saves, loads, plays, and deletes multiple t
   });
   expect(game.tiles).toBe(9);
   expect(game.layout[11]![11]).toBe(2);
-  await page.getByRole('link', { name: 'Map Builder', exact: true }).click();
+  await page.goto('/map-builder/');
   await page.getByLabel('Presets and saved tracks').selectOption({ label: 'Test track A' });
   await page.getByRole('button', { name: 'Delete track', exact: true }).click();
   await expect(page.locator('#builder-message')).toContainText('Deleted Test track A');
@@ -119,7 +119,7 @@ test('a track saved in one browser is playable in another and deleting it update
       return { tiles: prototype.view.trackTiles.length, starts: prototype.layout[32]![32], localLibrary: localStorage.getItem('racing-track-library-v1') };
     });
     expect(result).toEqual({ tiles: 2, starts: 2, localLibrary: null });
-    await other.getByRole('link', { name: 'Map Builder', exact: true }).click();
+    await other.goto('/map-builder/');
     await page.bringToFront();
     await page.getByRole('button', { name: 'Delete track', exact: true }).click();
     await expect(page.locator('#builder-message')).toContainText('Deleted Shared browser track');

@@ -33,9 +33,12 @@
             <div class="lap-row"><span>Last</span><output id="lap-last">--:--.--</output></div>
             <output id="lap-delta" class="lap-delta" hidden></output>
             <p id="lap-status">Cross the line to start</p>
-            <a href="/map-builder/" class="map-builder-link">Map Builder</a>
           </section>
           <canvas id="minimap" class="minimap" role="img" aria-label="Track minimap. The orange arrow shows your car's position and direction; green marks start/finish."></canvas>
+          <div class="race-speed" aria-label="Vehicle speed">
+            <span>Speed</span>
+            <div><output id="multiplayer-speed" aria-live="off">0</output> <span>km/h</span></div>
+          </div>
           <p class="controls" aria-label="Driving controls">
             <span><kbd>W</kbd> Accelerate</span>
             <span><kbd>A</kbd><kbd>D</kbd> Steer</span>
