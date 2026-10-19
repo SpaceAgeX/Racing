@@ -3,26 +3,105 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Map Builder · Racing</title>
+    <title>Spline Map Builder &middot; Racing</title>
     <link rel="stylesheet" href="/map-builder/styles.css" />
   </head>
   <body>
-    <header class="page-header"><div><p class="eyebrow">Racing prototype</p><h1>Map Builder</h1></div><a href="/">Back to game</a></header>
+    <header class="page-header">
+      <div><p class="eyebrow">Racing prototype</p><h1>Spline Map Builder</h1></div>
+      <a href="/">Back to game</a>
+    </header>
     <main class="builder-layout">
-      <section class="canvas-panel" aria-label="Track editor">
-        <div class="canvas-heading"><span>64 × 64 grid</span><output id="cell-position">Click and drag to paint</output></div>
-        <div class="canvas-scroll"><canvas id="map-canvas" aria-label="64 by 64 track grid. Select Track, Start/finish, or Erase and paint cells."></canvas></div>
-        <p class="canvas-hint">Each square is one track tile. The car starts facing toward the top of the map.</p>
-      </section>
-      <aside class="builder-tools">
-        <section><h2>Paint</h2><div class="paint-tools" role="group" aria-label="Painting tools">
-          <button type="button" data-tool="1" aria-pressed="true"><span class="swatch track"></span>Track</button>
-          <button type="button" data-tool="2" aria-pressed="false"><span class="swatch start"></span>Start / finish</button>
-          <button type="button" data-tool="0" aria-pressed="false"><span class="swatch empty"></span>Erase</button>
-        </div><p class="help">Placing a new start moves the old one. Saved tracks need exactly one.</p><output id="map-summary"></output></section>
-        <section><h2>Save this track</h2><label for="track-name">Track name</label><input id="track-name" maxlength="60" value="Default circuit" autocomplete="off" /><button id="save-track" type="button">Save track</button><p class="help">Saving an existing name updates the shared track.</p></section>
-        <section><h2>Track library</h2><label for="track-library">Presets and saved tracks</label><select id="track-library"></select><div class="button-row"><button id="load-track" type="button">Load track</button><button id="delete-track" type="button">Delete track</button></div><button id="new-track" type="button" class="secondary">New blank track</button></section>
-        <section class="play-section"><button id="play-track" type="button" class="primary">Play track</button><p class="help">Saved tracks are shared with everyone on this server.</p><p id="builder-message" role="status" aria-live="polite">Ready to build.</p></section>
+      <div id="visual-workspace" class="visual-workspace">
+        <section class="canvas-panel" aria-label="Spline track editor">
+          <div class="canvas-heading">
+            <output id="spline-summary">0 points &middot; 0 connections</output>
+            <output id="pointer-position">X 0 &middot; Y 0</output>
+          </div>
+          <div class="canvas-area"><canvas id="map-canvas" aria-label="Spline track canvas. Click to add points and drag selected points or their handles."></canvas></div>
+          <p class="canvas-hint">Use this top-down view to build the road and place race markers. Step 6 opens the 3D elevation preview.</p>
+        </section>
+        <section id="preview-panel" class="preview-panel" aria-label="3D track preview" hidden>
+          <div class="canvas-heading"><span>3D track preview</span><span><output id="preview-status">Continuous mesh</output> &middot; Drag to orbit &middot; Scroll to zoom</span></div>
+          <div class="preview-area"><canvas id="preview-canvas" aria-label="Elevated 3D track preview. Drag to orbit and scroll to zoom."></canvas></div>
+          <p class="canvas-hint">Overlapping road shapes are unioned before elevation, triangulation, and extrusion. Warnings never block editing.</p>
+        </section>
+      </div>
+      <aside class="builder-tools" aria-label="Spline editing tools">
+        <section>
+          <h2>Build your layout</h2>
+          <div class="tool-buttons" role="group" aria-label="Editor tool">
+            <button id="add-point" type="button" aria-label="Add points" aria-pressed="true"><span class="step-number">1</span><span><strong>Add points</strong><small>Place the junctions</small></span></button>
+            <button id="connect-points" type="button" aria-label="Connect points" aria-pressed="false"><span class="step-number">2</span><span><strong>Connect points</strong><small>Build routes and branches</small></span></button>
+            <button id="edit-curve" type="button" aria-label="Edit curves" aria-pressed="false"><span class="step-number">3</span><span><strong>Edit curves</strong><small>Select a point for handles</small></span></button>
+            <button id="edit-width" type="button" aria-label="Set widths" aria-pressed="false"><span class="step-number">4</span><span><strong>Set widths</strong><small>Shape the road in 2D</small></span></button>
+            <div class="phase-break" aria-hidden="true"><span>Race setup</span></div>
+            <button id="edit-race" type="button" aria-label="Set finish line" aria-pressed="false"><span class="step-number">5</span><span><strong>Finish line</strong><small>Place the grid and checkpoints</small></span></button>
+            <div class="phase-break" aria-hidden="true"><span>3D shaping</span></div>
+            <button id="edit-height" type="button" aria-label="Set heights" aria-pressed="false"><span class="step-number">6</span><span><strong>Set heights</strong><small>Shape rounded elevation</small></span></button>
+          </div>
+          <p class="help">Step 5 places the finish grid and up to three checkpoints. Step 6 shapes elevation in the 3D preview.</p>
+        </section>
+        <section>
+          <h2>Selection</h2>
+          <output id="selection-summary">Nothing selected</output>
+          <div id="handle-options" hidden>
+            <span class="field-label">Handle behavior</span>
+            <div class="handle-modes" role="group" aria-label="Handle behavior">
+              <button type="button" data-handle-mode="smooth" aria-pressed="true">Smooth</button>
+              <button type="button" data-handle-mode="symmetric" aria-pressed="false">Symmetric</button>
+              <button type="button" data-handle-mode="corner" aria-pressed="false">Corner</button>
+            </div>
+            <p class="help">Smooth keeps two handles aligned, Symmetric also matches their lengths, and Corner moves them independently. Branch points use Corner.</p>
+          </div>
+          <p class="help">Select points or curves in the top-down view to edit the setting for the active step.</p>
+          <button id="delete-selection" class="danger" type="button" disabled>Delete selection</button>
+        </section>
+        <section id="width-panel" hidden>
+          <h2>Track width</h2>
+          <label class="range-heading" for="default-width"><span>Default width</span><output id="default-width-value" for="default-width">12.0 m</output></label>
+          <input id="default-width" type="range" min="4" max="30" step="0.5" value="12" />
+          <p class="help">Changing the default updates every point that has not been customized.</p>
+          <div id="point-width-options" hidden>
+            <label class="range-heading" for="point-width"><span>Selected point</span><output id="point-width-value" for="point-width">12.0 m</output></label>
+            <input id="point-width" type="range" min="4" max="30" step="0.5" value="12" />
+            <button id="reset-point-width" type="button">Use default width</button>
+          </div>
+        </section>
+        <section id="height-panel" hidden>
+          <h2>Point elevation</h2>
+          <p id="height-empty" class="help">Select a point in the top-down view to edit its elevation.</p>
+          <div id="point-height-options" hidden>
+            <label class="range-heading" for="point-height"><span>Height</span><output id="point-height-value" for="point-height">0.0 m</output></label>
+            <input id="point-height" type="range" min="-50" max="50" step="0.5" value="0" />
+            <label class="range-heading" for="point-steepness"><span>Steepness</span><output id="point-steepness-value" for="point-steepness">35%</output></label>
+            <input id="point-steepness" type="range" min="0" max="100" step="1" value="35" />
+            <p class="help">Steepness controls how quickly the slope changes. Transitions always round off smoothly at points.</p>
+          </div>
+        </section>
+        <section id="race-panel" hidden>
+          <h2>Race markers</h2>
+          <div class="race-marker-modes" role="group" aria-label="Race marker placement">
+            <button id="place-finish" type="button" aria-pressed="true">Place finish line</button>
+            <button id="place-checkpoint" type="button" aria-pressed="false">Add checkpoint</button>
+          </div>
+          <output id="finish-status">No finish line placed</output>
+          <div class="finish-actions">
+            <button id="flip-finish" type="button" disabled>Flip direction</button>
+            <button id="clear-finish" type="button" disabled>Clear finish line</button>
+          </div>
+          <div class="checkpoint-heading"><span>Checkpoints</span><output id="checkpoint-count">0 / 3</output></div>
+          <div id="checkpoint-list" class="checkpoint-list"><p class="help">No checkpoints added.</p></div>
+          <p class="help">Click a curve to place the active marker. The finish preview includes all 10 spawn positions in five rows of two and needs 29 m of clear connection on both sides; the connection direction points forward.</p>
+        </section>
+        <section class="bottom-tools">
+          <button id="clear-track" type="button" disabled>Clear canvas</button>
+          <p id="builder-message" role="status" aria-live="polite">Click empty space to add points.</p>
+        </section>
+        <section class="future-note" aria-label="Current scope">
+          <h2>Editor preview only</h2>
+          <p>The spline layout, race markers, widths, and elevation exist only in this editor for now. Saving, route naming, and race integration come later.</p>
+        </section>
       </aside>
     </main>
     <script type="module" src="/assets/map-builder.js"></script>
