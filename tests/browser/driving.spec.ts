@@ -245,10 +245,11 @@ test('sliders change driving immediately, persist on refresh, save JSON, and res
 
   await page.getByRole('button', { name: 'Reset defaults', exact: true }).click();
   const reset = await tuningSnapshot(page);
-  expect(reset.driving.maxSpeed).toBe(62);
-  expect(reset.driving.acceleration).toBe(22);
+  expect(reset.driving.maxSpeed).toBe(80);
+  expect(reset.driving.acceleration).toBe(40);
+  expect(reset.driving.braking).toBe(55.5);
   expect(reset.driving.maxSteeringAngle).toBe(0.55);
-  expect(reset.driving.highSpeedSteeringAngle).toBe(0.1);
+  expect(reset.driving.highSpeedSteeringAngle).toBe(0.07);
   expect(reset.physics.respawnDelay).toBe(1);
   await page.reload();
   await enterRace(page);

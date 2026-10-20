@@ -436,8 +436,8 @@ test('live driving parameters are used by the world simulation without changing 
     stepVehicleInWorld(state, forward, FIXED_TIMESTEP, world, spawn, physicsParameters, tuning);
   }
   assert.equal(state.speed, 3);
-  assert.equal(drivingParameters.maxSpeed, 62);
-  assert.equal(drivingParameters.acceleration, 22);
+  assert.equal(drivingParameters.maxSpeed, 80);
+  assert.equal(drivingParameters.acceleration, 40);
 });
 
 test('falling and repeated respawns are identical at 30, 60, and 144 rendering FPS', () => {

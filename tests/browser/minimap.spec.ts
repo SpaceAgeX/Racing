@@ -28,8 +28,8 @@ test('new defaults drive the minimap marker, its arrow turns, and falling/respaw
   await page.goto('/');
   await enterRace(page);
   await expect(page.locator('#minimap')).toBeVisible();
-  await expect(page.locator('#tuning-panel').getByLabel('Acceleration', { exact: true })).toHaveValue('22');
-  await expect(page.locator('#tuning-panel').getByLabel('Top speed limit', { exact: true })).toHaveValue('62');
+  await expect(page.locator('#tuning-panel').getByLabel('Acceleration', { exact: true })).toHaveValue('40');
+  await expect(page.locator('#tuning-panel').getByLabel('Top speed limit', { exact: true })).toHaveValue('80');
   const initial = await pixels(page);
   expect(initial.count).toBeGreaterThan(10);
   expect(initial.bottom - initial.top).toBeGreaterThan(initial.right - initial.left);
