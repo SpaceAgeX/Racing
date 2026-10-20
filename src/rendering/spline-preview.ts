@@ -1,76 +1,9 @@
+import { buildRoadGeometry, TRACK_THICKNESS } from '../track/road-geometry.ts';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildSplineSurface, splineSurfaceHeightAt } from '../track/spline-surface.ts';
 import { getSplineTrackFrame, SPLINE_EDITOR_WORLD_SIZE, type SplineGraph } from '../track/spline.ts';
-
-const TRACK_THICKNESS = 1.5;
-const MAX_SURFACE_TRIANGLE_EDGE = 6;
-const MAX_SURFACE_REFINEMENT_PASSES = 8;
-
-interface SurfacePoint {
-  x: number;
-  z: number;
-}
-
-type SurfaceFace = [number, number, number];
-
-function surfaceEdgeLength(a: Readonly<SurfacePoint>, b: Readonly<SurfacePoint>): number {
-  return Math.hypot(b.x - a.x, b.z - a.z);
-}
-
-function refineSurfaceTriangles(vertices: SurfacePoint[], initialFaces: number[][]): SurfaceFace[] {
-  let faces: SurfaceFace[] = initialFaces.map((face) => [face[0]!, face[1]!, face[2]!]);
-  for (let pass = 0; pass < MAX_SURFACE_REFINEMENT_PASSES; pass++) {
-    const midpointByEdge = new Map<string, number>();
-    let refined = false;
-
-    function midpointIndex(firstIndex: number, secondIndex: number): number | null {
-      const first = vertices[firstIndex]!;
-      const second = vertices[secondIndex]!;
-      if (surfaceEdgeLength(first, second) <= MAX_SURFACE_TRIANGLE_EDGE) return null;
-      const low = Math.min(firstIndex, secondIndex);
-      const high = Math.max(firstIndex, secondIndex);
-      const key = `${low}:${high}`;
-      const existing = midpointByEdge.get(key);
-      if (existing !== undefined) return existing;
-      const index = vertices.length;
-      vertices.push({ x: (first.x + second.x) / 2, z: (first.z + second.z) / 2 });
-      midpointByEdge.set(key, index);
-      return index;
-    }
-
-    const nextFaces: SurfaceFace[] = [];
-    for (const [a, b, c] of faces) {
-      const ab = midpointIndex(a, b);
-      const bc = midpointIndex(b, c);
-      const ca = midpointIndex(c, a);
-      if (ab === null && bc === null && ca === null) {
-        nextFaces.push([a, b, c]);
-        continue;
-      }
-      refined = true;
-      if (ab !== null && bc !== null && ca !== null) {
-        nextFaces.push([a, ab, ca], [ab, b, bc], [ca, bc, c], [ab, bc, ca]);
-      } else if (ab !== null && bc !== null) {
-        nextFaces.push([ab, b, bc], [a, ab, bc], [a, bc, c]);
-      } else if (ab !== null && ca !== null) {
-        nextFaces.push([a, ab, ca], [ab, b, c], [ab, c, ca]);
-      } else if (bc !== null && ca !== null) {
-        nextFaces.push([bc, c, ca], [a, b, bc], [a, bc, ca]);
-      } else if (ab !== null) {
-        nextFaces.push([a, ab, c], [ab, b, c]);
-      } else if (bc !== null) {
-        nextFaces.push([b, bc, a], [bc, c, a]);
-      } else {
-        nextFaces.push([c, ca!, b], [ca!, a, b]);
-      }
-    }
-    faces = nextFaces;
-    if (!refined) break;
-  }
-  return faces;
-}
 
 export function createSplinePreview(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -142,86 +75,22 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
     }
     disposeMarkers();
 
-    const surface = buildSplineSurface(graph);
-    finishMarkerMeshes = 0;
-    checkpointMarkerMeshes = 0;
-    warningCount = surface.warnings.length;
-    polygonCount = surface.polygons.length;
-    const topPositions: number[] = [];
-    const bottomPositions: number[] = [];
-    const sidePositions: number[] = [];
-    maximumTopTriangleEdge = 0;
-    let minimumTopHeight = Number.POSITIVE_INFINITY;
-    let maximumTopHeight = Number.NEGATIVE_INFINITY;
-
-    function topHeight(point: SurfacePoint): number {
-      const height = splineSurfaceHeightAt(surface, point.x, point.z);
-      minimumTopHeight = Math.min(minimumTopHeight, height);
-      maximumTopHeight = Math.max(maximumTopHeight, height);
-      return height;
-    }
-
-    function pushTriangle(
-      positions: number[],
-      a: SurfacePoint,
-      yA: number,
-      b: SurfacePoint,
-      yB: number,
-      c: SurfacePoint,
-      yC: number,
-    ): void {
-      positions.push(a.x, yA, a.z, b.x, yB, b.z, c.x, yC, c.z);
-    }
-
-    function ringPoints(ring: number[][]): SurfacePoint[] {
-      const points = ring.map(([x, z]) => ({ x: x!, z: z! }));
-      if (points.length > 1 && points[0]!.x === points.at(-1)!.x && points[0]!.z === points.at(-1)!.z) points.pop();
-      return points;
-    }
-
-    for (const polygon of surface.polygons) {
-      if (!polygon.length) continue;
-      const contour = ringPoints(polygon[0]!);
-      const holes = polygon.slice(1).map(ringPoints);
-      const contourVectors = contour.map((point) => new THREE.Vector2(point.x, point.z));
-      const holeVectors = holes.map((hole) => hole.map((point) => new THREE.Vector2(point.x, point.z)));
-      const flattened = [contour, ...holes].flat();
-      const faces = refineSurfaceTriangles(flattened, THREE.ShapeUtils.triangulateShape(contourVectors, holeVectors));
-      for (const face of faces) {
-        const a = flattened[face[0]!]!;
-        const b = flattened[face[1]!]!;
-        const c = flattened[face[2]!]!;
-        const yA = topHeight(a);
-        const yB = topHeight(b);
-        const yC = topHeight(c);
-        maximumTopTriangleEdge = Math.max(
-          maximumTopTriangleEdge,
-          surfaceEdgeLength(a, b),
-          surfaceEdgeLength(b, c),
-          surfaceEdgeLength(c, a),
-        );
-        const normalY = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z);
-        if (normalY >= 0) {
-          pushTriangle(topPositions, a, yA, b, yB, c, yC);
-          pushTriangle(bottomPositions, c, yC - TRACK_THICKNESS, b, yB - TRACK_THICKNESS, a, yA - TRACK_THICKNESS);
-        } else {
-          pushTriangle(topPositions, a, yA, c, yC, b, yB);
-          pushTriangle(bottomPositions, b, yB - TRACK_THICKNESS, c, yC - TRACK_THICKNESS, a, yA - TRACK_THICKNESS);
-        }
-      }
-
-      for (const ring of [contour, ...holes]) {
-        for (let index = 0; index < ring.length; index++) {
-          const current = ring[index]!;
-          const next = ring[(index + 1) % ring.length]!;
-          const currentHeight = topHeight(current);
-          const nextHeight = topHeight(next);
-          pushTriangle(sidePositions, current, currentHeight, current, currentHeight - TRACK_THICKNESS, next, nextHeight);
-          pushTriangle(sidePositions, next, nextHeight, current, currentHeight - TRACK_THICKNESS, next, nextHeight - TRACK_THICKNESS);
-        }
+    const data = buildRoadGeometry(graph);
+    const surface = data.surface;
+    finishMarkerMeshes = 0; checkpointMarkerMeshes = 0;
+    warningCount=surface.warnings.length;polygonCount=surface.polygons.length;
+    const topPositions:number[]=[],bottomPositions:number[]=[],sidePositions:number[]=[];
+    maximumTopTriangleEdge=0;
+    let minimumTopHeight=Infinity,maximumTopHeight=-Infinity;
+    for(const t of data.triangles){
+      if(t.kind==='obstacle')continue;
+      const positions=t.kind==='top'?topPositions:t.kind==='bottom'?bottomPositions:sidePositions;
+      positions.push(...[t.a,t.b,t.c].flatMap(p=>[p.x,p.y,p.z]));
+      if(t.kind==='top'){
+        for(const p of [t.a,t.b,t.c]){minimumTopHeight=Math.min(minimumTopHeight,p.y);maximumTopHeight=Math.max(maximumTopHeight,p.y);}
+        maximumTopTriangleEdge=Math.max(maximumTopTriangleEdge,...[[t.a,t.b],[t.b,t.c],[t.c,t.a]].map(([a,b])=>Math.hypot(a!.x-b!.x,a!.z-b!.z)));
       }
     }
-
     topSurfaceHeightRange = Number.isFinite(minimumTopHeight) && Number.isFinite(maximumTopHeight)
       ? maximumTopHeight - minimumTopHeight : 0;
 
@@ -293,7 +162,7 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
             const z = centerZ + acrossZ * across + tangentZ * along;
             const checker = new THREE.Mesh(checkerGeometry, finishCheckerMaterials[(rowIndex + column) % 2]!);
             checker.rotation.y = Math.atan2(tangentX, tangentZ);
-            checker.position.set(x, splineSurfaceHeightAt(surface, x, z) + markerThickness / 2 + .025, z);
+            checker.position.set(x, data.heightAt(x,z) + markerThickness / 2 + .025, z);
             checker.renderOrder = 2;
             raceMarkers.add(checker);
           }
@@ -305,7 +174,7 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
         for (const side of [-1, 1]) {
           const x = centerX + acrossX * postOffset * side;
           const z = centerZ + acrossZ * postOffset * side;
-          const baseHeight = splineSurfaceHeightAt(surface, x, z);
+          const baseHeight = data.heightAt(x,z);
           const post = new THREE.Mesh(postGeometry, finishArchMaterial);
           post.rotation.y = Math.atan2(tangentX, tangentZ);
           post.position.set(x, baseHeight + archHeight / 2, z);
@@ -343,7 +212,7 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
         const z = centerZ + acrossZ * across;
         const marker = new THREE.Mesh(segmentGeometry, checkpointMaterial);
         marker.rotation.y = Math.atan2(tangentX, tangentZ);
-        marker.position.set(x, splineSurfaceHeightAt(surface, x, z) + markerThickness / 2 + .03, z);
+        marker.position.set(x, data.heightAt(x,z) + markerThickness / 2 + .03, z);
         marker.renderOrder = 3;
         raceMarkers.add(marker);
         checkpointMarkerMeshes++;

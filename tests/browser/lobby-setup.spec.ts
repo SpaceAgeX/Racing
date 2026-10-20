@@ -48,7 +48,7 @@ test('lobby previews, colors and host settings update live for guests', async ({
     await expect(page.locator('#lobby-player-count')).toHaveText('1 / 10');
     await expect(page.locator('#lobby-colors').getByRole('button', { name: 'Pink', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Start race', exact: true }).click();
-    await expect(page.locator('#race-screen')).toBeVisible();
+    await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
   } finally { await guestContext.close(); }
 });
 

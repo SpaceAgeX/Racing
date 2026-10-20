@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { cloneTrack, playableTrackError } from '../src/track/model.ts';
-import type { TrackLayout } from '../src/track/layout.ts';
+import { splineTrackError as playableTrackError } from '../src/track/spline-records.ts';
+const cloneTrack = structuredClone;
+import type { SplineTrack as TrackLayout } from '../src/track/spline-records.ts';
 import { isSavedTrack, trackNameError } from '../src/track/records.ts';
 import type { SavedTrack } from '../src/track/records.ts';
 

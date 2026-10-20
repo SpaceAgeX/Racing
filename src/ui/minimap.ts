@@ -1,25 +1,20 @@
-import { getTilePosition } from '../track/grid.ts';
-import type { TrackLayout } from '../track/layout.ts';
+import { buildSplineSurface } from '../track/spline-surface.ts';
+import { getSplineTrackFrame, SPLINE_EDITOR_WORLD_SIZE } from '../track/spline.ts';
+import type { SplineTrack as TrackLayout } from '../track/spline-records.ts';
 import type { VehicleState } from '../simulation/types.ts';
 
 /** Fixed north-up view: +X is right, +Z is down, vehicle heading zero points up. */
-export function createMinimap(canvas: HTMLCanvasElement, layout: TrackLayout, tileSize: number) {
+export function createMinimap(canvas: HTMLCanvasElement, layout: TrackLayout) {
   const context = canvas.getContext('2d');
   if (!context) throw new Error('Minimap canvas is unavailable.');
   const background = document.createElement('canvas');
   const mapContext = background.getContext('2d')!;
-  const tiles: { value: 1 | 2; row: number; column: number; x: number; z: number }[] = [];
-  for (let row = 0; row < layout.length; row++) for (let column = 0; column < layout[row]!.length; column++) {
-    const value = layout[row]![column];
-    if (value === 1 || value === 2) tiles.push({ value, row, column, ...getTilePosition(layout, row, column, tileSize) });
-  }
-  // Fit occupied cells rather than wasting space on the blank part of the 64x64 map.
-  const minX = tiles.length ? Math.min(...tiles.map((tile) => tile.x)) - tileSize / 2 : -tileSize;
-  const maxX = tiles.length ? Math.max(...tiles.map((tile) => tile.x)) + tileSize / 2 : tileSize;
-  const minZ = tiles.length ? Math.min(...tiles.map((tile) => tile.z)) - tileSize / 2 : -tileSize;
-  const maxZ = tiles.length ? Math.max(...tiles.map((tile) => tile.z)) + tileSize / 2 : tileSize;
-  const span = Math.max(maxX - minX, maxZ - minZ) + tileSize * 2;
-  const centerX = (minX + maxX) / 2, centerZ = (minZ + maxZ) / 2;
+  const surface = buildSplineSurface(layout);
+  const points=surface.polygons.flat(2);
+  const xs=points.map(p=>p[0]),zs=points.map(p=>p[1]);
+  const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
+  const span=Math.max(maxX-minX,maxZ-minZ)+12;
+  const centerX=(minX+maxX)/2,centerZ=(minZ+maxZ)/2;
   let size = 1, ratio = 1, scale = 1;
   let latestMarkers: ReadonlyArray<{ state: Readonly<VehicleState>; color: string }> = [];
 
@@ -34,15 +29,19 @@ export function createMinimap(canvas: HTMLCanvasElement, layout: TrackLayout, ti
     canvas.height = background.height = Math.round(size * ratio);
     scale = Math.max(1, size - 20) / span;
     mapContext.setTransform(ratio, 0, 0, ratio, 0, 0);
-    const tileWidth = tileSize * scale;
-    for (const tile of tiles) {
-      const point = mapPoint(tile.x - tileSize / 2, tile.z - tileSize / 2);
-      mapContext.fillStyle = tile.value === 2 ? '#91e5ac' : ((tile.row + tile.column) % 2 ? '#8ca0ab' : '#a2b5bf');
-      mapContext.fillRect(point.x, point.y, tileWidth + .1, tileWidth + .1);
-      if (tile.value === 2) {
-        mapContext.fillStyle = '#f5fffa';
-        mapContext.fillRect(point.x, point.y + tileWidth * .45, tileWidth, Math.max(1, tileWidth * .1));
-      }
+    mapContext.beginPath();
+    for(const polygon of surface.polygons)for(const ring of polygon){
+      ring.forEach(([x,z],i)=>{const p=mapPoint(x,z);if(i===0)mapContext.moveTo(p.x,p.y);else mapContext.lineTo(p.x,p.y);});
+      mapContext.closePath();
+    }
+    mapContext.fillStyle='#9eb2bd';mapContext.fill('evenodd');
+    for(const marker of [...layout.checkpoints,...(layout.finishLine?[layout.finishLine]:[])]){
+      const frame=getSplineTrackFrame(layout,marker);if(!frame)continue;
+      const x=(frame.position.x-.5)*SPLINE_EDITOR_WORLD_SIZE,z=(frame.position.y-.5)*SPLINE_EDITOR_WORLD_SIZE;
+      const right={x:frame.direction.y,z:-frame.direction.x};
+      const a=mapPoint(x-right.x*frame.width/2,z-right.z*frame.width/2),b=mapPoint(x+right.x*frame.width/2,z+right.z*frame.width/2);
+      mapContext.beginPath();mapContext.moveTo(a.x,a.y);mapContext.lineTo(b.x,b.y);
+      mapContext.strokeStyle=marker===layout.finishLine?'#ffffff':'#45f28a';mapContext.lineWidth=2;mapContext.stroke();
     }
     update(latestMarkers);
   }

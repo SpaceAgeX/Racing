@@ -1,4 +1,4 @@
-import type { TrackLayout } from './layout.ts';
+import type { SplineTrack as TrackLayout } from './spline-records.ts';
 import { isSavedTrack } from './records.ts';
 import type { SavedTrack } from './records.ts';
 

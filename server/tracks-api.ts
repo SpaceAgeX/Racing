@@ -9,7 +9,7 @@ export function createTracksApi(store: TrackStore, onChange?: () => Promise<void
     response.set('Cache-Control', 'no-store');
     next();
   });
-  router.use(json({ limit: '64kb' }));
+  router.use(json({ limit: '256kb' }));
   router.get('/', async (_request, response) => { response.json(await store.list()); });
   router.get('/:id', async (request, response) => {
     const record = await store.get(request.params.id);

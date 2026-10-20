@@ -1,5 +1,6 @@
-import type { TrackLayout } from './layout.ts';
-import { cloneTrack, playableTrackError } from './model.ts';
+import type { SplineTrack as TrackLayout } from './spline-records.ts';
+import { splineTrackError as playableTrackError } from './spline-records.ts';
+const cloneTrack = structuredClone;
 import { isSavedTrack } from './records.ts';
 import type { SavedTrack } from './records.ts';
 
@@ -9,10 +10,10 @@ export interface TrackStorage {
   removeItem(key: string): void;
 }
 
-const libraryKey = 'racing-track-library-v1';
-const activeKey = 'racing-active-track-v1';
+const libraryKey = 'racing-spline-library-v2';
+const activeKey = 'racing-active-spline-track-v2';
 
-/** Older browser-only saves remain loadable so the player can save them to the server. */
+/** Read version-2 spline saves only; legacy tile saves use separate keys. */
 export function listBrowserTracks(storage: TrackStorage): SavedTrack[] {
   try {
     const records: unknown = JSON.parse(storage.getItem(libraryKey) ?? '[]');

@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import express from 'express';
 import { createTrackStore } from '../server/track-store.ts';
 import { createTracksApi } from '../server/tracks-api.ts';
-import { emptyTrack } from '../src/track/model.ts';
+import { splinePresets } from '../src/track/spline-presets.ts';
+import { createSplineGraph } from '../src/track/spline.ts';
 
 async function directory(t: TestContext): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'racing-tracks-'));
@@ -19,26 +20,26 @@ async function directory(t: TestContext): Promise<string> {
   return root;
 }
 
-function track() { const layout = emptyTrack(); layout[32]![32] = 2; return layout; }
+function track() { return splinePresets[0]!.create(); }
 
 test('server tracks survive reopening, concurrent saves retain every map, and delete persists', async (t) => {
   const file = join(await directory(t), 'maps', 'tracks.json');
   const store = await createTrackStore(file);
   assert.deepEqual(await store.list(), []);
   const saved = await Promise.all(Array.from({ length: 12 }, (_, index) => store.save(`Track ${index}`, track())));
-  const updated = track(); updated[32]![33] = 1;
+  const updated = track(); updated.nodes[0]!.height = 1;
   const replacement = await store.save('track 0', updated);
   assert.equal(replacement.id, saved[0]!.id);
   assert.equal((await store.list()).length, 12);
-  replacement.layout[32]![33] = 0;
-  assert.equal((await store.get(replacement.id))!.layout[32]![33], 1);
+  replacement.layout.nodes[0]!.height = 0;
+  assert.equal((await store.get(replacement.id))!.layout.nodes[0]!.height, 1);
   assert.equal(await store.delete(saved[1]!.id), true);
   assert.equal(await store.delete(saved[1]!.id), false);
   await store.flush();
   const reopened = await createTrackStore(file);
   assert.equal((await reopened.list()).length, 11);
   assert.equal(await reopened.get(saved[1]!.id), null);
-  assert.equal((await reopened.get(replacement.id))!.layout[32]![33], 1);
+  assert.equal((await reopened.get(replacement.id))!.layout.nodes[0]!.height, 1);
   assert.equal(JSON.parse(await readFile(file, 'utf8')).length, 11);
 });
 
@@ -75,17 +76,17 @@ test('HTTP clients share save/load/delete results and the server rejects malform
   assert.equal(fromOtherClient.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await fromOtherClient.json(), [record]);
   assert.deepEqual(await (await fetch(`${url}/${record.id}`)).json(), record);
-  for (const body of [{ name: '', layout: track() }, { name: 'x'.repeat(61), layout: track() }, { name: 7, layout: track() }, { name: 'Bad', layout: [[2]] }, { name: 'No start', layout: emptyTrack() }]) {
+  for (const body of [{ name: '', layout: track() }, { name: 'x'.repeat(61), layout: track() }, { name: 7, layout: track() }, { name: 'Bad', layout: [[2]] }, { name: 'No start', layout: createSplineGraph() }]) {
     const invalid = await save(body);
     assert.equal(invalid.status, 400);
     assert.equal(typeof (await invalid.json()).error, 'string');
   }
-  const twoStarts = track(); twoStarts[0]![0] = 2;
+  const twoStarts = track(); twoStarts.finishLine = null;
   assert.equal((await save({ name: 'Two starts', layout: twoStarts })).status, 400);
-  const invalidTile = track() as number[][]; invalidTile[0]![0] = 3;
+  const invalidTile = track(); invalidTile.nodes[0]!.width = NaN;
   assert.equal((await save({ name: 'Wrong tile', layout: invalidTile })).status, 400);
   assert.equal((await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{bad' })).status, 400);
-  assert.equal((await save({ name: 'Huge', layout: 'x'.repeat(70_000) })).status, 413);
+  assert.equal((await save({ name: 'Huge', layout: 'x'.repeat(300_000) })).status, 413);
   assert.equal((await fetch(`${url}/missing`)).status, 404);
   assert.equal((await fetch(`${url}/${record.id}`, { method: 'DELETE' })).status, 204);
   assert.equal((await fetch(`${url}/${record.id}`)).status, 404);

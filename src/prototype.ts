@@ -17,15 +17,17 @@ import { copyTuningParameters, createTuningPanel } from './ui/tuning.ts';
 import type { TuningParameters } from './ui/tuning.ts';
 import { listBrowserTracks, loadActiveTrack, selectTrackForPlay } from './track/storage.ts';
 import { listSharedTracks } from './track/api.ts';
-import { trackLayout, trackTileSize } from './track/layout.ts';
-import { getFinishLine, getTrackSpawn } from './track/grid.ts';
-import { createTrackCollisionWorld } from './track/collision.ts';
+import { splinePresets } from './track/spline-presets.ts';
+import { buildRoadGeometry } from './track/road-geometry.ts';
+const trackLayout = splinePresets[0]!.create();
+
+import { createRoadWorld } from './simulation/road-world.ts';
 import { createVehicleState, copyVehicleState, interpolateVehicleState } from './simulation/vehicle.ts';
 import { wrapAngle } from './simulation/math.ts';
 import { drivingParameters, physicsParameters } from './simulation/parameters.ts';
-import { respawnVehicle, stepVehicleInWorld } from './simulation/vehicle-world.ts';
+import { respawnVehicle, stepSplineVehicle } from './simulation/spline-vehicle.ts';
 import type { DrivingControls, VehicleState } from './simulation/types.ts';
-import type { TrackLayout } from './track/layout.ts';
+import type { SplineTrack as TrackLayout } from './track/spline-records.ts';
 import type {
   ClientToServerEvents,
   CreateLobbyPayload,
@@ -139,19 +141,20 @@ function setScreenVisibility(screen: HTMLElement, visible: boolean): void {
   screen.hidden = !visible;
 }
 
-function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters, playerColor: string): DrivingSession {
+function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters, playerColor: string, spawnIndex = 0): DrivingSession {
   document.querySelector('#active-track-name')!.textContent = trackName;
   const lapContainer = document.querySelector<HTMLElement>('#lap-display');
   if (!lapContainer) throw new Error('Lap display is missing.');
-  const finishLine = getFinishLine(layout, trackTileSize);
+  const road = buildRoadGeometry(layout);
+  const finishLine = road.finish;
   const lapTimer = createLapTimer();
   const lapDisplay = createLapDisplay(lapContainer, finishLine !== null);
   lapDisplay.update(lapTimer);
 
   const state = createVehicleState();
-  const spawn = getTrackSpawn(layout, trackTileSize);
+  const spawn = road.spawns[spawnIndex] ?? road.spawns[0]!;
   respawnVehicle(state, spawn);
-  const collisionWorld = createTrackCollisionWorld(layout, trackTileSize);
+  const collisionWorld = createRoadWorld(road);
   const previous = createVehicleState();
   const rendered = createVehicleState();
   copyVehicleState(state, previous);
@@ -159,10 +162,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
 
   const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap');
   if (!minimapCanvas) throw new Error('Minimap canvas is missing.');
-  const minimap = createMinimap(minimapCanvas, layout, trackTileSize);
+  const minimap = createMinimap(minimapCanvas, layout);
 
   const clock = new FixedStepClock();
-  const view = createScene(canvas, layout, trackTileSize);
+  const view = createScene(canvas, road);
   const car = createCarVisual(colorToNumber(playerColor));
   const followCamera = createFollowCamera(view.camera, state);
   view.scene.add(car.object);
@@ -240,7 +243,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     const receivedAt = performance.now();
     const latest = remote.snapshots.at(-1);
     const teleported = latest !== undefined
-      && Math.hypot(state.position.x - latest.state.position.x, state.position.z - latest.state.position.z) > trackTileSize * 2;
+      && Math.hypot(state.position.x - latest.state.position.x, state.position.z - latest.state.position.z) > 24;
     if (teleported) {
       remote.snapshots.length = 0;
       remote.arrivalIntervalsMs.length = 0;
@@ -305,12 +308,12 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     const alpha = clock.advance(elapsed, (timestep) => {
       const physicsStartedAt = performance.now();
       copyVehicleState(state, previous);
-      if (stepVehicleInWorld(state, controls, timestep, collisionWorld, spawn, tuning.physics, tuning.driving)) {
+      if (stepSplineVehicle(state, controls, timestep, collisionWorld, spawn, tuning.physics, tuning.driving)) {
         resetCurrentLap(lapTimer);
         copyVehicleState(state, previous);
         respawned = true;
       } else {
-        stepLapTimer(lapTimer, previous.position, state.position, timestep, finishLine);
+        stepLapTimer(lapTimer, previous.position, state.position, timestep, finishLine, road.checkpoints);
       }
       lastFramePhysicsMs += performance.now() - physicsStartedAt;
       lastFrameSteps++;
@@ -339,7 +342,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       simulation: { tickRateHz: 1 / FIXED_TIMESTEP, totalTicks: simulationTicks,
         stepsLastFrame: lastFrameSteps, physicsMsLastFrame: lastFramePhysicsMs, frameDeltaMs: lastFrameElapsedMs },
       renderer: { pixelRatio: renderer.getPixelRatio(), drawCalls: drawStats.calls, triangles: drawStats.triangles,
-        geometries: memoryStats.geometries, textures: memoryStats.textures, trackTileMeshes: view.trackTiles.length },
+        geometries: memoryStats.geometries, textures: memoryStats.textures, trackTriangles: view.road.triangles.length },
       remotePlayers: [...remoteCars].map(([id, remote]) => {
         const intervals = remote.arrivalIntervalsMs;
         const mean = intervals.length ? intervals.reduce((sum, value) => sum + value, 0) / intervals.length : null;
@@ -600,7 +603,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     const desiredColor = room ? localPlayerColor(room, localPlayerId) : timeTrialColor;
     if (!session || session.trackId !== desiredTrackId || session.playerColor !== desiredColor) {
       disposeSession();
-      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor);
+      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor, Math.max(0, room?.players.findIndex(p => p.id === localPlayerId) ?? 0));
     }
     return session;
   }
@@ -712,7 +715,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
     const handlingChanged = JSON.stringify(session.tuning) !== JSON.stringify(activeRoom.settings.handling);
     if (session.trackId !== activeRoom.settings.trackId || session.playerColor !== desiredColor || handlingChanged) {
       session.dispose();
-      session = createDrivingSession(canvas, activeRoom.settings.layout, activeRoom.settings.trackName, activeRoom.settings.trackId, activeRoom.settings.handling, desiredColor);
+      session = createDrivingSession(canvas, activeRoom.settings.layout, activeRoom.settings.trackName, activeRoom.settings.trackId, activeRoom.settings.handling, desiredColor, Math.max(0, activeRoom.players.findIndex(p=>p.id===localPlayerId)));
     }
   }
 
@@ -731,7 +734,7 @@ export function startPrototype(canvas: HTMLCanvasElement) {
       const sessionStats = session?.getDiagnostics() as {
         vehicle?: { speedMps: number; speedKph: number; grounded: boolean; airborneSeconds: number; headingRadians: number };
         simulation?: { tickRateHz: number; stepsLastFrame: number; physicsMsLastFrame: number; frameDeltaMs: number };
-        renderer?: { pixelRatio: number; drawCalls: number; triangles: number; geometries: number; textures: number; trackTileMeshes: number };
+        renderer?: { pixelRatio: number; drawCalls: number; triangles: number; geometries: number; textures: number; trackTriangles: number };
         remotePlayers?: { id: string; snapshotAgeMs: number | null; interarrivalJitterMs: number | null; bufferUnderruns: number; extrapolating: boolean }[];
       } | null;
       const elapsedSeconds = Math.max(0.001, (now - networkStats.startedAt) / 1000);
@@ -939,6 +942,9 @@ export function startPrototype(canvas: HTMLCanvasElement) {
   document.addEventListener('visibilitychange', resetTiming);
   window.addEventListener('blur', resetTiming);
   setMode('home');
+  if (new URLSearchParams(location.search).get('mode') === 'time-trial') {
+    homeScreen.showTimeTrialSetup(); timeTrialSetup.show(); setMode('time-trial-setup'); void refreshTimeTrialTracks();
+  }
   animationFrame = requestAnimationFrame(frame);
 
   return {

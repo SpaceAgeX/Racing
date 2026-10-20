@@ -1,6 +1,6 @@
 import type { LobbySnapshot, TrackOption, UpdateLobbySettingsPayload, StartLobbyPayload } from '../multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette } from '../multiplayer/protocol.ts';
-import { trackTileSize } from '../track/layout.ts';
+
 import { createMinimap } from './minimap.ts';
 import { createLobbyHandlingEditor } from './tuning.ts';
 import { carColorNames } from './car-colors.ts';
@@ -153,7 +153,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       const key = JSON.stringify(room.settings.layout);
       if (key !== previewKey) {
         minimap?.dispose();
-        minimap = createMinimap(preview, room.settings.layout, trackTileSize);
+        minimap = createMinimap(preview, room.settings.layout);
         minimap.update([]);
         previewKey = key;
       }

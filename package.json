@@ -11,11 +11,12 @@
     "build": "npm run typecheck && node scripts/build.ts",
     "start": "node server/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/simulation.test.ts tests/input.test.ts tests/camera.test.ts tests/collision.test.ts tests/lap-timer.test.ts tests/tracks.test.ts tests/spline.test.ts tests/server-tracks.test.ts tests/recording-admission.test.ts",
+    "test": "node --test tests/simulation.test.ts tests/input.test.ts tests/camera.test.ts tests/collision.test.ts tests/lap-timer.test.ts tests/tracks.test.ts tests/spline.test.ts tests/server-tracks.test.ts tests/recording-admission.test.ts tests/spline-racing.test.ts",
     "test:browser": "playwright test",
     "recorder": "node scripts/record.ts"
   },
   "dependencies": {
+    "earcut": "^3.2.4",
     "express": "5.2.1",
     "polygon-clipping": "^0.15.7",
     "socket.io": "^4.8.4",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@types/earcut": "^3.0.0",
     "@types/express": "5.0.6",
     "@types/node": "26.6.4",
     "@types/three": "0.186.0",

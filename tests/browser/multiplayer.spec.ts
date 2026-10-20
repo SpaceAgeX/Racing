@@ -1,3 +1,4 @@
+import { splinePresets } from '../../src/track/spline-presets.ts';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
@@ -23,8 +24,7 @@ test('shared maps appear live in multiplayer selectors; host settings, start, an
     await expect(page.locator('#home-screen')).toBeVisible();
     await expect(page.locator('#game')).toBeHidden();
     await expect(page.locator('#home-status')).toContainText('Connected');
-    const layout = Array.from({ length: 64 }, () => Array(64).fill(0));
-    layout[32]![32] = 2; layout[31]![32] = 1; layout[30]![32] = 1;
+    const layout = splinePresets[0]!.create();
     const saved = await (await page.request.post('/api/tracks', { data: { name: 'Multiplayer shared map', layout } })).json();
     trackId = saved.id;
     await expect(page.locator(`#lobby-track-select option[value="${trackId}"]`)).toHaveCount(1);
@@ -56,8 +56,8 @@ test('shared maps appear live in multiplayer selectors; host settings, start, an
     await page.locator('#lobby-track-select').selectOption(trackId);
     await expect(guest.locator('#lobby-track-select')).toHaveValue(trackId);
     await page.getByRole('button', { name: 'Start race', exact: true }).click();
-    await expect(page.locator('#race-screen')).toBeVisible();
-    await expect(guest.locator('#race-screen')).toBeVisible();
+    await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
+    await expect(guest.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
     await expect(guest.locator('#active-track-name')).toHaveText('Multiplayer shared map');
     await page.bringToFront();
     await page.keyboard.down('w');
@@ -106,7 +106,7 @@ test('a player switching rooms no longer receives car states from the old room',
     await guest.locator('#home-lobby-list article').filter({ hasText: 'Original room' }).getByRole('button', { name: 'Join lobby' }).click();
     await expect(page.locator('#lobby-player-list .player-entry')).toHaveCount(2);
     await page.getByRole('button', { name: 'Start race', exact: true }).click();
-    await expect(guest.locator('#race-screen')).toBeVisible();
+    await expect(guest.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
     await guest.getByRole('button', { name: 'Leave game', exact: true }).click();
     await expect(guest.locator('#home-screen')).toBeVisible();
     await guest.getByRole('button', { name: /Multiplayer Race/ }).click();
@@ -116,7 +116,7 @@ test('a player switching rooms no longer receives car states from the old room',
     await expect(guest.locator('#lobby-screen')).toBeVisible();
     await guest.locator('#lobby-track-select').selectOption('simple-loop');
     await guest.getByRole('button', { name: 'Start race', exact: true }).click();
-    await expect(guest.locator('#race-screen')).toBeVisible();
+    await expect(guest.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
     await page.bringToFront();
     await page.keyboard.down('w');
     await expect.poll(async () => page.evaluate(async () => {

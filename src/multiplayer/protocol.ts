@@ -1,6 +1,6 @@
 import type { HandlingParameters, VehicleState } from '../simulation/types.ts';
-import type { TrackLayout } from '../track/layout.ts';
-import { trackPresets } from '../track/presets.ts';
+import type { SplineTrack as TrackLayout } from '../track/spline-records.ts';
+import { splinePresets as trackPresets } from '../track/spline-presets.ts';
 
 export interface TrackOption {
   id: string;

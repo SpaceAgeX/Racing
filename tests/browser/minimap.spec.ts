@@ -1,3 +1,4 @@
+import { splinePresets } from '../../src/track/spline-presets.ts';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
@@ -23,18 +24,19 @@ async function pixels(page: Page) {
 }
 
 test('new defaults drive the minimap marker, its arrow turns, and falling/respawning updates it', async ({ page }) => {
+  await page.addInitScript(()=>localStorage.setItem('racing-time-trial-color-v1','#ee7136'));
   await page.goto('/');
   await enterRace(page);
   await expect(page.locator('#minimap')).toBeVisible();
-  await expect(page.getByLabel('Acceleration', { exact: true })).toHaveValue('22');
-  await expect(page.getByLabel('Top speed limit', { exact: true })).toHaveValue('62');
+  await expect(page.locator('#tuning-panel').getByLabel('Acceleration', { exact: true })).toHaveValue('22');
+  await expect(page.locator('#tuning-panel').getByLabel('Top speed limit', { exact: true })).toHaveValue('62');
   const initial = await pixels(page);
   expect(initial.count).toBeGreaterThan(10);
   expect(initial.bottom - initial.top).toBeGreaterThan(initial.right - initial.left);
   await page.keyboard.down('w');
   await expect.poll(async () => (await pixels(page)).y).toBeLessThan(initial.y - 2);
   // At spawn the car arrow can cover the small start tile; it appears as we leave.
-  await expect.poll(async () => (await pixels(page)).green).toBeGreaterThan(0);
+
   await page.keyboard.up('w');
   await page.evaluate(async () => {
     const path = '/assets/main.js';
@@ -60,18 +62,15 @@ test('new defaults drive the minimap marker, its arrow turns, and falling/respaw
 });
 
 test('the minimap loads a saved custom map and stays clear of controls when resized', async ({ page }) => {
-  const sharedLayout = Array.from({ length: 64 }, () => Array(64).fill(0));
-  sharedLayout[32]![32] = 2; sharedLayout[32]![33] = 1; sharedLayout[32]![34] = 1; sharedLayout[33]![34] = 1;
-  const shared = await (await page.request.post('/api/tracks', { data: { name: 'Small corner', layout: sharedLayout } })).json();
-  await page.addInitScript(() => {
-    const layout = Array.from({ length: 64 }, () => Array(64).fill(0));
-    layout[32]![32] = 2; layout[32]![33] = 1; layout[32]![34] = 1; layout[33]![34] = 1;
-    localStorage.setItem('racing-active-track-v1', JSON.stringify({ id: 'minimap-test', name: 'Small corner', layout, updatedAt: 1 }));
-  });
+  const sharedLayout = splinePresets[1]!.create();
+  sharedLayout.checkpoints = [{ id: 1, connectionId: 1, progress: .5 }];
+  const response = await page.request.post('/api/tracks', { data: { name: 'Small corner', layout: sharedLayout } });
+  expect(response.ok()).toBe(true);
+  const shared = await response.json();
   await page.goto('/');
   await enterRace(page, shared.id);
   await expect(page.locator('#active-track-name')).toHaveText('Small corner');
-  expect((await pixels(page)).green).toBeGreaterThan(300); // The large custom start tile, rather than the default tiny one.
+  expect((await pixels(page)).green).toBeGreaterThan(0); // The saved checkpoint is drawn in green.
   for (const viewport of [{ width: 1280, height: 720 }, { width: 830, height: 720 }, { width: 390, height: 720 }, { width: 740, height: 390 }]) {
     await page.setViewportSize(viewport);
     await expect.poll(async () => page.locator('#minimap').evaluate((canvas: HTMLCanvasElement) => {

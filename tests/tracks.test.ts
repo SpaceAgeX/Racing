@@ -1,3 +1,4 @@
+import { splinePresets } from '../src/track/spline-presets.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Euler, Vector3 } from 'three';
@@ -35,10 +36,10 @@ test('fast drag strokes fill every intermediate cell and ignore out-of-grid pain
 test('saved tracks require the 64 square grid and exactly one start', () => {
   const grid = emptyTrack();
   assert.equal(isTrackGrid(grid), true);
-  assert.throws(() => selectTrackForPlay(storage(), 'Empty', grid));
+  assert.ok(playableTrackError(grid));
   grid[1]![1] = 2;
   grid[2]![2] = 2;
-  assert.throws(() => selectTrackForPlay(storage(), 'Two starts', grid));
+  assert.ok(playableTrackError(grid));
   assert.equal(isTrackGrid([[2]]), false);
   grid[2]![2] = 0;
   assert.equal(playableTrackError(grid), null);
@@ -46,12 +47,11 @@ test('saved tracks require the 64 square grid and exactly one start', () => {
 
 test('active track selection is per browser and older browser maps remain readable', () => {
   const store = storage();
-  const grid = emptyTrack();
-  paintTrack(grid, 32, 32, 2);
-  const first = { id: 'old-alpha', name: 'Alpha', layout: cloneTrack(grid), updatedAt: 1 };
-  store.setItem('racing-track-library-v1', JSON.stringify([first]));
-  paintTrack(grid, 32, 33, 1);
-  assert.equal(listBrowserTracks(store)[0]!.layout[32]![33], 0);
+  const grid = splinePresets[0]!.create();
+  const first = { id: 'old-alpha', name: 'Alpha', layout: structuredClone(grid), updatedAt: 1 };
+  store.setItem('racing-spline-library-v2', JSON.stringify([first]));
+  grid.nodes[0]!.height = 1;
+  assert.equal(listBrowserTracks(store)[0]!.layout.nodes[0]!.height, 0);
   selectTrackForPlay(store, first.name, grid, first.id);
   assert.equal(loadActiveTrack(storage()), null);
   clearActiveTrack(store, 'other-track');
@@ -90,8 +90,8 @@ test('preset layouts have one start and a connected rounded course; default diff
 
 test('invalid stored data falls back safely and cannot become an active track', () => {
   const store = storage();
-  store.setItem('racing-track-library-v1', '{broken');
-  store.setItem('racing-active-track-v1', JSON.stringify({ id: 'bad', name: 'Bad', layout: [[2]], updatedAt: 1 }));
+  store.setItem('racing-spline-library-v2', '{broken');
+  store.setItem('racing-active-spline-track-v2', JSON.stringify({ id: 'bad', name: 'Bad', layout: [[2]], updatedAt: 1 }));
   assert.deepEqual(listBrowserTracks(store), []);
   assert.equal(loadActiveTrack(store), null);
 });

@@ -77,9 +77,9 @@ test('best and delta use the previous best, including faster and slower complete
 
 test('respawn resets the current attempt while retaining session results', () => {
   const timer = createLapTimer();
-  Object.assign(timer, { running: true, elapsed: 4, best: 10, last: 12, delta: 2, completedLaps: 3 });
+  Object.assign(timer, { running: true, elapsed: 4, best: 10, last: 12, delta: 2, completedLaps: 3, checkpointCount: 0, checkpointsVisited: [], missedCheckpoints: false });
   resetCurrentLap(timer);
-  assert.deepEqual(timer, { running: false, elapsed: 0, best: 10, last: 12, delta: 2, completedLaps: 3 });
+  assert.deepEqual(timer, { running: false, elapsed: 0, best: 10, last: 12, delta: 2, completedLaps: 3, checkpointCount: 0, checkpointsVisited: [], missedCheckpoints: false });
   stepLapTimer(timer, before, after, 1, line);
   assert.equal(timer.completedLaps, 3);
   assert.equal(timer.running, true);

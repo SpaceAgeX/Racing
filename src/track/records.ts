@@ -1,10 +1,10 @@
-import type { TrackTile } from './layout.ts';
-import { playableTrackError } from './model.ts';
+import type { SplineTrack } from './spline-records.ts';
+import { splineTrackError as playableTrackError } from './spline-records.ts';
 
 export interface SavedTrack {
   id: string;
   name: string;
-  layout: TrackTile[][];
+  layout: SplineTrack;
   updatedAt: number;
 }
 

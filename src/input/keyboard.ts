@@ -9,7 +9,8 @@ export function createKeyboardInput(windowTarget: Window, documentTarget: Docume
   let cameraToggleRequested = false;
 
   const isTextInput = (target: EventTarget | null): boolean => typeof HTMLElement !== 'undefined' && target instanceof HTMLElement
-    && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+    && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+    && !(target instanceof HTMLInputElement && target.type === 'range');
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (!enabled || isTextInput(event.target) || (!drivingKeys.has(event.code) && event.code !== cameraKey)) return;

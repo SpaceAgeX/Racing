@@ -2,7 +2,7 @@
 
 The game runs as the dedicated `racing` user on `127.0.0.1:3000`, through `racing.service`.
 Code: `/opt/racing/current` (release symlink). Isolated Node 24: `/opt/racing/node`.
-Maps: `/var/lib/racing/tracks.json`. Recordings: `/var/lib/racing/recordings`.
+Spline maps: `/var/lib/racing/tracks-splines-v2.json` with the existing `TRACKS_FILE=/var/lib/racing/tracks.json` setting. Legacy tile data remains untouched. Set `SPLINE_TRACKS_FILE` to choose a different spline store. Recordings: `/var/lib/racing/recordings`.
 The existing applications and existing cloudflared service are separate.
 
 ## Finish Cloudflare setup

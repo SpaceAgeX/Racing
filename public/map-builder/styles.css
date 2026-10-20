@@ -90,3 +90,8 @@ button[aria-pressed="true"] { border-color: #ee7136; background: #ee713620; }
   .builder-tools { padding: 10px; gap: 9px; }
   .preview-active .canvas-panel { width: 96px; height: 96px; }
 }
+
+.track-library { display:grid; gap:8px; }
+.track-library input, .track-library select { width:100%; min-width:0; color:#edf4f7; background:#17252d; border:1px solid #647881; border-radius:6px; padding:8px; }
+.library-actions { display:flex; flex-wrap:wrap; gap:6px; }
+#library-status { font-size:12px; margin:0; }

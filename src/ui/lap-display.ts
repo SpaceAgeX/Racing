@@ -29,8 +29,8 @@ export function createLapDisplay(container: HTMLElement, hasFinishLine: boolean)
       delta.classList.toggle('is-faster', timer.delta !== null && roundedDelta < 0);
       delta.classList.toggle('is-slower', timer.delta !== null && roundedDelta > 0);
       text(delta, timer.delta === null ? 'First lap' : `${roundedDelta < 0 ? '−' : roundedDelta > 0 ? '+' : '±'}${(Math.abs(roundedDelta) / 100).toFixed(2)} s vs best`);
-      text(status, !hasFinishLine ? 'Add a start/finish tile to time laps'
-        : timer.running ? `Lap ${timer.completedLaps + 1}` : 'Cross the line to start');
+      text(status, !hasFinishLine ? 'Place a finish line to time laps'
+        : timer.running ? `Lap ${timer.completedLaps + 1}${timer.checkpointCount ? ` | Checkpoints ${timer.checkpointsVisited.length}/${timer.checkpointCount}` : ""}${timer.missedCheckpoints ? " | Cross remaining checkpoints, then finish" : ""}` : 'Cross the line to start');
     },
   };
 }

@@ -1,6 +1,6 @@
 import { carColorNames as colorNames } from './car-colors.ts';
-import type { TrackLayout } from '../track/layout.ts';
-import { trackTileSize } from '../track/layout.ts';
+import type { SplineTrack as TrackLayout } from '../track/spline-records.ts';
+
 import { createMinimap } from './minimap.ts';
 import type { TrackOption } from '../multiplayer/protocol.ts';
 import { playerColorPalette } from '../multiplayer/protocol.ts';
@@ -68,7 +68,7 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
     minimap = null;
     preview.getContext('2d')?.clearRect(0, 0, preview.width, preview.height);
     if (layout) {
-      minimap = createMinimap(preview, layout, trackTileSize);
+      minimap = createMinimap(preview, layout);
       minimap.update([]);
     }
   }

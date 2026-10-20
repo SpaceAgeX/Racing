@@ -98,9 +98,18 @@
           <button id="clear-track" type="button" disabled>Clear canvas</button>
           <p id="builder-message" role="status" aria-live="polite">Click empty space to add points.</p>
         </section>
+        <section class="track-library" aria-label="Shared track library">
+          <h2>Shared tracks</h2>
+          <label for="track-name">Track name</label><input id="track-name" maxlength="60" placeholder="Name your track">
+          <p id="save-requirement" class="help"></p>
+          <div class="library-actions"><button id="save-track" type="button">Save track</button><button id="play-track" type="button">Save &amp; play</button></div>
+          <label for="saved-tracks">Load a track</label><select id="saved-tracks"><option value="">Select a track</option></select>
+          <div class="library-actions"><button id="load-track" type="button">Load track</button><button id="delete-track" type="button">Delete track</button></div>
+          <p id="library-status" role="status"></p>
+        </section>
         <section class="future-note" aria-label="Current scope">
-          <h2>Editor preview only</h2>
-          <p>The spline layout, race markers, widths, and elevation exist only in this editor for now. Saving, route naming, and race integration come later.</p>
+          <h2>Ready to race</h2>
+          <p>Save requires at least two points and a finish line with space for the starting grid. Every checkpoint must be crossed for a lap to count, in any order.</p>
         </section>
       </aside>
     </main>

@@ -1,3 +1,7 @@
+import { serializeSpline, splineTrackError } from './track/spline-records.ts';
+import { listSharedTracks, getSharedTrack, saveSharedTrack, deleteSharedTrack } from './track/api.ts';
+import { selectTrackForPlay, clearActiveTrack } from './track/storage.ts';
+import { splinePresets } from './track/spline-presets.ts';
 import { startAdmissionHeartbeat } from './admission.ts';
 import { createSplinePreview } from './rendering/spline-preview.ts';
 import {
@@ -84,6 +88,18 @@ const previewStatus = document.querySelector<HTMLOutputElement>('#preview-status
 const preview = createSplinePreview(previewCanvas);
 
 const graph = createSplineGraph();
+const trackName=document.querySelector<HTMLInputElement>('#track-name')!;
+const librarySelect=document.querySelector<HTMLSelectElement>('#saved-tracks')!;
+const libraryStatus=document.querySelector<HTMLElement>('#library-status')!;
+const saveButton=document.querySelector<HTMLButtonElement>('#save-track')!;
+const playButton=document.querySelector<HTMLButtonElement>('#play-track')!;
+let libraryBusy=false;
+function updateSaveState(){
+  const error=splineTrackError(serializeSpline(graph));
+  document.querySelector('#save-requirement')!.textContent=error ?? 'Finished track. Ready to save.';
+  saveButton.disabled=playButton.disabled=libraryBusy||!!error||!trackName.value.trim();
+}
+trackName.addEventListener('input',updateSaveState);
 let nextNodeId = 1;
 let nextConnectionId = 1;
 let nextCheckpointId = 1;
@@ -473,6 +489,7 @@ function drawRaceMarkers(): void {
 }
 
 function draw(): void {
+  updateSaveState();
   context.setTransform(size.pixelRatio, 0, 0, size.pixelRatio, 0, 0);
   context.clearRect(0, 0, size.width, size.height);
   context.fillStyle = '#101a21';
@@ -793,6 +810,7 @@ clearButton.addEventListener('click', () => {
 });
 
 window.addEventListener('keydown', (event) => {
+  if(event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.closest('input,select,textarea'))) return;
   if ((event.key === 'Delete' || event.key === 'Backspace') && !deleteButton.disabled) {
     event.preventDefault();
     deleteButton.click();
@@ -817,7 +835,7 @@ new ResizeObserver(() => {
   draw();
 }).observe(canvasArea);
 
-// Test/debug access only; races still use the existing tile-track model.
+// Editor diagnostics used by integration tests.
 Object.assign(window, {
   splineBuilder: {
     graph,
@@ -829,3 +847,48 @@ Object.assign(window, {
 });
 window.addEventListener('pagehide', () => preview.dispose(), { once: true });
 setTool('add');
+
+async function refreshLibrary(){
+  try {
+    const previous=librarySelect.value;
+    const tracks=[...splinePresets.map(p=>({id:p.id,name:p.name})),...await listSharedTracks()];
+    librarySelect.replaceChildren(new Option('Select a track',''));
+    for(const track of tracks)librarySelect.add(new Option(track.name,track.id));
+    if(tracks.some(t=>t.id===previous))librarySelect.value=previous;
+  }catch(error){libraryStatus.textContent=(error as Error).message;}
+}
+async function save(play=false){
+  const layout=serializeSpline(graph),name=trackName.value.trim();
+  const error=splineTrackError(layout);if(error){libraryStatus.textContent=error;return;}
+  libraryBusy=true;updateSaveState();
+  try {
+    const track=await saveSharedTrack(name,layout);
+    libraryStatus.textContent='Saved to the shared library.';
+    await refreshLibrary();librarySelect.value=track.id;
+    if(play){selectTrackForPlay(localStorage,track.name,track.layout,track.id);location.href='/?mode=time-trial';}
+  }catch(error){libraryStatus.textContent=(error as Error).message;}
+  finally{libraryBusy=false;updateSaveState();}
+}
+saveButton.onclick=()=>void save();playButton.onclick=()=>void save(true);
+document.querySelector<HTMLButtonElement>('#load-track')!.onclick=async()=>{
+  const id=librarySelect.value;if(!id)return;
+  try{
+    const preset=splinePresets.find(p=>p.id===id);
+    const record=preset?{name:preset.name,layout:preset.create()}:await getSharedTrack(id);
+    Object.assign(graph,structuredClone(record.layout));trackName.value=record.name;
+    nextNodeId=Math.max(...graph.nodes.map(n=>n.id))+1;
+    nextConnectionId=Math.max(...graph.connections.map(n=>n.id))+1;
+    nextCheckpointId=Math.max(0,...graph.checkpoints.map(n=>n.id))+1;
+    selectedNodeId=selectedConnectionId=connectionStartId=null;
+    draw();libraryStatus.textContent='Track loaded.';
+  }catch(error){libraryStatus.textContent=(error as Error).message;}
+};
+document.querySelector<HTMLButtonElement>('#delete-track')!.onclick=async()=>{
+  const id=librarySelect.value;if(!id)return;
+  if(splinePresets.some(p=>p.id===id)){libraryStatus.textContent='Presets cannot be deleted.';return;}
+  try{await deleteSharedTrack(id);clearActiveTrack(localStorage,id);await refreshLibrary();libraryStatus.textContent='Deleted from the shared library.';}
+  catch(error){libraryStatus.textContent=(error as Error).message;}
+};
+void refreshLibrary();
+const libraryRefresh=setInterval(()=>{if(!document.hidden&&!libraryBusy)void refreshLibrary();},5000);
+window.addEventListener('pagehide',()=>clearInterval(libraryRefresh),{once:true});

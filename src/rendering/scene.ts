@@ -2,13 +2,13 @@ import {
   AmbientLight, Color, DirectionalLight,
   PCFShadowMap, PerspectiveCamera, Scene, WebGLRenderer,
 } from 'three';
-import { createTrackVisual } from './track.ts';
-import type { TrackLayout } from '../track/layout.ts';
+import { createRoadVisual } from './road.ts';
+import type { RoadGeometry } from '../track/road-geometry.ts';
 
 const MAX_RENDER_PIXEL_RATIO = 1.5;
 const SHADOW_MAP_SIZE = 512;
 
-export function createScene(canvas: HTMLCanvasElement, layout: TrackLayout, tileSize: number) {
+export function createScene(canvas: HTMLCanvasElement, road: RoadGeometry) {
   const scene = new Scene();
   scene.background = new Color(0xa8d2ed);
   const renderer = new WebGLRenderer({ canvas, antialias: true });
@@ -16,7 +16,7 @@ export function createScene(canvas: HTMLCanvasElement, layout: TrackLayout, tile
   renderer.shadowMap.type = PCFShadowMap;
   const camera = new PerspectiveCamera(65, 1, 0.1, 1000);
 
-  const track = createTrackVisual(layout, tileSize);
+  const track = createRoadVisual(road);
   scene.add(track.object);
 
   scene.add(new AmbientLight(0xffffff, 1.8));
@@ -50,8 +50,7 @@ export function createScene(canvas: HTMLCanvasElement, layout: TrackLayout, tile
     scene,
     camera,
     renderer,
-    trackTiles: track.tiles,
-    tileSize,
+    road,
     followSun(position: { x: number; y: number; z: number }): void {
       sun.position.set(position.x + 12, position.y + 18, position.z + 10);
       sun.target.position.set(position.x, position.y, position.z);

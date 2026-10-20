@@ -24,8 +24,8 @@ import type {
   UpdateLobbySettingsPayload,
 } from '../src/multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
-import { getTrackSpawn } from '../src/track/grid.ts';
-import { trackTileSize } from '../src/track/layout.ts';
+import { buildRoadGeometry } from '../src/track/road-geometry.ts';
+
 import type { VehicleState } from '../src/simulation/types.ts';
 import type { DrivingParameters, HandlingParameters, PhysicsParameters } from '../src/simulation/types.ts';
 import { drivingParameters, physicsParameters } from '../src/simulation/parameters.ts';
@@ -65,7 +65,8 @@ const admission = createAdmission(Number(process.env.MAX_BROWSER_SESSIONS ?? 15)
 app.get('/healthz', (_request, response) => response.json({ ok: true }));
 app.use(admission.middleware);
 app.post('/api/session/heartbeat', (_request, response) => response.sendStatus(204));
-const trackFile = process.env.TRACKS_FILE ?? fileURLToPath(new URL('../data/tracks.json', import.meta.url));
+// Preserve existing tile saves in their original file.
+const trackFile = process.env.SPLINE_TRACKS_FILE ?? (process.env.TRACKS_FILE ? process.env.TRACKS_FILE.replace(/\.json$/, '') + '-splines-v2.json' : fileURLToPath(new URL('../data/tracks-splines-v2.json', import.meta.url)));
 const trackStore = await createTrackStore(trackFile);
 app.use('/api/tracks', createTracksApi(trackStore, broadcastTrackOptions));
 app.get('/api/ping', (_request, response) => {
@@ -453,20 +454,20 @@ function startLobby(socketId: string): LobbyRecord | null {
   if (!lobbyId) return null;
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
-  lobby.phase = 'race';
-  const spawn = getTrackSpawn(lobby.settings.layout, trackTileSize);
+  const road = buildRoadGeometry(lobby.settings.layout);
   const players = [...lobby.players.values()];
-  const spread = Math.min(2.4, trackTileSize / Math.max(3, players.length + 1));
+
   for (let index = 0; index < players.length; index++) {
     const player = players[index]!;
-    const offset = index - (players.length - 1) / 2;
+    const spawn = road.spawns[index]!;
     const state = createVehicleState();
-    state.position.x = spawn.position.x + offset * spread;
+    state.position.x = spawn.position.x;
     state.position.y = spawn.position.y;
-    state.position.z = spawn.position.z + 2.5;
+    state.position.z = spawn.position.z;
     state.heading = spawn.heading;
     player.state = state;
   }
+  lobby.phase = 'race';
   return lobby;
 }
 
@@ -562,6 +563,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('multiplayer:start-lobby', async () => {
+    try {
     await pendingSettings;
     const lobby = startLobby(socket.id);
     if (!lobby) {
@@ -570,6 +572,9 @@ io.on('connection', (socket) => {
     }
     broadcastLobbyRoom(lobby);
     broadcastLobbyList();
+    } catch (error) {
+      socket.emit('multiplayer:error', { message: error instanceof Error ? error.message : 'Could not prepare the track.' });
+    }
   });
 
   socket.on('multiplayer:update-state', (message) => {
