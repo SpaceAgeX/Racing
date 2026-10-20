@@ -41,7 +41,7 @@ export function createMinimap(canvas: HTMLCanvasElement, layout: TrackLayout) {
       const right={x:frame.direction.y,z:-frame.direction.x};
       const a=mapPoint(x-right.x*frame.width/2,z-right.z*frame.width/2),b=mapPoint(x+right.x*frame.width/2,z+right.z*frame.width/2);
       mapContext.beginPath();mapContext.moveTo(a.x,a.y);mapContext.lineTo(b.x,b.y);
-      mapContext.strokeStyle=marker===layout.finishLine?'#ffffff':'#45f28a';mapContext.lineWidth=2;mapContext.stroke();
+      mapContext.strokeStyle=marker===layout.finishLine?'#ffffff':'#4bb9ff';mapContext.lineWidth=2;mapContext.stroke();
     }
     update(latestMarkers);
   }

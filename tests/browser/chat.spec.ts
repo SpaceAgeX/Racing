@@ -6,8 +6,6 @@ test('room chat survives race start, displays text safely and releases driving c
   const guest = await context.newPage();
   try {
     for (const p of [page, guest]) {
-      p.on('pageerror', e => console.log('PAGE ERROR', e));
-      p.on('websocket', s => {s.on('framesent', f => {if(String(f.payload).includes('start-lobby')) console.log('START SENT',Date.now());});s.on('framereceived', f => {if(String(f.payload).includes('multiplayer:room')||String(f.payload).includes('multiplayer:error'))console.log('ROOM',Date.now(),String(f.payload).slice(0,250));});});
       await p.goto('http://127.0.0.1:3100/');
       await p.getByRole('button', { name: /Multiplayer Race/ }).click();
       await expect(p.locator('#home-status')).toContainText('Connected');
@@ -25,6 +23,7 @@ test('room chat survives race start, displays text safely and releases driving c
     await guest.keyboard.press('t');
     await expect(guest.locator('.chat-messages')).toContainText('<img src=x onerror=alert(1)> hello');
     await expect(guest.locator('.chat-messages img')).toHaveCount(0);
+    await page.bringToFront();
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Start race', exact: true }).click();
     await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });

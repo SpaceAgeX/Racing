@@ -482,7 +482,7 @@ function drawRaceMarkers(): void {
   }
   if (tool !== 'height') {
     graph.checkpoints.forEach((checkpoint) => {
-      drawCrossTrackLine(checkpoint, '#8ce5ad');
+      drawCrossTrackLine(checkpoint, '#4bb9ff');
       drawnInsetCheckpointMarkers++;
     });
   }

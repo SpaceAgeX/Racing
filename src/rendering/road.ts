@@ -31,7 +31,16 @@ export function createRoadVisual(road: RoadGeometry) {
   }
   const white = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
   const dark = new THREE.MeshBasicMaterial({ color: 0x18232b, side: THREE.DoubleSide });
-  const green = new THREE.MeshBasicMaterial({ color: 0x45f28a, side: THREE.DoubleSide });
+  const blue = new THREE.MeshBasicMaterial({ color: 0x4bb9ff, side: THREE.DoubleSide });
+  const edgeColor = new THREE.MeshBasicMaterial({ color: 0xf04444, side: THREE.DoubleSide });
+  const edgePositions = road.edgeMarkings.flatMap((t) => [t.a, t.b, t.c].flatMap((p) => [p.x, p.y, p.z]));
+  const edgeGeometry = new THREE.BufferGeometry();
+  edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+  object.add(new THREE.Mesh(edgeGeometry, edgeColor));
+  const centerPositions = road.centerMarkings.flatMap((t) => [t.a, t.b, t.c].flatMap((p) => [p.x, p.y, p.z]));
+  const centerGeometry = new THREE.BufferGeometry();
+  centerGeometry.setAttribute('position', new THREE.Float32BufferAttribute(centerPositions, 3));
+  object.add(new THREE.Mesh(centerGeometry, white));
   for (const gate of [
     ...(road.finish ? [{ ...road.finish, finish: true }] : []),
     ...road.checkpoints.map((c) => ({ ...c, finish: false })),
@@ -63,10 +72,10 @@ export function createRoadVisual(road: RoadGeometry) {
             3,
           ),
         );
-        object.add(new THREE.Mesh(g, gate.finish ? ((i + row) % 2 ? dark : white) : green));
+        object.add(new THREE.Mesh(g, gate.finish ? ((i + row) % 2 ? dark : white) : blue));
       }
   }
-  for (const material of [white, dark, green]) {
+  for (const material of [white, dark, blue]) {
     const meshes = object.children.filter(
       (o) => o instanceof THREE.Mesh && o.material === material,
     ) as THREE.Mesh<THREE.BufferGeometry>[];
@@ -85,7 +94,7 @@ export function createRoadVisual(road: RoadGeometry) {
       object.traverse((o) => {
         if (o instanceof THREE.Mesh) o.geometry.dispose();
       });
-      [...materials, white, dark, green].forEach((m) => m.dispose());
+      [...materials, white, dark, blue, edgeColor].forEach((m) => m.dispose());
     },
   };
 }

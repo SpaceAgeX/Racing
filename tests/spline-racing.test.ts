@@ -10,6 +10,7 @@ import {
 import { buildSplineSurface } from '../src/track/spline-surface.ts';
 import { serializeSpline, splineTrackError } from '../src/track/spline-records.ts';
 import { buildRoadGeometry } from '../src/track/road-geometry.ts';
+import { splinePresets } from '../src/track/spline-presets.ts';
 import { createRoadWorld } from '../src/simulation/road-world.ts';
 import { stepSplineVehicle, respawnVehicle } from '../src/simulation/spline-vehicle.ts';
 import { createVehicleState } from '../src/simulation/vehicle.ts';
@@ -203,4 +204,17 @@ test('curved boundaries turn continuously without teeth, and elevated mesh cells
     [...edges.values()].every((count) => count === 2),
     'Every edge must belong to exactly two solid faces',
   );
+});
+
+test('visible road edge markings follow the actual surface through elevated bends', () => {
+  const graph = splinePresets[0]!.create();
+  graph.nodes[1]!.height = 25;
+  const road = buildRoadGeometry(graph);
+  assert.ok(road.edgeMarkings.length > 100);
+  for (const marking of road.edgeMarkings) {
+    for (const point of [marking.a, marking.b, marking.c]) {
+      assert.ok(Number.isFinite(point.y));
+      assert.ok(Math.abs(point.y - road.heightAt(point.x, point.z) - 0.045) < 1e-5);
+    }
+  }
 });

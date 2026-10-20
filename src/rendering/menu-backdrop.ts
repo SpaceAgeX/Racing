@@ -79,7 +79,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   });
 
   let active = false;
-  let frame = 0;
+  let disposed = false;
 
   function resize(): void {
     const width = Math.max(1, canvas.clientWidth);
@@ -94,28 +94,22 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   resizeObserver.observe(canvas);
   window.addEventListener('resize', resize);
   resize();
-
-  function render(): void {
-    if (!active) return;
-    renderer.render(scene, camera);
-    frame = window.requestAnimationFrame(render);
-  }
+  // The display cars do not move. Redraw when their models finish loading or
+  // when the menu size changes instead of spending a frame on them every tick.
+  void Promise.all(visuals.map((visual) => visual.ready)).then(() => {
+    if (active && !disposed) renderer.render(scene, camera);
+  });
 
   return {
     setActive(value: boolean): void {
       if (active === value) return;
       active = value;
       canvas.hidden = !active;
-      if (active) {
-        resize();
-        frame = window.requestAnimationFrame(render);
-      } else {
-        window.cancelAnimationFrame(frame);
-      }
+      if (active) resize();
     },
     dispose(): void {
       active = false;
-      window.cancelAnimationFrame(frame);
+      disposed = true;
       resizeObserver.disconnect();
       window.removeEventListener('resize', resize);
       for (const visual of visuals) visual.dispose();

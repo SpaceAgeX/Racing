@@ -11,6 +11,7 @@ import {
 import type { Vector3Data } from '../simulation/collision.ts';
 import type { VehicleSpawn } from '../simulation/types.ts';
 import type { FinishLine } from '../simulation/lap-timer.ts';
+import { createSpatialGrid } from '../simulation/spatial-grid.ts';
 export const TRACK_THICKNESS = 1.5;
 export interface RoadTriangle {
   a: Vector3Data;
@@ -26,7 +27,7 @@ export function buildRoadGeometry(graph: SplineGraph) {
   }
   const vertices: Vector3Data[] = [];
   const byPosition = new Map<string, number>();
-  const edges = new Map<string, { a: number; b: number; count: number }>();
+  const edges = new Map<string, { a: number; b: number; inside: number; count: number }>();
   const pending: [number, number, number][] = [];
   const step = 4;
   function rectangle(x: number, z: number, w: number, h: number): MultiPolygon {
@@ -105,15 +106,15 @@ export function buildRoadGeometry(graph: SplineGraph) {
     tri(vertices[a]!, vertices[b]!, vertices[c]!, 'top');
     const lower = (i: number) => ({ ...vertices[i]!, y: vertices[i]!.y - TRACK_THICKNESS });
     tri(lower(c), lower(b), lower(a), 'bottom');
-    for (const [u, v] of [
-      [a, b],
-      [b, c],
-      [c, a],
-    ] as [number, number][]) {
+    for (const [u, v, inside] of [
+      [a, b, c],
+      [b, c, a],
+      [c, a, b],
+    ] as [number, number, number][]) {
       const key = Math.min(u, v) + ':' + Math.max(u, v),
         entry = edges.get(key);
       if (entry) entry.count++;
-      else edges.set(key, { a: u, b: v, count: 1 });
+      else edges.set(key, { a: u, b: v, inside, count: 1 });
     }
   }
   for (const face of pending) {
@@ -147,19 +148,46 @@ export function buildRoadGeometry(graph: SplineGraph) {
       for (let i = 0; i < boundary.length; i++) addFace(index, boundary[i]!, boundary[(i + 1) % boundary.length]!);
     }
   }
+  const edgeMarkings: RoadTriangle[] = [];
   for (const edge of edges.values())
     if (edge.count === 1) {
       const a = vertices[edge.a]!,
         b = vertices[edge.b]!,
+        inside = vertices[edge.inside]!,
         la = { ...a, y: a.y - TRACK_THICKNESS },
         lb = { ...b, y: b.y - TRACK_THICKNESS };
       tri(b, a, la, 'wall');
       tri(b, la, lb, 'wall');
+
+      // A narrow strip follows the exposed top boundary. Both edges are later
+      // raised from the final road mesh so they follow hills and junctions.
+      const dx = b.x - a.x, dz = b.z - a.z;
+      const length = Math.hypot(dx, dz);
+      if (length < 1e-5) continue;
+      let inwardX = -dz / length, inwardZ = dx / length;
+      if (inwardX * (inside.x - a.x) + inwardZ * (inside.z - a.z) < 0) {
+        inwardX = -inwardX;
+        inwardZ = -inwardZ;
+      }
+      const raised = (p: Vector3Data, inset: number) => {
+        const x = p.x + inwardX * inset, z = p.z + inwardZ * inset;
+        return { x, y: p.y + 0.045, z };
+      };
+      const outerA = raised(a, 0), outerB = raised(b, 0);
+      const innerA = raised(a, 0.6), innerB = raised(b, 0.6);
+      edgeMarkings.push({ a: outerA, b: outerB, c: innerB, kind: 'top' });
+      edgeMarkings.push({ a: outerA, b: innerB, c: innerA, kind: 'top' });
     }
   const topTriangles = triangles.filter((t) => t.kind === 'top');
+  const heightIndex = createSpatialGrid(topTriangles, (t) => ({
+    minX: Math.min(t.a.x, t.b.x, t.c.x),
+    maxX: Math.max(t.a.x, t.b.x, t.c.x),
+    minZ: Math.min(t.a.z, t.b.z, t.c.z),
+    maxZ: Math.max(t.a.z, t.b.z, t.c.z),
+  }), 8);
   // Barycentric interpolation of the actual triangulated top, not an independent height field.
   function heightAt(x: number, z: number) {
-    for (const { a, b, c } of topTriangles) {
+    for (const { a, b, c } of heightIndex.query({ minX: x, maxX: x, minZ: z, maxZ: z })) {
       const d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
       if (Math.abs(d) < 1e-10) continue;
       const u = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / d;
@@ -167,6 +195,29 @@ export function buildRoadGeometry(graph: SplineGraph) {
       if (u >= -1e-7 && v >= -1e-7 && u + v <= 1 + 1e-7) return u * a.y + v * b.y + (1 - u - v) * c.y;
     }
     return splineSurfaceHeightAt(surface, x, z);
+  }
+  for (const marking of edgeMarkings) {
+    for (const point of [marking.a, marking.b, marking.c]) point.y = heightAt(point.x, point.z) + 0.045;
+  }
+  const centerMarkings: RoadTriangle[] = [];
+  for (const segment of surface.heightSegments) {
+    const [startX, startZ] = segment.start;
+    const [endX, endZ] = segment.end;
+    const dx = endX - startX, dz = endZ - startZ;
+    const length = Math.hypot(dx, dz);
+    if (length < 1e-5) continue;
+    const forwardX = dx / length, forwardZ = dz / length;
+    const acrossX = -forwardZ * 0.15, acrossZ = forwardX * 0.15;
+    // Slightly overlap adjacent sections so the stripe stays continuous on bends.
+    const point = (x: number, z: number) => ({ x, y: heightAt(x, z) + 0.025, z });
+    const ax = startX - forwardX * 0.05, az = startZ - forwardZ * 0.05;
+    const bx = endX + forwardX * 0.05, bz = endZ + forwardZ * 0.05;
+    const leftA = point(ax + acrossX, az + acrossZ);
+    const rightA = point(ax - acrossX, az - acrossZ);
+    const leftB = point(bx + acrossX, bz + acrossZ);
+    const rightB = point(bx - acrossX, bz - acrossZ);
+    centerMarkings.push({ a: leftA, b: rightA, c: rightB, kind: 'top' });
+    centerMarkings.push({ a: leftA, b: rightB, c: leftB, kind: 'top' });
   }
   function gate(location: SplineTrackLocation): FinishLine {
     const frame = getSplineTrackFrame(graph, location)!;
@@ -248,6 +299,6 @@ export function buildRoadGeometry(graph: SplineGraph) {
       tri(points[face[0]!]!, points[face[2]!]!, points[face[3]!]!, 'obstacle');
     }
   }
-  return { surface, triangles, finish, checkpoints, spawns, obstacles, heightAt };
+  return { surface, triangles, edgeMarkings, centerMarkings, finish, checkpoints, spawns, obstacles, heightAt };
 }
 export type RoadGeometry = ReturnType<typeof buildRoadGeometry>;

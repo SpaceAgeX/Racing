@@ -28,6 +28,8 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
   controls.update();
 
   const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x687982, roughness: 0.9, metalness: 0.02, side: THREE.DoubleSide });
+  const edgeMaterial = new THREE.MeshBasicMaterial({ color: 0xf04444, side: THREE.DoubleSide });
+  const centerMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
   const pointMaterial = new THREE.MeshStandardMaterial({ color: 0x6bc5ff, roughness: 0.75 });
   const selectedPointMaterial = new THREE.MeshStandardMaterial({ color: 0xff8a45, emissive: 0x6b2108, roughness: 0.6 });
   const finishArchMaterial = new THREE.MeshStandardMaterial({ color: 0xf1f3f5, roughness: 0.8 });
@@ -36,12 +38,14 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
     new THREE.MeshBasicMaterial({ color: 0x20272d }),
   ];
   const checkpointMaterial = new THREE.MeshStandardMaterial({
-    color: 0x45f28a,
-    emissive: 0x126a36,
+    color: 0x4bb9ff,
+    emissive: 0x105181,
     emissiveIntensity: 1.4,
     roughness: 0.7,
   });
   let road: THREE.Mesh | null = null;
+  let edgeLines: THREE.Mesh | null = null;
+  let centerLine: THREE.Mesh | null = null;
   let markers = new THREE.Group();
   let raceMarkers = new THREE.Group();
   scene.add(markers);
@@ -72,6 +76,16 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
       scene.remove(road);
       road.geometry.dispose();
       road = null;
+    }
+    if (edgeLines) {
+      scene.remove(edgeLines);
+      edgeLines.geometry.dispose();
+      edgeLines = null;
+    }
+    if (centerLine) {
+      scene.remove(centerLine);
+      centerLine.geometry.dispose();
+      centerLine = null;
     }
     disposeMarkers();
 
@@ -121,6 +135,16 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
       road = new THREE.Mesh(geometry, roadMaterial);
       scene.add(road);
     }
+    const edgePositions = data.edgeMarkings.flatMap((t) => [t.a, t.b, t.c].flatMap((p) => [p.x, p.y, p.z]));
+    const edgeGeometry = new THREE.BufferGeometry();
+    edgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+    edgeLines = new THREE.Mesh(edgeGeometry, edgeMaterial);
+    scene.add(edgeLines);
+    const centerPositions = data.centerMarkings.flatMap((t) => [t.a, t.b, t.c].flatMap((p) => [p.x, p.y, p.z]));
+    const centerGeometry = new THREE.BufferGeometry();
+    centerGeometry.setAttribute('position', new THREE.Float32BufferAttribute(centerPositions, 3));
+    centerLine = new THREE.Mesh(centerGeometry, centerMaterial);
+    scene.add(centerLine);
 
     for (const node of graph.nodes) {
       const x = (node.position.x - .5) * SPLINE_EDITOR_WORLD_SIZE;
@@ -280,11 +304,15 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
       cancelAnimationFrame(animationFrame);
       controls.dispose();
       road?.geometry.dispose();
+      edgeLines?.geometry.dispose();
+      centerLine?.geometry.dispose();
       scene.remove(markers);
       for (const child of markers.children) (child as THREE.Mesh).geometry?.dispose();
       scene.remove(raceMarkers);
       raceMarkers.traverse((child) => (child as THREE.Mesh).geometry?.dispose());
       roadMaterial.dispose();
+      edgeMaterial.dispose();
+      centerMaterial.dispose();
       pointMaterial.dispose();
       selectedPointMaterial.dispose();
       finishArchMaterial.dispose();

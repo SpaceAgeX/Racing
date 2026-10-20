@@ -190,7 +190,7 @@ export function createCarVisual(color = 0xee7136) {
     }
   }
 
-  void loadCarModel().then((template) => {
+  const ready = loadCarModel().then((template) => {
     if (disposed) return;
     const model = template.clone(true);
     model.traverse((node) => {
@@ -229,6 +229,7 @@ export function createCarVisual(color = 0xee7136) {
 
   return {
     object,
+    ready,
     update(state: Readonly<VehicleState>): void {
       latestState = state;
       object.position.set(state.position.x, state.position.y, state.position.z);
