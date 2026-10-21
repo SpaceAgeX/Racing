@@ -62,8 +62,6 @@ const sections = [
   ] },
 ];
 
-const storageKey = 'racing-driving-tuning-v1';
-
 export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement) {
   const parameters: TuningParameters = { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
   const cleanup: (() => void)[] = [];
@@ -82,28 +80,16 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     else parameters.physics[definition.key] = quantized;
   }
 
-  try {
-    const saved = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as {
-      driving?: Partial<DrivingParameters>; physics?: Partial<PhysicsParameters>;
-    } | null;
-    for (const section of sections) {
-      for (const definition of section.sliders) {
-        const value = definition.target === 'driving' ? saved?.driving?.[definition.key] : saved?.physics?.[definition.key];
-        if (typeof value === 'number' && Number.isFinite(value)) setValue(definition, value);
-      }
-    }
-  } catch { /* Defaults also work when browser storage is unavailable or invalid. */ }
-
   panel.innerHTML = `
     <header class="tuning-header">
       <h1>Handling</h1>
-      <p>Adjust while you drive.</p>
+      <p>Optional. Changing handling makes this time trial unranked.</p>
       <div class="tuning-telemetry"><output id="current-speed">0.0 km/h</output><span id="ground-status">On track</span></div>
     </header>
     <div class="tuning-fields"></div>
     <footer class="tuning-footer">
       <div><button type="button" id="reset-tuning">Reset defaults</button><button type="button" id="save-tuning">Save settings</button></div>
-      <p id="tuning-message" aria-live="polite">Remembered in this browser.</p>
+      <p id="tuning-message" aria-live="polite">Default handling is active.</p>
     </footer>`;
   const fields = panel.querySelector<HTMLElement>('.tuning-fields')!;
   const speed = panel.querySelector<HTMLOutputElement>('#current-speed')!;
@@ -121,11 +107,6 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
         : definition.unit === 'rad' ? ` · ${(value * 180 / Math.PI).toFixed(0)}°` : '';
       output.value = `${value.toFixed(decimals)} ${definition.unit}${additional}`;
     }
-  }
-
-  function persist(): void {
-    try { localStorage.setItem(storageKey, JSON.stringify(parameters)); }
-    catch { /* Live tuning remains usable when storage is disabled. */ }
   }
 
   for (const section of sections) {
@@ -156,8 +137,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
       const onInput = (): void => {
         setValue(definition, Number(input.value));
         sync();
-        persist();
-        message.textContent = 'Remembered in this browser.';
+        message.textContent = 'Custom handling: this session is unranked.';
       };
       input.addEventListener('input', onInput);
       cleanup.push(() => input.removeEventListener('input', onInput));
@@ -171,7 +151,6 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     Object.assign(parameters.driving, drivingParameters);
     Object.assign(parameters.physics, physicsParameters);
     sync();
-    persist();
     message.textContent = 'Defaults restored.';
   };
   reset.addEventListener('click', onReset);
@@ -197,9 +176,9 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     toggle.setAttribute('aria-expanded', String(!collapsed));
   }
   const narrow = matchMedia('(max-width: 760px)');
-  const onWidthChange = (): void => setCollapsed(narrow.matches);
+  const onWidthChange = (): void => { if (narrow.matches) setCollapsed(true); };
   const onToggle = (): void => setCollapsed(!panel.hidden);
-  onWidthChange();
+  setCollapsed(true);
   toggle.addEventListener('click', onToggle);
   narrow.addEventListener('change', onWidthChange);
   cleanup.push(() => toggle.removeEventListener('click', onToggle));
@@ -207,6 +186,13 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
 
   return {
     parameters,
+    resetDefaults(): void {
+      Object.assign(parameters.driving, drivingParameters);
+      Object.assign(parameters.physics, physicsParameters);
+      sync();
+      setCollapsed(true);
+      message.textContent = 'Default handling is active.';
+    },
     update(state: Readonly<VehicleState>): void {
       const text = `${(Math.hypot(state.speed, state.lateralSpeed) * 3.6).toFixed(1)} km/h`;
       if (speed.value !== text) speed.value = text;

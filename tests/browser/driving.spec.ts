@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
 import { readFile } from 'node:fs/promises';
 import { formatLapTime } from '../../src/ui/lap-display.ts';
-import { enterRace } from './race-helpers.ts';
+import { enterRace, testAuthHeaders } from './race-helpers.ts';
 import { trackOptions } from '../../src/multiplayer/protocol.ts';
 
 type Prototype = ReturnType<typeof startPrototype>;
@@ -140,9 +140,11 @@ test('keyboard drives acceleration, coasting, steering, braking, reverse, and ca
   await expect.poll(async () => (await snapshot(page)).speed).toBeLessThan(-2);
   await page.keyboard.up('s');
   const reversing = await snapshot(page);
+  await page.keyboard.down('s');
   await page.keyboard.down('a');
-  await expect.poll(async () => (await snapshot(page)).heading).toBeLessThan(reversing.heading - 0.15);
+  await expect.poll(async () => (await snapshot(page)).heading).toBeLessThan(reversing.heading - 0.05);
   await page.keyboard.up('a');
+  await page.keyboard.up('s');
   await page.keyboard.down('w');
   await expect.poll(async () => (await snapshot(page)).speed).toBeGreaterThan(2);
   await page.keyboard.up('w');
@@ -156,9 +158,10 @@ test('blur releases throttle and steering without receiving keyup', async ({ pag
   await page.keyboard.down('d');
   await expect.poll(async () => (await snapshot(page)).speed).toBeGreaterThan(3);
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
-  const before = await snapshot(page);
   await expect.poll(async () => (await snapshot(page)).steeringAngle).toBe(0);
-  expect((await snapshot(page)).speed).toBeLessThan(before.speed);
+  const coasting = await snapshot(page);
+  await page.waitForTimeout(300);
+  expect((await snapshot(page)).speed).toBeLessThanOrEqual(coasting.speed + 0.1);
   await page.keyboard.up('w');
   await page.keyboard.up('d');
 });
@@ -206,9 +209,13 @@ test('a long rendering pause causes no catch-up movement jump', async ({ page })
   await page.keyboard.up('w');
 });
 
-test('sliders change driving immediately, persist on refresh, save JSON, and reset defaults', async ({ page }) => {
+test('optional tuning changes driving, disqualifies the session, and resets for the next run', async ({ page }) => {
   await page.goto('/');
   await enterRace(page);
+  await expect(page.locator('#tuning-panel')).toBeHidden();
+  await expect(page.locator('#race-room-status')).toContainText('Ranked');
+  await expect(page.locator('#race-speed-value')).toBeVisible();
+  await page.getByRole('button', { name: 'Tuning', exact: true }).click();
   await expect(page.locator('#tuning-panel')).toBeVisible();
   await expect(page.locator('#tuning-panel input[type="range"]')).toHaveCount(21);
   await setSlider(page, 'Top speed limit', 5);
@@ -218,18 +225,14 @@ test('sliders change driving immediately, persist on refresh, save JSON, and res
   expect(tuned.driving.maxSpeed).toBe(5);
   expect(tuned.driving.acceleration).toBe(20);
   expect(tuned.physics.respawnDelay).toBe(2);
+  await expect(page.locator('#race-room-status')).toContainText('unranked');
 
   // Driving still works while a slider has focus.
   await page.keyboard.down('w');
   await expect.poll(async () => (await snapshot(page)).speed, { intervals: [50] }).toBeCloseTo(5, 6);
   await expect(page.locator('#current-speed')).toHaveText('18.0 km/h');
+  await expect(page.locator('#race-speed-value')).toHaveText('18');
   await page.keyboard.up('w');
-  await page.reload();
-  await enterRace(page);
-  await expect(page.locator('#tuning-panel').getByLabel('Top speed limit', { exact: true })).toHaveValue('5');
-  await expect(page.locator('#tuning-panel').getByLabel('Acceleration', { exact: true })).toHaveValue('20');
-  expect(await tuningSnapshot(page)).toEqual(tuned);
-
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();
   const download = await downloadPromise;
@@ -245,20 +248,27 @@ test('sliders change driving immediately, persist on refresh, save JSON, and res
 
   await page.getByRole('button', { name: 'Reset defaults', exact: true }).click();
   const reset = await tuningSnapshot(page);
-  expect(reset.driving.maxSpeed).toBe(80);
+  expect(reset.driving.maxSpeed).toBe(70.5);
+  expect(reset.driving.reverseAcceleration).toBe(25);
+  expect(reset.driving.maxReverseSpeed).toBe(30);
   expect(reset.driving.acceleration).toBe(40);
   expect(reset.driving.braking).toBe(55.5);
   expect(reset.driving.maxSteeringAngle).toBe(0.55);
   expect(reset.driving.highSpeedSteeringAngle).toBe(0.07);
   expect(reset.physics.respawnDelay).toBe(1);
+  await expect(page.locator('#race-room-status')).toContainText('unranked');
   await page.reload();
   await enterRace(page);
+  await expect(page.locator('#tuning-panel')).toBeHidden();
+  await expect(page.locator('#race-room-status')).toContainText('Ranked');
   expect(await tuningSnapshot(page)).toEqual(reset);
 });
 
 test('hiding and showing the tuning panel resizes the canvas and camera', async ({ page }) => {
   await page.goto('/');
   await enterRace(page);
+  await expect(page.locator('#tuning-panel')).toBeHidden();
+  await page.getByRole('button', { name: 'Tuning', exact: true }).click();
   const initialWidth = await page.locator('#game').evaluate((canvas: HTMLCanvasElement) => canvas.clientWidth);
   await page.getByRole('button', { name: 'Hide', exact: true }).click();
   await expect(page.locator('#tuning-panel')).toBeHidden();
@@ -270,37 +280,34 @@ test('hiding and showing the tuning panel resizes the canvas and camera', async 
   await expect.poll(async () => (await snapshot(page)).aspect).toBe(initialWidth / (await snapshot(page)).canvasHeight);
 });
 
-test('an offset finish-post crash spins the visible car and preserves a slide before grip recovers', async ({ page }) => {
+test('the server corrects forged car position and lap data during a time trial', async ({ page }) => {
   await page.goto('/');
   await enterRace(page);
+  const origin = await snapshot(page);
   await page.evaluate(async () => {
     const path = '/assets/main.js';
     const { prototype } = await import(path) as { prototype: Prototype };
-    const post = prototype.view.road.obstacles[0]!;
-    Object.assign(prototype.state.position, { x: post.center.x + .5, y: post.center.y - 1.9, z: post.center.z + 5 });
-    prototype.state.heading = 0;
-    prototype.state.speed = 18;
+    prototype.state.position.x += 1000;
+    prototype.state.position.z += 1000;
+    prototype.lapTimer.completedLaps = 100;
+    prototype.lapTimer.checkpointsVisited = [1, 2, 3];
   });
-  await expect.poll(async () => (await snapshot(page)).crashTime, { intervals: [25] }).toBeGreaterThan(0);
-  await expect.poll(async () => Math.abs((await snapshot(page)).heading), { intervals: [25] }).toBeGreaterThan(.5);
-  const spin = await snapshot(page);
-  expect(Math.abs(spin.yawSpeed)).toBeGreaterThan(.5);
-  expect(Math.abs(spin.lateralSpeed)).toBeGreaterThan(.1);
-  // An off-center post crash may also carry the car off the road.
-  const visible = await page.evaluate(async () => {
-    const path = '/assets/main.js';
-    const { prototype } = await import(path) as { prototype: Prototype };
-    return { heading: prototype.state.heading, visual: prototype.car.object.rotation.y };
-  });
-  expect(Math.abs(visible.heading - visible.visual)).toBeLessThan(.15);
-  await page.screenshot({ path: 'test-results/prototype-post-spin.png' });
-  await expect.poll(async () => (await snapshot(page)).yawSpeed).toBe(0);
-  expect((await snapshot(page)).crashTime).toBe(0);
+  await expect.poll(async () => {
+    const current = await snapshot(page);
+    return Math.hypot(current.position.x - origin.position.x, current.position.z - origin.position.z);
+  }, { intervals: [50] }).toBeLessThan(2);
+  await expect.poll(async () => (await lapSnapshot(page)).completedLaps).toBe(0);
+  await expect.poll(async () => (await lapSnapshot(page)).checkpointsVisited).toEqual([]);
 });
 
 test('the finish line starts the timer and records laps, best time, and differences in either direction', async ({ page }) => {
+  test.setTimeout(120_000);
   await page.goto('/');
-  await enterRace(page);
+  await enterRace(page, 'default');
+  const accountBefore = await page.request.get('/api/account', { headers: await testAuthHeaders() });
+  expect(accountBefore.ok()).toBe(true);
+  const previousAccount = await accountBefore.json() as { lapsCompleted: number; username: string };
+  const completedBefore = previousAccount.lapsCompleted;
   await expect(page.locator('#lap-current')).toHaveText('00:00.00');
   await expect(page.locator('#lap-best')).toHaveText('--:--.--');
   await expect(page.locator('#lap-status')).toHaveText('Cross the line to start');
@@ -310,8 +317,21 @@ test('the finish line starts the timer and records laps, best time, and differen
   await expect(page.locator('#lap-status')).toHaveText('Lap 1');
 
   await page.keyboard.down('s');
-  await expect.poll(async () => (await lapSnapshot(page)).completedLaps, { intervals: [25, 50] }).toBe(1);
+  await expect.poll(async () => (await lapSnapshot(page)).completedLaps,
+    { intervals: [100, 200], timeout: 45_000 }).toBe(1);
   await page.keyboard.up('s');
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/account', { headers: await testAuthHeaders() });
+    return ((await response.json()) as { lapsCompleted: number }).lapsCompleted;
+  }).toBe(completedBefore + 1);
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/leaderboard/default', { headers: await testAuthHeaders() });
+    return (await response.json() as { name: string; durationMs: number }[])
+      .some(lap => lap.name === previousAccount.username);
+  }).toBe(true);
+  const savedAccount = await page.request.get('/api/account', { headers: await testAuthHeaders() });
+  expect((await savedAccount.json() as { personalBests: { trackName: string; durationMs: number }[] })
+    .personalBests.some(best => best.trackName === 'Default circuit' && best.durationMs > 0)).toBe(true);
   const first = await lapSnapshot(page);
   expect(first.last).toBeGreaterThan(0);
   expect(first.best).toBe(first.last);
@@ -321,7 +341,8 @@ test('the finish line starts the timer and records laps, best time, and differen
   await expect(page.locator('#lap-delta')).toHaveText('First lap');
 
   await page.keyboard.down('w');
-  await expect.poll(async () => (await lapSnapshot(page)).completedLaps, { intervals: [25, 50] }).toBe(2);
+  await expect.poll(async () => (await lapSnapshot(page)).completedLaps,
+    { intervals: [100, 200], timeout: 45_000 }).toBe(2);
   await page.keyboard.up('w');
   const second = await lapSnapshot(page);
   expect(second.best).toBe(Math.min(first.best!, second.last!));

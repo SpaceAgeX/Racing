@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your account | Racing</title><link rel="stylesheet" href="/auth.css"><link rel="stylesheet" href="/account/styles.css">
+</head><body data-auth-state="pending">
+  <main class="dashboard-shell">
+    <header class="dashboard-nav"><a class="dashboard-brand" href="/">RACING<span></span></a>
+      <nav><a href="/">Race now <span aria-hidden="true">&rarr;</span></a><button id="sign-out" type="button">Sign out</button></nav></header>
+    <section class="dashboard-hero">
+      <div class="hero-copy"><p class="eyebrow">RACER PROFILE / <span>01</span></p>
+        <div class="identity"><div id="account-avatar" class="avatar" aria-hidden="true">R</div><div>
+          <p class="identity-label">YOUR GARAGE</p><h1 id="account-name">Racer</h1>
+          <p id="account-email" class="account-email"></p></div></div>
+        <p class="hero-description">Every lap adds to your story. Keep pushing the line.</p>
+        <a class="hero-action" href="/">Get back on track <span aria-hidden="true">&rarr;</span></a></div>
+      <div class="hero-decoration" aria-hidden="true"><span class="ring ring-one"></span><span class="ring ring-two"></span><span class="hero-number">01</span></div>
+    </section>
+    <section class="stats-section" aria-labelledby="stats-heading"><div class="section-heading"><div><p class="eyebrow">THE NUMBERS</p><h2 id="stats-heading">Race statistics</h2></div><span>SERVER RECORDED</span></div>
+      <div id="account-metrics" class="account-metrics"></div></section>
+    <div class="dashboard-columns">
+      <section class="dashboard-panel" aria-labelledby="bests-heading"><div class="panel-heading"><div><p class="eyebrow">FASTEST LAPS</p><h2 id="bests-heading">Personal bests</h2></div><span class="panel-icon">01</span></div>
+        <div id="personal-bests" class="result-list"></div></section>
+      <section class="dashboard-panel" aria-labelledby="recent-heading"><div class="panel-heading"><div><p class="eyebrow">RACE HISTORY</p><h2 id="recent-heading">Recent laps</h2></div><span class="panel-icon">02</span></div>
+        <div id="recent-laps" class="result-list"></div></section>
+    </div>
+    <section class="profile-strip"><div><p class="eyebrow">ACCOUNT DETAILS</p><h2>Track publishing</h2>
+      <p class="approval-status">Ranked map approval: <strong id="builder-approval"></strong></p><p id="builder-access"></p></div>
+      <div class="profile-id"><span>USERNAME</span><strong id="account-username"></strong>
+        <button id="edit-username" class="username-edit-button" type="button" aria-controls="username-form" aria-expanded="false">Change username</button>
+        <form id="username-form" hidden>
+          <label for="new-username">New username</label>
+          <input id="new-username" name="username" type="text" minlength="3" maxlength="20" autocomplete="off" spellcheck="false" required>
+          <small>3–20 characters. Start with a letter; use letters, numbers, or underscores.</small>
+          <div class="username-actions"><button type="submit">Save username</button><button id="cancel-username" type="button">Cancel</button></div>
+        </form>
+        <p id="username-feedback" role="status" aria-live="polite"></p>
+      </div></section>
+  </main>
+  <script type="module" src="/assets/account.js"></script>
+</body></html>

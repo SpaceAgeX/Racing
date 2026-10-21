@@ -6,8 +6,9 @@
     <meta name="theme-color" content="#a8d2ed" />
     <title>Driving Prototype</title>
     <link rel="stylesheet" href="/styles.css?v=room-chat-2" />
+    <link rel="stylesheet" href="/auth.css" />
   </head>
-  <body>
+  <body data-auth-state="pending">
     <main id="home-screen" class="screen screen-home" aria-label="Lobby browser"></main>
     <main id="lobby-screen" class="screen screen-lobby" hidden aria-label="Waiting lobby"></main>
     <main id="race-screen" class="screen screen-race" hidden aria-label="Active race">
@@ -37,7 +38,7 @@
           <canvas id="minimap" class="minimap" role="img" aria-label="Track minimap. The orange arrow shows your car's position and direction; blue marks checkpoints and white marks the finish line."></canvas>
           <div class="race-speed" aria-label="Vehicle speed">
             <span>Speed</span>
-            <div><output id="multiplayer-speed" aria-live="off">0</output> <span>km/h</span></div>
+            <div><output id="race-speed-value" aria-live="off">0</output> <span>km/h</span></div>
           </div>
           <p class="controls" aria-label="Driving controls">
             <span><kbd>W</kbd> Accelerate</span>

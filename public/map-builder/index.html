@@ -4,9 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spline Map Builder &middot; Racing</title>
+    <link rel="stylesheet" href="/auth.css" />
     <link rel="stylesheet" href="/map-builder/styles.css" />
   </head>
-  <body>
+  <body data-auth-state="pending">
     <header class="page-header">
       <div><p class="eyebrow">Racing prototype</p><h1>Spline Map Builder</h1></div>
       <a href="/">Back to game</a>
@@ -98,9 +99,15 @@
           <button id="clear-track" type="button" disabled>Clear canvas</button>
           <p id="builder-message" role="status" aria-live="polite">Click empty space to add points.</p>
         </section>
-        <section class="track-library" aria-label="Shared track library">
-          <h2>Shared tracks</h2>
+        <section class="track-library" aria-label="Track library">
+          <h2>Save your track</h2>
           <label for="track-name">Track name</label><input id="track-name" maxlength="60" placeholder="Name your track">
+          <label for="track-visibility">Track type</label>
+          <select id="track-visibility">
+            <option value="personal">Personal · solo, unranked</option>
+            <option value="ranked">Ranked · leaderboard and multiplayer</option>
+          </select>
+          <p id="publish-approval" class="help"></p>
           <p id="save-requirement" class="help"></p>
           <div class="library-actions"><button id="save-track" type="button">Save track</button><button id="play-track" type="button">Save &amp; play</button></div>
           <label for="saved-tracks">Load a track</label><select id="saved-tracks"><option value="">Select a track</option></select>

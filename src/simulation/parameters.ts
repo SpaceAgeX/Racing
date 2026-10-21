@@ -6,10 +6,10 @@ export const vehicleDimensions = Object.freeze({ width: 1.8, height: 0.8, length
 /** All driving tuning lives here. Distances in m, speeds in m/s, angles in radians. */
 export const drivingParameters: Readonly<DrivingParameters> = Object.freeze({
   acceleration: 40,              // m/s²
-  reverseAcceleration: 6,        // m/s²
+  reverseAcceleration: 25,       // m/s²
   braking: 55.5,                // m/s²
-  maxSpeed: 80,                 // 288 km/h
-  maxReverseSpeed: 8,           // 28.8 km/h
+  maxSpeed: 70.5,                // 253.8 km/h
+  maxReverseSpeed: 30,          // 108 km/h
   rollingDrag: 0.7,             // m/s²
   linearDrag: 0.12,             // 1/s
   quadraticDrag: 0.0015,        // 1/m

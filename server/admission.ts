@@ -19,10 +19,17 @@ export function createAdmission(limit = 15, ttlMs = 120_000, now = Date.now) {
   timer.unref();
   const middleware: RequestHandler = (request, response, next) => {
     if (limit === 0) { next(); return; }
+    // A browser can restore an old page after a server restart, before it has a
+    // new admission cookie. Let its static sign-in shell load so it can recover.
+    const publicAsset = request.method === 'GET' && (request.path.startsWith('/assets/') || [
+      '/styles.css', '/auth.css', '/auth-pages.css', '/map-builder/styles.css', '/account/styles.css', '/favicon.ico',
+    ].includes(request.path));
+    if (publicAsset) { next(); return; }
     sweep();
     const id = token(request);
     const session = id ? sessions.get(id) : undefined;
-    const document = request.method === 'GET' && ['/', '/map-builder', '/map-builder/'].includes(request.path);
+    const document = request.method === 'GET' && ['/', '/login', '/login/', '/signup', '/signup/',
+      '/map-builder', '/map-builder/', '/account', '/account/'].includes(request.path);
     if (session) { session.expires = now() + ttlMs; next(); return; }
     response.setHeader('Cache-Control', 'no-store');
     if (!document) { response.status(401).json({ error: 'Session expired. Reload the game to enter again.' }); return; }

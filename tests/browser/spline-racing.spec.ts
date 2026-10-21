@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
+import { testAuthHeaders } from './race-helpers.ts';
 
 test('finished spline saves, reloads, previews in 2D, races, and deletes from shared library', async ({ page }) => {
   test.setTimeout(90000);
@@ -23,13 +24,15 @@ test('finished spline saves, reloads, previews in 2D, races, and deletes from sh
   await expect(page.locator('#save-track')).toBeEnabled();
   await page.locator('#place-checkpoint').click();
   await point(0.5, 0.3);
+  await page.locator('#track-visibility').selectOption('ranked');
   await page.locator('#save-track').click();
   await expect(page.locator('#library-status')).toContainText('Saved');
   const id = await page.locator('#saved-tracks').inputValue();
   expect(id).toBeTruthy();
-  const saved = await (await page.request.get('/api/tracks/' + id)).json();
+  const saved = await (await page.request.get('/api/tracks/' + id, { headers: await testAuthHeaders() })).json();
   expect(saved.layout.version).toBe(2);
   expect(saved.layout.checkpoints).toHaveLength(1);
+  expect(saved.visibility).toBe('ranked');
   await page.reload();
   await page.locator('#saved-tracks').selectOption(id);
   await page.locator('#load-track').click();
@@ -63,6 +66,6 @@ test('finished spline saves, reloads, previews in 2D, races, and deletes from sh
   await page.locator('#saved-tracks').selectOption(id);
   await page.locator('#delete-track').click();
   await expect(page.locator('#library-status')).toContainText('Deleted');
-  expect((await page.request.get('/api/tracks/' + id)).status()).toBe(404);
+  expect((await page.request.get('/api/tracks/' + id, { headers: await testAuthHeaders() })).status()).toBe(404);
   expect(errors).toEqual([]);
 });

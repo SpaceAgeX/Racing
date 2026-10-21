@@ -5,6 +5,12 @@ Code: `/opt/racing/current` (release symlink). Isolated Node 24: `/opt/racing/no
 Spline maps: `/var/lib/racing/tracks-splines-v2.json` with the existing `TRACKS_FILE=/var/lib/racing/tracks.json` setting. Legacy tile data remains untouched. Set `SPLINE_TRACKS_FILE` to choose a different spline store. Recordings: `/var/lib/racing/recordings`.
 The existing applications and existing cloudflared service are separate.
 
+## Account-enabled release
+
+The account-enabled server reads `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and `DATABASE_URL` from `/etc/racing/server.env`. This private file is readable by root and the racing group; never commit the database URL. Use Supabase's session pooler when the Pi cannot reach the direct IPv6 database endpoint. Set `GOOGLE_SIGN_IN_ENABLED=true` only when the Google provider is configured in Supabase. In Supabase Authentication URL Configuration, allow `https://racing.aryehlab.com/login/**` and `https://racing.aryehlab.com/signup/**` so OAuth returns to the public site.
+
+Back up `/var/lib/racing/tracks-splines-v2.json` before importing it with `node scripts/import-tracks.ts /var/lib/racing/tracks-splines-v2.json --apply` against the target database. The import leaves the JSON file untouched and stores legacy spline maps as ranked without a player owner. Keep the previous release available for rollback. The site admits at most 15 browser sessions, including login pages.
+
 ## Finish Cloudflare setup
 
 1. In Cloudflare Zero Trust, create a **new Cloudflare Tunnel** named `racing`.
@@ -58,7 +64,7 @@ Logs are not served publicly or committed. Copy a run directory and analysis.jso
 CPU is percent of one core. Position traffic is estimated JSON payload bytes, excluding TLS/framing/retransmissions.
 HTTP content-length totals are separate; missing lengths are counted. RTT uses Socket.IO acknowledgement probes,
 including browser scheduling; timeouts do not prove packet loss. Client diagnostics come from connected multiplayer
-clients, with hidden-tab FPS excluded. The server relays positions rather than simulating authoritative physics.
+clients, with hidden-tab FPS excluded. Multiplayer and solo time-trial car movement, track contacts, and lap timing run on the server; cars do not collide with each other. Ranked results persist in Supabase for eligible laps.
 CPU scheduling weight and memory limits are part of the benchmark environment. Host load averages are logged;
 temperature sensor collection is not included.
 

@@ -4,6 +4,7 @@ import { selectTrackForPlay, clearActiveTrack } from './track/storage.ts';
 import { splinePresets } from './track/spline-presets.ts';
 import { startAdmissionHeartbeat } from './admission.ts';
 import { createSplinePreview } from './rendering/spline-preview.ts';
+import { requireAccount } from './auth/session.ts';
 import {
   addSplineCheckpoint,
   addSplineConnection,
@@ -41,6 +42,7 @@ import {
   type SplineTrackLocation,
 } from './track/spline.ts';
 
+function initializeMapBuilder(canPublishRankedTracks: boolean): void {
 startAdmissionHeartbeat();
 
 const canvas = document.querySelector<HTMLCanvasElement>('#map-canvas')!;
@@ -89,6 +91,12 @@ const preview = createSplinePreview(previewCanvas);
 
 const graph = createSplineGraph();
 const trackName=document.querySelector<HTMLInputElement>('#track-name')!;
+const trackVisibility=document.querySelector<HTMLSelectElement>('#track-visibility')!;
+const rankedOption=trackVisibility.querySelector<HTMLOptionElement>('option[value="ranked"]')!;
+rankedOption.disabled=!canPublishRankedTracks;
+document.querySelector<HTMLElement>('#publish-approval')!.textContent=canPublishRankedTracks
+  ? 'Approved creator: you can publish ranked multiplayer tracks or save personal tracks.'
+  : 'Personal tracks are private and unranked. Ranked multiplayer publishing requires account approval.';
 const librarySelect=document.querySelector<HTMLSelectElement>('#saved-tracks')!;
 const libraryStatus=document.querySelector<HTMLElement>('#library-status')!;
 const saveButton=document.querySelector<HTMLButtonElement>('#save-track')!;
@@ -851,7 +859,9 @@ setTool('add');
 async function refreshLibrary(){
   try {
     const previous=librarySelect.value;
-    const tracks=[...splinePresets.map(p=>({id:p.id,name:p.name})),...await listSharedTracks()];
+    const tracks=[...splinePresets.map(p=>({id:p.id,name:p.name})),
+      ...(await listSharedTracks()).map(track=>({id:track.id,
+        name:`${track.visibility === 'personal' ? 'Personal' : 'Ranked'} · ${track.name}`}))];
     librarySelect.replaceChildren(new Option('Select a track',''));
     for(const track of tracks)librarySelect.add(new Option(track.name,track.id));
     if(tracks.some(t=>t.id===previous))librarySelect.value=previous;
@@ -862,8 +872,10 @@ async function save(play=false){
   const error=splineTrackError(layout);if(error){libraryStatus.textContent=error;return;}
   libraryBusy=true;updateSaveState();
   try {
-    const track=await saveSharedTrack(name,layout);
-    libraryStatus.textContent='Saved to the shared library.';
+    const track=await saveSharedTrack(name,layout,trackVisibility.value as 'ranked' | 'personal');
+    libraryStatus.textContent=track.visibility === 'ranked'
+      ? 'Ranked track saved. It is available for leaderboards and multiplayer.'
+      : 'Personal track saved. Only you can see or race it; laps are unranked.';
     await refreshLibrary();librarySelect.value=track.id;
     if(play){selectTrackForPlay(localStorage,track.name,track.layout,track.id);location.href='/?mode=time-trial';}
   }catch(error){libraryStatus.textContent=(error as Error).message;}
@@ -876,6 +888,8 @@ document.querySelector<HTMLButtonElement>('#load-track')!.onclick=async()=>{
     const preset=splinePresets.find(p=>p.id===id);
     const record=preset?{name:preset.name,layout:preset.create()}:await getSharedTrack(id);
     Object.assign(graph,structuredClone(record.layout));trackName.value=record.name;
+    trackVisibility.value='visibility' in record && record.visibility === 'ranked' && canPublishRankedTracks
+      ? 'ranked' : 'personal';
     nextNodeId=Math.max(...graph.nodes.map(n=>n.id))+1;
     nextConnectionId=Math.max(...graph.connections.map(n=>n.id))+1;
     nextCheckpointId=Math.max(0,...graph.checkpoints.map(n=>n.id))+1;
@@ -892,3 +906,8 @@ document.querySelector<HTMLButtonElement>('#delete-track')!.onclick=async()=>{
 void refreshLibrary();
 const libraryRefresh=setInterval(()=>{if(!document.hidden&&!libraryBusy)void refreshLibrary();},5000);
 window.addEventListener('pagehide',()=>clearInterval(libraryRefresh),{once:true});
+}
+
+const account = await requireAccount();
+initializeMapBuilder(account.profile.canPublishRankedTracks);
+document.body.dataset.authState = 'ready';

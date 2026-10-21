@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in | Racing</title><link rel="stylesheet" href="/auth-pages.css">
+</head><body>
+  <main class="auth-layout">
+    <section class="auth-story"><a class="brand" href="/">RACING<span class="brand-mark"></span></a>
+      <div class="story-content"><p class="eyebrow">YOUR NEXT LAP STARTS HERE</p>
+        <h1>Every second counts.</h1><p>Sign in to race, track your best laps, and return to the road where you left off.</p>
+        <div class="story-line"><span>01</span><div></div><span>GO FASTER</span></div></div>
+      <p class="story-footer">BUILT FOR THE NEXT CORNER</p></section>
+    <section class="auth-side"><div class="auth-form-wrap"><p class="eyebrow">WELCOME BACK</p>
+      <h2>Sign in to race</h2><p class="intro">Your garage and lap times are waiting.</p>
+      <button id="google-sign-in" class="google-button" type="button" disabled><span class="google-mark">G</span>Continue with Google</button>
+      <p id="google-note" class="provider-note">Google sign-in is not configured yet.</p>
+      <div class="divider"><span>OR CONTINUE WITH EMAIL</span></div>
+      <form id="login-form"><label>Email address<input id="login-email" type="email" autocomplete="email" required></label>
+        <label>Password<input id="login-password" type="password" autocomplete="current-password" required></label>
+        <button class="primary-button" type="submit">Sign in</button></form>
+      <p id="login-status" class="form-status" role="status"></p>
+      <p class="switch-page">New to Racing? <a id="create-link" href="/signup/">Create an account</a></p>
+    </div></section>
+  </main><script type="module" src="/assets/login.js"></script>
+</body></html>

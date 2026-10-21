@@ -6,8 +6,8 @@ import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
 import type { BuildContext } from 'esbuild';
-import { createTrackStore } from './track-store.ts';
-import { createTracksApi } from './tracks-api.ts';
+import { createAccounts, trackLayoutHash, handlingHash, AccountError, type AccountIdentity } from './accounts.ts';
+import { createAccountTracksApi } from './accounts-tracks-api.ts';
 import { createGameRecorder } from './game-recorder.ts';
 import { createAdmission } from './admission.ts';
 import type {
@@ -20,16 +20,20 @@ import type {
   MultiplayerBootstrap,
   ServerToClientEvents,
   TrackOption,
+  TimeTrialStart,
   ServerDiagnosticsSnapshot,
   UpdateLobbySettingsPayload,
 } from '../src/multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
 import { buildRoadGeometry } from '../src/track/road-geometry.ts';
+import { splineTrackError } from '../src/track/spline-records.ts';
 
 import type { VehicleState } from '../src/simulation/types.ts';
 import type { DrivingParameters, HandlingParameters, PhysicsParameters } from '../src/simulation/types.ts';
 import { drivingParameters, physicsParameters } from '../src/simulation/parameters.ts';
-import { createVehicleState } from '../src/simulation/vehicle.ts';
+import { createRaceSimulation, RACE_SNAPSHOT_TICKS, RACE_TIMESTEP } from '../src/simulation/race.ts';
+const defaultHandling = { driving: drivingParameters, physics: physicsParameters };
+const defaultRulesetHash = handlingHash(defaultHandling);
 
 const publicDirectory = fileURLToPath(new URL('../public', import.meta.url));
 const bundleDirectory = fileURLToPath(new URL('../dist', import.meta.url));
@@ -62,16 +66,52 @@ app.use((request, response, next) => {
   next();
 });
 const admission = createAdmission(Number(process.env.MAX_BROWSER_SESSIONS ?? 15));
+const accounts = createAccounts();
 app.get('/healthz', (_request, response) => response.json({ ok: true }));
 app.use(admission.middleware);
+app.get('/api/auth/config', (_request, response) => response.json({
+  url: process.env.SUPABASE_URL,
+  publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY,
+  googleEnabled: process.env.GOOGLE_SIGN_IN_ENABLED === 'true',
+}));
+app.get('/api/username-availability', async (request, response) => {
+  response.setHeader('Cache-Control', 'no-store');
+  response.json({ available: await accounts.usernameAvailable(request.query.username) });
+});
 app.post('/api/session/heartbeat', (_request, response) => response.sendStatus(204));
-// Preserve existing tile saves in their original file.
-const trackFile = process.env.SPLINE_TRACKS_FILE ?? (process.env.TRACKS_FILE ? process.env.TRACKS_FILE.replace(/\.json$/, '') + '-splines-v2.json' : fileURLToPath(new URL('../data/tracks-splines-v2.json', import.meta.url)));
-const trackStore = await createTrackStore(trackFile);
-app.use('/api/tracks', createTracksApi(trackStore, broadcastTrackOptions));
+// Keep the network RTT probe independent of the hosted Auth round trip.
 app.get('/api/ping', (_request, response) => {
   response.setHeader('Cache-Control', 'no-store');
   response.json({ time: Date.now() });
+});
+app.use('/api', accounts.requireAccount);
+app.post('/api/account/username', express.json({ limit: '4kb' }), async (request, response) => {
+  response.json({ username: await accounts.claimUsername(response.locals.account.id, request.body?.username) });
+});
+app.patch('/api/account/username', express.json({ limit: '4kb' }), async (request, response) => {
+  response.json({ username: await accounts.updateUsername(response.locals.account.id, request.body?.username) });
+});
+app.use('/api/tracks', createAccountTracksApi(accounts, broadcastTrackOptions));
+app.get('/api/account', async (_request, response) => {
+  response.setHeader('Cache-Control', 'no-store');
+  response.json(await accounts.dashboard(response.locals.account.id));
+});
+app.patch('/api/account', express.json({ limit: '4kb' }), async (request, response) => {
+  await accounts.updateDisplayName(response.locals.account.id, request.body?.displayName);
+  response.sendStatus(204);
+});
+app.get('/api/leaderboard/:trackId', async (request, response) => {
+  if (request.params.trackId.length > 100) { response.sendStatus(404); return; }
+  const track = presetTrackOptions.find(item => item.id === request.params.trackId)
+    ?? await accounts.getTrack(request.params.trackId);
+  if (!track || track.visibility === 'personal') { response.sendStatus(404); return; }
+  response.setHeader('Cache-Control', 'no-store');
+  response.json(await accounts.leaderboard(track.id, trackLayoutHash(track.layout), defaultRulesetHash));
+});
+app.use('/api', (error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
+  if (error instanceof AccountError) { response.status(error.status).json({ error: error.message }); return; }
+  console.error('Account API:', error);
+  response.status(500).json({ error: 'Could not access account data.' });
 });
 app.get('/favicon.ico', (_request, response) => response.sendStatus(204));
 app.use('/assets', express.static(bundleDirectory, {
@@ -95,6 +135,9 @@ interface LobbyRecord {
   phase: LobbyPhase;
   settings: LobbySettings;
   players: Map<string, LobbyPlayerRecord>;
+  race: ReturnType<typeof createRaceSimulation> | null;
+  layoutHash: string;
+  starting: boolean;
 }
 
 const drivingBounds: Record<keyof DrivingParameters, readonly [number, number]> = {
@@ -140,14 +183,56 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   allowRequest: (request, done) => done(null, admission.authorized(request)),
 });
 io.use((socket, next) => {
-  const error = admission.socket(socket.request, socket.id, () => socket.disconnect(true));
-  if (error) { next(new Error(error)); return; }
-  socket.on('disconnect', () => admission.releaseSocket(socket.request, socket.id));
-  next();
+  void accounts.identity(socket.handshake.auth?.token).then(async account => {
+    if (!account) { next(new Error('Sign in to race.')); return; }
+    if (!(await accounts.profile(account.id)).username) { next(new Error('Choose a username before racing.')); return; }
+    socket.data.account = account;
+    const error = admission.socket(socket.request, socket.id, () => socket.disconnect(true));
+    if (error) { next(new Error(error)); return; }
+    socket.on('disconnect', () => admission.releaseSocket(socket.request, socket.id));
+    next();
+  }).catch(() => next(new Error('Could not verify your account.')));
 });
 
 const lobbies = new Map<string, LobbyRecord>();
 const playerLobby = new Map<string, string>();
+interface SoloRace {
+  simulation: ReturnType<typeof createRaceSimulation>;
+  track: TrackOption;
+  layoutHash: string;
+  rulesetHash: string;
+  rankedEligible: boolean;
+}
+const timeTrials = new Map<string, SoloRace>();
+const activity = new Map<string, { seconds: number; distanceMeters: number }>();
+const pendingWrites = new Set<Promise<void>>();
+function accountId(socketId: string): string | null {
+  return (io.sockets.sockets.get(socketId)?.data.account as AccountIdentity | undefined)?.id ?? null;
+}
+function queueWrite(write: Promise<void>): void {
+  const task = write.catch(error => { console.error('Could not save account activity:', error); });
+  pendingWrites.add(task);
+  void task.finally(() => pendingWrites.delete(task));
+}
+function accrue(userId: string | null, seconds: number, distanceMeters: number): void {
+  if (!userId) return;
+  const previous = activity.get(userId) ?? { seconds: 0, distanceMeters: 0 };
+  previous.seconds += seconds;
+  previous.distanceMeters += distanceMeters;
+  activity.set(userId, previous);
+}
+function flushActivity(): void {
+  for (const [userId, value] of activity) {
+    activity.delete(userId);
+    queueWrite(accounts.addActivity(userId, value.seconds, value.distanceMeters).catch(error => {
+      accrue(userId, value.seconds, value.distanceMeters);
+      throw error;
+    }));
+  }
+}
+const activityClock = setInterval(flushActivity, 15_000);
+const raceTickDurationsMs: number[] = [];
+let raceTickOverrunsTotal = 0;
 
 interface TrafficWindow {
   startedAt: number;
@@ -205,8 +290,14 @@ function getServerDiagnostics(socket: Parameters<typeof io.on>[1] extends (arg: 
         p95: asMilliseconds(p95),
         max: asMilliseconds(eventLoopDelay.max),
       },
-      authoritativeSimulation: false,
-      simulationTickRateHz: 0,
+      authoritativeSimulation: true,
+      simulationTickRateHz: 1 / RACE_TIMESTEP,
+      simulationTickMs: {
+        latest: raceTickDurationsMs.at(-1) ?? 0,
+        average: raceTickDurationsMs.length ? raceTickDurationsMs.reduce((a, b) => a + b, 0) / raceTickDurationsMs.length : 0,
+        max: raceTickDurationsMs.length ? Math.max(...raceTickDurationsMs) : 0,
+        overrunsTotal: raceTickOverrunsTotal,
+      },
       connectedSockets: io.engine.clientsCount,
       lobbyCount: lobbies.size,
       playerCount: [...lobbies.values()].reduce((total, lobby) => total + lobby.players.size, 0),
@@ -284,6 +375,7 @@ function createLobbySnapshot(lobby: LobbyRecord): LobbySnapshot {
     hostId: lobby.hostId,
     hostName: lobby.players.get(lobby.hostId)?.name ?? 'Host',
     phase: lobby.phase,
+    ranked: handlingHash(lobby.settings.handling) === defaultRulesetHash,
     settings: lobby.settings,
     players: [...lobby.players.values()].map((player) => ({
       id: player.id,
@@ -323,12 +415,12 @@ function destroyLobby(lobbyId: string): void {
 }
 
 async function availableTracks(): Promise<TrackOption[]> {
-  return [...presetTrackOptions, ...await trackStore.list()];
+  return [...presetTrackOptions, ...await accounts.listRankedTracks()];
 }
 
 async function resolveTrack(trackId: string): Promise<TrackOption> {
   const preset = presetTrackOptions.find((track) => track.id === trackId);
-  const track = preset ?? await trackStore.get(trackId);
+  const track = preset ?? await accounts.getTrack(trackId);
   if (!track) throw new Error('That track no longer exists. Choose another track.');
   return track;
 }
@@ -363,6 +455,7 @@ function leaveLobby(socketId: string): void {
 
   playerLobby.delete(socketId);
   lobby.players.delete(socketId);
+  lobby.race?.removePlayer(socketId);
   if (lobby.players.size === 0) {
     lobbies.delete(lobbyId);
     broadcastLobbyList();
@@ -377,6 +470,7 @@ async function createLobby(socketId: string, playerName: string, lobbyName: stri
   const handling = normalizeHandling(requestedHandling) ?? { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
   if (!io.sockets.sockets.has(socketId)) throw new Error('The player disconnected.');
   leaveLobby(socketId);
+  timeTrials.delete(socketId);
   const lobby: LobbyRecord = {
     id: makeLobbyId(),
     name: normalizeName(lobbyName, `${playerName}'s lobby`),
@@ -389,6 +483,9 @@ async function createLobby(socketId: string, playerName: string, lobbyName: stri
       handling,
     },
     players: new Map(),
+    race: null,
+    layoutHash: trackLayoutHash(track.layout),
+    starting: false,
   };
   lobby.players.set(socketId, {
     id: socketId,
@@ -409,6 +506,7 @@ function joinLobby(socketId: string, lobbyId: string, playerName: string): Lobby
   const color = lobbyPalette.find(color => ![...lobby.players.values()].some(player => player.color === color));
   if (!color) return null;
   leaveLobby(socketId);
+  timeTrials.delete(socketId);
   const player = {
     id: socketId,
     name: normalizeName(playerName, 'Player'),
@@ -417,17 +515,6 @@ function joinLobby(socketId: string, lobbyId: string, playerName: string): Lobby
   } satisfies LobbyPlayerRecord;
   lobby.players.set(socketId, player);
   playerLobby.set(socketId, lobby.id);
-  return lobby;
-}
-
-function applyState(socketId: string, state: VehicleState): LobbyRecord | null {
-  const lobbyId = playerLobby.get(socketId);
-  if (!lobbyId) return null;
-  const lobby = lobbies.get(lobbyId);
-  if (!lobby) return null;
-  const player = lobby.players.get(socketId);
-  if (!player) return null;
-  player.state = state;
   return lobby;
 }
 
@@ -446,6 +533,7 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
     layout: track?.layout ?? lobby.settings.layout,
     handling: handling ?? lobby.settings.handling,
   };
+  lobby.layoutHash = trackLayoutHash(lobby.settings.layout);
   return lobby;
 }
 
@@ -455,18 +543,14 @@ function startLobby(socketId: string): LobbyRecord | null {
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
   const road = buildRoadGeometry(lobby.settings.layout);
+  const race = createRaceSimulation(road, lobby.settings.handling);
   const players = [...lobby.players.values()];
 
   for (let index = 0; index < players.length; index++) {
     const player = players[index]!;
-    const spawn = road.spawns[index]!;
-    const state = createVehicleState();
-    state.position.x = spawn.position.x;
-    state.position.y = spawn.position.y;
-    state.position.z = spawn.position.z;
-    state.heading = spawn.heading;
-    player.state = state;
+    player.state = race.addPlayer(player.id, index).state;
   }
+  lobby.race = race;
   lobby.phase = 'race';
   return lobby;
 }
@@ -493,6 +577,60 @@ io.on('connection', (socket) => {
   });
 
   let lastChatAt = -Infinity;
+  socket.on('multiplayer:clock', reply => { if (typeof reply === 'function') reply(performance.now()); });
+  let soloGeneration = 0;
+  socket.on('time-trial:start', async (payload: TimeTrialStart) => {
+    if (!payload || !Number.isSafeInteger(payload.requestId) || payload.requestId <= 0
+      || typeof payload.trackId !== 'string' || payload.trackId.length > 100) return;
+    const generation = ++soloGeneration;
+    timeTrials.delete(socket.id);
+    try {
+      if (playerLobby.has(socket.id)) throw new Error('Leave the lobby before starting a time trial.');
+      const handling = normalizeHandling(payload.handling);
+      if (!handling) throw new Error('The handling settings are invalid.');
+      const known = presetTrackOptions.find(track => track.id === payload.trackId)
+        ?? await accounts.getTrack(payload.trackId, socket.data.account.id);
+      let track: TrackOption;
+      if (known) track = { id: known.id, name: known.name, layout: known.layout };
+      else {
+        const layoutJson = JSON.stringify(payload.layout);
+        if (!layoutJson || Buffer.byteLength(layoutJson) > 256 * 1024) throw new Error('The track is too large.');
+        const invalid = splineTrackError(payload.layout);
+        if (invalid) throw new Error(invalid);
+        track = { id: payload.trackId, name: String(payload.name ?? 'Local track').trim().slice(0, 60), layout: payload.layout };
+      }
+      if (!socket.connected || generation !== soloGeneration) return;
+      if (playerLobby.has(socket.id)) throw new Error('Leave the lobby before starting a time trial.');
+      const race = createRaceSimulation(buildRoadGeometry(track.layout), handling);
+      race.addPlayer(socket.id, 0);
+      await accounts.startRace([socket.data.account.id]);
+      if (!socket.connected || generation !== soloGeneration) return;
+      const rulesetHash = handlingHash(handling);
+      const rankedEligible = Boolean(known) && known?.visibility !== 'personal'
+        && rulesetHash === defaultRulesetHash;
+      timeTrials.set(socket.id, { simulation: race, track, layoutHash: trackLayoutHash(track.layout), rulesetHash, rankedEligible });
+      socket.emit('time-trial:ready', { requestId: payload.requestId, track, handling, ranked: rankedEligible });
+    } catch (error) {
+      if (generation === soloGeneration) socket.emit('time-trial:error', { requestId: payload.requestId,
+        message: error instanceof Error ? error.message : 'Could not start the time trial.' });
+    }
+  });
+  socket.on('time-trial:input', input => {
+    const race = timeTrials.get(socket.id)?.simulation;
+    if (!race?.input(socket.id, input, performance.now())) return;
+    const bytes = Buffer.byteLength(JSON.stringify(input));
+    recorder.received(socket.id, bytes);
+    stateMessagesReceivedTotal++;
+    approximateJsonBytesReceivedTotal += bytes;
+    const traffic = trafficWindows.get(socket.id);
+    if (traffic) { traffic.receivedStateMessages++; traffic.approximateJsonBytesReceived += bytes; }
+  });
+  socket.on('time-trial:handling', value => {
+    const handling = normalizeHandling(value);
+    const solo = timeTrials.get(socket.id);
+    if (handling && solo) { solo.simulation.setHandling(handling); solo.rulesetHash = handlingHash(handling); solo.rankedEligible = false; }
+  });
+  socket.on('time-trial:leave', () => { soloGeneration++; timeTrials.delete(socket.id); });
   socket.on('multiplayer:chat', (text) => {
     const roomId = playerLobby.get(socket.id);
     const room = roomId ? lobbies.get(roomId) : undefined;
@@ -565,6 +703,15 @@ io.on('connection', (socket) => {
   socket.on('multiplayer:start-lobby', async () => {
     try {
     await pendingSettings;
+    const pendingLobby = lobbies.get(playerLobby.get(socket.id) ?? '');
+    if (!pendingLobby || pendingLobby.hostId !== socket.id || pendingLobby.phase !== 'lobby' || pendingLobby.starting) {
+      socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
+      return;
+    }
+    pendingLobby.starting = true;
+    try {
+      await accounts.startRace([...pendingLobby.players.keys()].map(accountId).filter((id): id is string => id !== null));
+    } catch (error) { pendingLobby.starting = false; throw error; }
     const lobby = startLobby(socket.id);
     if (!lobby) {
       socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
@@ -577,23 +724,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('multiplayer:update-state', (message) => {
-    if (!message?.state || typeof message.state !== 'object') return;
-    const state = createVehicleState();
-    for (const key of Object.keys(state) as (keyof VehicleState)[]) {
-      const value = message.state[key];
-      if (key === 'position') {
-        const position = message.state.position;
-        if (!position || ![position.x, position.y, position.z].every(n => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) < 1e7)) return;
-        state.position = { x: position.x, y: position.y, z: position.z };
-      } else {
-        if (typeof value !== typeof state[key] || (typeof value === 'number' && (!Number.isFinite(value) || Math.abs(value) > 1e7))) return;
-        Object.assign(state, { [key]: value });
-      }
-    }
-    const lobby = applyState(socket.id, state);
-    if (!lobby) return;
-    const incomingBytes = Buffer.byteLength(JSON.stringify(state));
+  socket.on('multiplayer:input', (input) => {
+    const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
+    if (lobby?.phase !== 'race' || !lobby.race?.input(socket.id, input, performance.now())) return;
+    const incomingBytes = Buffer.byteLength(JSON.stringify(input));
     recorder.received(socket.id, incomingBytes);
     stateMessagesReceivedTotal++;
     approximateJsonBytesReceivedTotal += incomingBytes;
@@ -602,28 +736,83 @@ io.on('connection', (socket) => {
       senderTraffic.receivedStateMessages++;
       senderTraffic.approximateJsonBytesReceived += incomingBytes;
     }
-    const payload = { playerId: socket.id, state };
-    const relayedBytes = Buffer.byteLength(JSON.stringify(payload));
-    for (const playerId of lobby.players.keys()) {
-      if (playerId === socket.id || !io.sockets.sockets.has(playerId)) continue;
-      const recipientTraffic = trafficWindows.get(playerId);
-      recorder.sent(playerId, relayedBytes);
-      if (recipientTraffic) {
-        recipientTraffic.relayedStateMessages++;
-        recipientTraffic.approximateJsonBytesSent += relayedBytes;
-      }
-      stateMessagesRelayedTotal++;
-      approximateJsonBytesRelayedTotal += relayedBytes;
-    }
-    socket.to(lobby.id).emit('multiplayer:player-state', payload);
   });
 
   socket.on('disconnect', (reason) => {
+    soloGeneration++;
+    timeTrials.delete(socket.id);
     recorder.connection(socket.id, false, reason);
     trafficWindows.delete(socket.id);
     leaveLobby(socket.id);
   });
 });
+
+// One fixed simulation clock advances each isolated race. Late event-loop frames are capped
+// instead of simulating a large catch-up jump or coupling physics to packet arrival.
+let lastRaceClock = performance.now();
+let raceAccumulator = 0;
+const raceClock = setInterval(() => {
+  const now = performance.now();
+  raceAccumulator += Math.min(0.1, Math.max(0, (now - lastRaceClock) / 1000));
+  lastRaceClock = now;
+  let steps = 0;
+  while (raceAccumulator >= RACE_TIMESTEP && steps < 4) {
+    const tickStarted = performance.now();
+    raceAccumulator -= RACE_TIMESTEP;
+    steps++;
+    for (const lobby of lobbies.values()) {
+      if (lobby.phase !== 'race' || !lobby.race) continue;
+      const result = lobby.race.step(now);
+      for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
+      for (const lap of result.laps) {
+        const userId = accountId(lap.playerId);
+        const rulesetHash = handlingHash(lobby.settings.handling);
+        if (userId) queueWrite(accounts.recordLap({ userId, trackId: lobby.settings.trackId,
+          trackName: lobby.settings.trackName, layoutHash: lobby.layoutHash,
+          rulesetHash, durationSeconds: lap.durationSeconds,
+          ranked: rulesetHash === defaultRulesetHash, mode: 'multiplayer' }));
+      }
+      if (lobby.race.tick % RACE_SNAPSHOT_TICKS !== 0) continue;
+      const payload = { roomId: lobby.id, serverTimeMs: performance.now(), ...lobby.race.snapshot() };
+      const bytes = Buffer.byteLength(JSON.stringify(payload));
+      io.to(lobby.id).volatile.emit('multiplayer:snapshot', payload);
+      for (const playerId of lobby.players.keys()) {
+        if (!io.sockets.sockets.has(playerId)) continue;
+        recorder.sent(playerId, bytes);
+        const traffic = trafficWindows.get(playerId);
+        if (traffic) { traffic.relayedStateMessages++; traffic.approximateJsonBytesSent += bytes; }
+        stateMessagesRelayedTotal++;
+        approximateJsonBytesRelayedTotal += bytes;
+      }
+    }
+    for (const [playerId, solo] of timeTrials) {
+      const race = solo.simulation;
+      const result = race.step(now);
+      for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
+      for (const lap of result.laps) {
+        const userId = accountId(lap.playerId);
+        if (userId) queueWrite(accounts.recordLap({ userId, trackId: solo.track.id,
+          trackName: solo.track.name, layoutHash: solo.layoutHash,
+          rulesetHash: solo.rulesetHash, durationSeconds: lap.durationSeconds,
+          ranked: solo.rankedEligible, mode: 'time_trial' }));
+      }
+      if (race.tick % RACE_SNAPSHOT_TICKS !== 0) continue;
+      const payload = { roomId: `solo:${playerId}`, serverTimeMs: performance.now(), ...race.snapshot() };
+      const bytes = Buffer.byteLength(JSON.stringify(payload));
+      io.to(playerId).volatile.emit('time-trial:snapshot', payload);
+      recorder.sent(playerId, bytes);
+      const traffic = trafficWindows.get(playerId);
+      if (traffic) { traffic.relayedStateMessages++; traffic.approximateJsonBytesSent += bytes; }
+      stateMessagesRelayedTotal++;
+      approximateJsonBytesRelayedTotal += bytes;
+    }
+    const duration = performance.now() - tickStarted;
+    raceTickDurationsMs.push(duration);
+    if (raceTickDurationsMs.length > 60) raceTickDurationsMs.shift();
+    if (duration > RACE_TIMESTEP * 1000) raceTickOverrunsTotal++;
+  }
+  if (steps === 4) raceAccumulator = Math.min(raceAccumulator, RACE_TIMESTEP);
+}, 1000 * RACE_TIMESTEP);
 
 const recorder = createGameRecorder(() => ({
   admittedSessions: admission.count,
@@ -645,14 +834,18 @@ const server = httpServer.listen(port, host, () => {
       }
     }
   }
-  if (development) console.log('Watching TypeScript files. Refresh the browser after edits.');
+  if (development) console.log('Watching browser TypeScript files. Restart the server after backend edits.');
 });
 
 async function shutdown(): Promise<void> {
+  clearInterval(raceClock);
+  clearInterval(activityClock);
+  flushActivity();
   admission.close();
   await recorder.close();
   await new Promise<void>((closed) => io.close(() => closed()));
-  await trackStore.flush();
+  await Promise.allSettled([...pendingWrites]);
+  await accounts.close();
   await bundler?.dispose();
   process.exit(0);
 }

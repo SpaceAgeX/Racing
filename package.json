@@ -7,17 +7,20 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node --watch --watch-path=server --watch-path=src/multiplayer --watch-path=src/simulation --watch-path=src/track server/index.ts --dev",
+    "dev": "node --env-file-if-exists=.env.local server/index.ts --dev",
     "build": "npm run typecheck && node scripts/build.ts",
     "start": "node server/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/simulation.test.ts tests/input.test.ts tests/camera.test.ts tests/collision.test.ts tests/lap-timer.test.ts tests/tracks.test.ts tests/spline.test.ts tests/server-tracks.test.ts tests/recording-admission.test.ts tests/spline-racing.test.ts",
+    "test": "node --test tests/simulation.test.ts tests/input.test.ts tests/camera.test.ts tests/collision.test.ts tests/lap-timer.test.ts tests/tracks.test.ts tests/spline.test.ts tests/server-tracks.test.ts tests/recording-admission.test.ts tests/spline-racing.test.ts tests/race.test.ts",
     "test:browser": "playwright test",
-    "recorder": "node scripts/record.ts"
+    "recorder": "node scripts/record.ts",
+    "benchmark:race": "node scripts/benchmark-race.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "earcut": "^3.2.4",
     "express": "5.2.1",
+    "pg": "^8.23.1",
     "polygon-clipping": "^0.15.7",
     "socket.io": "^4.8.4",
     "socket.io-client": "^4.8.4",
@@ -28,8 +31,10 @@
     "@types/earcut": "^3.0.0",
     "@types/express": "5.0.6",
     "@types/node": "26.6.4",
+    "@types/pg": "^8.23.1",
     "@types/three": "0.186.0",
     "esbuild": "0.28.2",
+    "supabase": "^2.121.0",
     "typescript": "7.0.2"
   }
 }

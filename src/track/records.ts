@@ -6,6 +6,7 @@ export interface SavedTrack {
   name: string;
   layout: SplineTrack;
   updatedAt: number;
+  visibility?: 'ranked' | 'personal';
 }
 
 export function trackNameError(name: unknown): string | null {
@@ -18,5 +19,6 @@ export function isSavedTrack(value: unknown): value is SavedTrack {
   const record = value as Partial<SavedTrack>;
   return typeof record.id === 'string' && record.id.length > 0 && trackNameError(record.name) === null
     && typeof record.updatedAt === 'number' && Number.isFinite(record.updatedAt)
+    && (record.visibility === undefined || record.visibility === 'ranked' || record.visibility === 'personal')
     && playableTrackError(record.layout) === null;
 }

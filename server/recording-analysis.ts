@@ -99,9 +99,9 @@ export async function analyzeRecording(path: string) {
     metrics: Object.fromEntries([...metrics].map(([name, metric]) => [name, metric.summary()])),
     worstServerStalls: worstWindows,
     notes: ['p95 values use logarithmic histogram buckets (~2% resolution).',
-      'Traffic counts position-update JSON payloads, not total wire bandwidth.',
+      'Traffic counts game-event JSON payloads (legacy car states or current inputs and snapshots), not total wire bandwidth.',
       'HTTP ping, snapshots, and extrapolation are client-reported. Hidden-tab FPS is excluded.',
       'Socket RTT includes browser scheduling. Timeouts are not direct evidence of packet loss.',
-      'This server relays positions; it does not run authoritative physics.'],
+      'Current multiplayer recordings use server-authoritative physics; older recordings may contain relayed client states.'],
   };
 }

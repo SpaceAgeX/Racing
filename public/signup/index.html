@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create account | Racing</title><link rel="stylesheet" href="/auth-pages.css">
+</head><body>
+  <main class="auth-layout">
+    <section class="auth-story"><a class="brand" href="/">RACING<span class="brand-mark"></span></a>
+      <div class="story-content"><p class="eyebrow">JOIN THE GRID</p><h1>Make your mark.</h1>
+        <p>Claim your racer name, chase cleaner laps, and build a history on every circuit.</p>
+        <div class="story-line"><span>00</span><div></div><span>THE STARTING LINE</span></div></div>
+      <p class="story-footer">YOUR NAME. YOUR TIME.</p></section>
+    <section class="auth-side"><div class="auth-form-wrap"><p class="eyebrow">NEW ACCOUNT</p>
+      <h2 id="signup-title">Create your account</h2><p id="signup-intro" class="intro">Pick a unique username to show on leaderboards.</p>
+      <div id="signup-methods"><button id="google-sign-up" class="google-button" type="button" disabled><span class="google-mark">G</span>Continue with Google</button>
+        <p id="google-note" class="provider-note">Google sign-in is not configured yet.</p>
+        <div class="divider"><span>OR USE AN EMAIL ADDRESS</span></div></div>
+      <form id="signup-form"><label>Username<input id="signup-username" type="text" minlength="3" maxlength="20"
+        autocomplete="username" spellcheck="false" autocapitalize="off" required></label>
+        <p class="field-hint">3–20 characters. Start with a letter; use letters, numbers, and underscores.</p>
+        <p id="username-status" class="username-status" role="status"></p>
+        <div id="email-fields"><label>Email address<input id="signup-email" type="email" autocomplete="email" required></label>
+          <label>Password<input id="signup-password" type="password" autocomplete="new-password" minlength="6" required></label></div>
+        <button id="signup-submit" class="primary-button" type="submit">Create account</button></form>
+      <p id="signup-status" class="form-status" role="status"></p>
+      <p id="login-link-row" class="switch-page">Already racing? <a id="login-link" href="/login/">Sign in</a></p>
+    </div></section>
+  </main><script type="module" src="/assets/signup.js"></script>
+</body></html>

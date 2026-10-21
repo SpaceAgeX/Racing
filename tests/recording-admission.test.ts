@@ -26,6 +26,9 @@ test('admission enforces a global 15-session cap atomically, protects APIs and s
     assert.equal(results.filter(r => r.status === 503).length,5);
     assert.equal(gate.count,15);
     const cookie = results.find(r => r.status === 200)!.headers.get('set-cookie')!.split(';')[0]!;
+    assert.equal((await fetch(base+'/auth.css')).status,200);
+    assert.equal((await fetch(base+'/assets/main.js')).status,200);
+    assert.equal(gate.count,15);
     assert.equal((await fetch(base+'/api/tracks')).status,401);
     assert.equal((await fetch(base+'/',{headers:{cookie}})).status,200);
     assert.equal(gate.count,15);

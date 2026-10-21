@@ -1,0 +1,3 @@
+/* Protected pages stay out of view until their saved account is verified. */
+body[data-auth-state="pending"] > main,
+body[data-auth-state="pending"] > .page-header { visibility: hidden; }

@@ -1,4 +1,5 @@
 import type { HandlingParameters, VehicleState } from '../simulation/types.ts';
+import type { RaceInput, RacePlayer } from '../simulation/race.ts';
 import type { SplineTrack as TrackLayout } from '../track/spline-records.ts';
 import { splinePresets as trackPresets } from '../track/spline-presets.ts';
 
@@ -6,6 +7,7 @@ export interface TrackOption {
   id: string;
   name: string;
   layout: TrackLayout;
+  visibility?: 'ranked' | 'personal';
 }
 
 export const trackOptions: TrackOption[] = trackPresets.map((preset) => ({
@@ -48,6 +50,7 @@ export interface LobbySnapshot {
   hostId: string;
   hostName: string;
   phase: LobbyPhase;
+  ranked: boolean;
   settings: LobbySettings;
   players: LobbyPlayerSnapshot[];
 }
@@ -90,8 +93,26 @@ export interface StartLobbyPayload {
   start: true;
 }
 
-export interface PlayerStatePayload {
-  state: VehicleState;
+export interface RaceSnapshot {
+  roomId: string;
+  tick: number;
+  serverTimeMs: number;
+  players: RacePlayer[];
+}
+
+export interface TimeTrialStart {
+  requestId: number;
+  trackId: string;
+  name: string;
+  layout: TrackLayout;
+  handling: HandlingParameters;
+}
+
+export interface TimeTrialReady {
+  requestId: number;
+  track: TrackOption;
+  handling: HandlingParameters;
+  ranked: boolean;
 }
 
 export interface ServerDiagnosticsSnapshot {
@@ -104,8 +125,9 @@ export interface ServerDiagnosticsSnapshot {
     cpuPercent: number | null;
     memoryBytes: { rss: number; heapTotal: number; heapUsed: number; external: number; arrayBuffers: number };
     eventLoopDelayMs: { mean: number | null; p95: number | null; max: number | null };
-    authoritativeSimulation: false;
-    simulationTickRateHz: 0;
+    authoritativeSimulation: boolean;
+    simulationTickRateHz: number;
+    simulationTickMs: { latest: number; average: number; max: number; overrunsTotal: number };
     connectedSockets: number;
     lobbyCount: number;
     playerCount: number;
@@ -142,7 +164,12 @@ export interface ClientToServerEvents {
   'multiplayer:update-settings': (payload: UpdateLobbySettingsPayload) => void;
   'multiplayer:set-color': (payload: { color: string }) => void;
   'multiplayer:start-lobby': (payload: StartLobbyPayload) => void;
-  'multiplayer:update-state': (payload: PlayerStatePayload) => void;
+  'multiplayer:input': (payload: RaceInput) => void;
+  'multiplayer:clock': (reply: (serverTimeMs: number) => void) => void;
+  'time-trial:start': (payload: TimeTrialStart) => void;
+  'time-trial:input': (payload: RaceInput) => void;
+  'time-trial:handling': (handling: HandlingParameters) => void;
+  'time-trial:leave': () => void;
   'debug:telemetry-request': () => void;
 }
 
@@ -153,7 +180,10 @@ export interface ServerToClientEvents {
   'multiplayer:bootstrap': (payload: MultiplayerBootstrap) => void;
   'multiplayer:lobbies': (payload: { lobbies: LobbySummary[] }) => void;
   'multiplayer:room': (payload: { lobby: LobbySnapshot | null }) => void;
-  'multiplayer:player-state': (payload: { playerId: string; state: VehicleState }) => void;
+  'multiplayer:snapshot': (payload: RaceSnapshot) => void;
+  'time-trial:ready': (payload: TimeTrialReady) => void;
+  'time-trial:snapshot': (payload: RaceSnapshot) => void;
+  'time-trial:error': (payload: { requestId: number; message: string }) => void;
   'multiplayer:error': (payload: { message: string }) => void;
   'debug:telemetry': (payload: ServerDiagnosticsSnapshot) => void;
 }

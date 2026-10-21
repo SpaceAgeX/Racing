@@ -71,8 +71,8 @@ export function createGameRecorder(getContext: () => Context, directory = record
       await appendFile(file, JSON.stringify({
         type: 'metadata', version: 1, at: new Date().toISOString(), runId: active.id,
         pid: process.pid, node: process.version, platform: process.platform + '/' + process.arch,
-        schedule: active, authoritativeSimulation: false,
-        trafficUnits: 'Approximate JSON position-update payload bytes; excludes HTTP, TLS, Socket.IO framing and recording probes.',
+        schedule: active, authoritativeSimulation: true,
+        trafficUnits: 'Approximate JSON input and snapshot payload bytes; excludes HTTP, TLS, Socket.IO framing and recording probes.',
         cpuUnits: 'Percent of one CPU core; can exceed 100.',
         rttUnits: 'Server-to-browser Socket.IO acknowledgement round trip including browser scheduling.',
       }) + '\n');

@@ -37,9 +37,10 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
             <p class="lobby-color-hint">Marked colors are taken.</p>
           </aside>
         </div>
-        <section class="lobby-shared-settings">
-          <h2>Race settings</h2>
-          <div id="lobby-handling-editor"></div>
+        <section id="lobby-shared-settings" class="lobby-shared-settings" hidden>
+          <h2>Advanced race settings</h2>
+          <button id="lobby-tuning-toggle" type="button" aria-controls="lobby-handling-editor" aria-expanded="false">Edit handling</button>
+          <div id="lobby-handling-editor" hidden></div>
         </section>
         <footer class="lobby-setup-footer">
           <div id="lobby-status" class="lobby-status" role="status"></div>
@@ -55,8 +56,16 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const startButton = root.querySelector<HTMLButtonElement>('#lobby-start')!;
   const preview = root.querySelector<HTMLCanvasElement>('#lobby-preview')!;
   const colors = root.querySelector<HTMLElement>('#lobby-colors')!;
-  const handlingEditor = createLobbyHandlingEditor(root.querySelector<HTMLElement>('#lobby-handling-editor')!, handling => {
+  const settingsSection = root.querySelector<HTMLElement>('#lobby-shared-settings')!;
+  const tuningToggle = root.querySelector<HTMLButtonElement>('#lobby-tuning-toggle')!;
+  const editorElement = root.querySelector<HTMLElement>('#lobby-handling-editor')!;
+  const handlingEditor = createLobbyHandlingEditor(editorElement, handling => {
     callbacks.onUpdateSettings({ handling });
+  });
+  tuningToggle.addEventListener('click', () => {
+    editorElement.hidden = !editorElement.hidden;
+    tuningToggle.setAttribute('aria-expanded', String(!editorElement.hidden));
+    tuningToggle.textContent = editorElement.hidden ? 'Edit handling' : 'Hide handling';
   });
   let trackOptions: TrackOption[] = [];
   let currentRoom: LobbySnapshot | null = null;
@@ -145,7 +154,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       }
       const isHost = room.hostId === playerId;
       roomName.textContent = room.name;
-      roomMeta.textContent = isHost ? 'You are the host' : `Hosted by ${room.hostName}`;
+      roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · ${room.ranked ? 'Ranked laps' : 'Unranked · custom handling'}`;
       status.textContent = isHost ? 'Choose your settings, then start the race.' : 'Waiting for the host to start the race.';
       renderPlayers(room);
       renderTrackOptions();
@@ -158,6 +167,11 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         previewKey = key;
       }
       trackSelect.disabled = !isHost || room.phase !== 'lobby';
+      settingsSection.hidden = !isHost || room.phase !== 'lobby';
+      if (settingsSection.hidden) {
+        editorElement.hidden = true;
+        tuningToggle.setAttribute('aria-expanded', 'false');
+      }
       root.querySelector('#lobby-track-permission')!.textContent = isHost
         ? 'Choose the track for everyone.' : 'Only the host can change the track.';
       startButton.hidden = !isHost || room.phase !== 'lobby';

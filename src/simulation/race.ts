@@ -1,0 +1,107 @@
+import type { RoadGeometry } from '../track/road-geometry.ts';
+import { createRoadWorld } from './road-world.ts';
+import { createLapTimer, resetCurrentLap, stepLapTimer, type LapTimerState } from './lap-timer.ts';
+import { respawnVehicle, stepSplineVehicle } from './spline-vehicle.ts';
+import type { DrivingControls, HandlingParameters, VehicleState } from './types.ts';
+import { createVehicleState } from './vehicle.ts';
+
+export const RACE_TIMESTEP = 1 / 60;
+export const RACE_SNAPSHOT_TICKS = 3;
+export const neutralControls: Readonly<DrivingControls> = { throttle: 0, steering: 0, brake: false };
+
+export interface RaceInput { sequence: number; controls: DrivingControls }
+export interface RacePlayer {
+  id: string;
+  state: VehicleState;
+  lapTimer: LapTimerState;
+  acknowledgedInput: number;
+}
+export interface RaceStepResult {
+  laps: { playerId: string; durationSeconds: number }[];
+  activity: { playerId: string; seconds: number; distanceMeters: number }[];
+}
+
+interface InternalPlayer extends RacePlayer {
+  spawnIndex: number;
+  pending: RaceInput[];
+  lastReceivedInput: number;
+  controls: DrivingControls;
+  lastInputAt: number;
+}
+
+export function validRaceInput(value: unknown): value is RaceInput {
+  if (!value || typeof value !== 'object') return false;
+  const input = value as Partial<RaceInput>;
+  const controls = input.controls;
+  return Number.isSafeInteger(input.sequence) && input.sequence! > 0
+    && !!controls && (controls.throttle === -1 || controls.throttle === 0 || controls.throttle === 1)
+    && (controls.steering === -1 || controls.steering === 0 || controls.steering === 1)
+    && typeof controls.brake === 'boolean';
+}
+
+export function createRaceSimulation(road: RoadGeometry, handling: Readonly<HandlingParameters>) {
+  const world = createRoadWorld(road);
+  const players = new Map<string, InternalPlayer>();
+  let currentHandling: Readonly<HandlingParameters> = handling;
+  let tick = 0;
+
+  return {
+    get tick() { return tick; },
+    setHandling(value: Readonly<HandlingParameters>): void { currentHandling = value; },
+    addPlayer(id: string, spawnIndex: number): RacePlayer {
+      const state = createVehicleState();
+      respawnVehicle(state, road.spawns[spawnIndex] ?? road.spawns[0]!);
+      const player: InternalPlayer = { id, spawnIndex, state, lapTimer: createLapTimer(),
+        acknowledgedInput: 0, lastReceivedInput: 0, pending: [], controls: { ...neutralControls }, lastInputAt: 0 };
+      players.set(id, player);
+      return player;
+    },
+    removePlayer(id: string): void { players.delete(id); },
+    input(id: string, value: unknown, now: number): boolean {
+      const player = players.get(id);
+      if (!player || !validRaceInput(value) || value.sequence <= player.lastReceivedInput) return false;
+      // Do not let a stalled sender grow an unbounded queue or make the server replay stale commands.
+      player.lastReceivedInput = value.sequence;
+      player.pending.push({ sequence: value.sequence, controls: { ...value.controls } });
+      if (player.pending.length > 12) player.pending.splice(0, player.pending.length - 12);
+      player.lastInputAt = now;
+      return true;
+    },
+    step(now: number): RaceStepResult {
+      tick++;
+      const result: RaceStepResult = { laps: [], activity: [] };
+      for (const player of players.values()) {
+        const previousPosition = { ...player.state.position };
+        const previousLaps = player.lapTimer.completedLaps;
+        const input = player.pending.shift();
+        if (input) {
+          player.controls = input.controls;
+          player.acknowledgedInput = input.sequence;
+        }
+        const controls = now - player.lastInputAt > 250 ? neutralControls : player.controls;
+        const spawn = road.spawns[player.spawnIndex] ?? road.spawns[0]!;
+        const respawned = stepSplineVehicle(player.state, controls, RACE_TIMESTEP, world, spawn, currentHandling.physics, currentHandling.driving);
+        if (respawned) {
+          resetCurrentLap(player.lapTimer);
+        } else {
+          stepLapTimer(player.lapTimer, previousPosition, player.state.position,
+            RACE_TIMESTEP, road.finish, road.checkpoints);
+        }
+        const distance = respawned ? 0 : Math.hypot(
+          player.state.position.x - previousPosition.x,
+          player.state.position.z - previousPosition.z,
+        );
+        result.activity.push({ playerId: player.id, seconds: RACE_TIMESTEP,
+          distanceMeters: distance < 50 ? distance : 0 });
+        if (player.lapTimer.completedLaps > previousLaps && player.lapTimer.last !== null) {
+          result.laps.push({ playerId: player.id, durationSeconds: player.lapTimer.last });
+        }
+      }
+      return result;
+    },
+    snapshot(): { tick: number; players: RacePlayer[] } {
+      return { tick, players: [...players.values()].map(p => ({ id: p.id,
+        state: structuredClone(p.state), lapTimer: structuredClone(p.lapTimer), acknowledgedInput: p.acknowledgedInput })) };
+    },
+  };
+}

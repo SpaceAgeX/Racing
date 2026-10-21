@@ -5,6 +5,8 @@ export const PAUSE_THRESHOLD = 0.25;
 /** Pure time accumulator, independent of browser and renderer. */
 export class FixedStepClock {
   private accumulator = 0;
+  private readonly timestep: number;
+  constructor(timestep = FIXED_TIMESTEP) { this.timestep = timestep; }
 
   get pendingSeconds(): number { return this.accumulator; }
 
@@ -21,10 +23,10 @@ export class FixedStepClock {
     }
 
     this.accumulator += Math.max(0, Math.min(frameDelta, MAX_FRAME_DELTA));
-    while (this.accumulator + 1e-10 >= FIXED_TIMESTEP) {
-      step(FIXED_TIMESTEP);
-      this.accumulator = Math.max(0, this.accumulator - FIXED_TIMESTEP);
+    while (this.accumulator + 1e-10 >= this.timestep) {
+      step(this.timestep);
+      this.accumulator = Math.max(0, this.accumulator - this.timestep);
     }
-    return this.accumulator / FIXED_TIMESTEP;
+    return this.accumulator / this.timestep;
   }
 }

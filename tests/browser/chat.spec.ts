@@ -29,23 +29,25 @@ test('room chat survives race start, displays text safely and releases driving c
     await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
     await page.bringToFront();
     await page.keyboard.down('w');
+    await expect.poll(()=>page.evaluate(async()=>{
+      const path='/assets/main.js'; const {prototype}=await import(path); return prototype.state.speed;
+    })).toBeGreaterThan(3);
     await page.keyboard.press('t');
     await expect(page.locator('.chat-panel')).toBeVisible();
     const before = await page.evaluate(async () => {
       const path = '/assets/main.js'; const { prototype } = await import(path);
-      prototype.state.speed = 4;
-      return { ...prototype.state.position };
+      return { speed: prototype.state.speed, position: { ...prototype.state.position } };
     });
     await expect.poll(()=>page.evaluate(async()=>{
       const path='/assets/main.js'; const {prototype}=await import(path);return prototype.state.speed;
-    })).toBeLessThan(4);
+    })).toBeLessThan(before.speed - 0.1);
     const after = await page.evaluate(async () => {
       const path = '/assets/main.js'; const { prototype } = await import(path);
       return { speed: prototype.state.speed, position: { ...prototype.state.position } };
     });
     expect(after.speed).toBeGreaterThan(0);
-    expect(after.speed).toBeLessThan(4);
-    expect(Math.hypot(after.position.x-before.x,after.position.z-before.z)).toBeGreaterThan(0);
+    expect(after.speed).toBeLessThan(before.speed);
+    expect(Math.hypot(after.position.x-before.position.x,after.position.z-before.position.z)).toBeGreaterThan(0);
     await page.keyboard.up('w');
     await page.getByRole('textbox', { name: 'Chat message' }).fill('Race chat works');
     await page.keyboard.press('Enter');

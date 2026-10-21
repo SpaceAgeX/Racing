@@ -4,6 +4,7 @@ import type { SplineTrack as TrackLayout } from '../track/spline-records.ts';
 import { createMinimap } from './minimap.ts';
 import type { TrackOption } from '../multiplayer/protocol.ts';
 import { playerColorPalette } from '../multiplayer/protocol.ts';
+import { accountFetch } from '../auth/session.ts';
 
 export interface TimeTrialTrackOption extends TrackOption {}
 
@@ -33,6 +34,7 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
           <ol class="trial-leaderboard" aria-label="Leaderboard positions">
             <li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li><li></li>
           </ol>
+          <p class="setup-status" data-leaderboard-status>Default-handling laps from time trials and multiplayer.</p>
         </section>
         <aside class="trial-options-card">
           <span class="setup-label">YOUR CAR</span>
@@ -54,6 +56,9 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
   const colorDot = section.querySelector<HTMLElement>('[data-color-dot]')!;
   const colorName = section.querySelector<HTMLOutputElement>('[data-color-name]')!;
   const startButton = section.querySelector<HTMLButtonElement>('[data-start]')!;
+  const leaderboardRows = [...section.querySelectorAll<HTMLLIElement>('.trial-leaderboard li')];
+  const leaderboardStatus = section.querySelector<HTMLElement>('[data-leaderboard-status]')!;
+  let leaderboardRequest = 0;
   let tracks: TimeTrialTrackOption[] = [];
   let selectedColor = initialColor;
 
@@ -75,6 +80,8 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
 
   function renderSelectedTrack(): void {
     const track = selectedTrack();
+    const requestId = ++leaderboardRequest;
+    for (const row of leaderboardRows) row.textContent = '';
     if (!track) {
       trackName.textContent = 'No track selected';
       startButton.disabled = true;
@@ -84,6 +91,30 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
     trackName.textContent = track.name;
     startButton.disabled = false;
     drawTrack(track.layout);
+    if (track.visibility === 'personal') {
+      leaderboardStatus.textContent = 'Personal track · unranked.';
+      return;
+    }
+    leaderboardStatus.textContent = 'Loading ranked laps...';
+    void accountFetch(`/api/leaderboard/${encodeURIComponent(track.id)}`, { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('This track is not in the shared library.');
+        return response.json() as Promise<{ name: string; durationMs: number }[]>;
+      })
+      .then(entries => {
+        if (requestId !== leaderboardRequest) return;
+        entries.forEach((entry, index) => {
+          const row = leaderboardRows[index];
+          if (!row) return;
+          const minutes = Math.floor(entry.durationMs / 60_000);
+          const seconds = ((entry.durationMs % 60_000) / 1000).toFixed(2).padStart(5, '0');
+          row.textContent = `${entry.name} · ${minutes}:${seconds}`;
+        });
+        leaderboardStatus.textContent = entries.length ? 'Best verified lap per racer.' : 'No ranked laps yet.';
+      })
+      .catch(() => {
+        if (requestId === leaderboardRequest) leaderboardStatus.textContent = 'Local or unavailable track · unranked.';
+      });
   }
 
   function renderColors(): void {

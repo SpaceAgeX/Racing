@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { io, type Socket } from 'socket.io-client';
+import { testAccessToken } from './race-helpers.ts';
 import type { ClientToServerEvents, ServerToClientEvents, LobbySnapshot } from '../../src/multiplayer/protocol.ts';
 
 test('lobby previews, colors and host settings update live for guests', async ({ page, browser }) => {
@@ -74,7 +75,8 @@ test('server rejects taken colors and an eleventh player, then reuses released s
   const clients: Client[] = [];
   try {
     for (let index = 0; index < 11; index++) {
-      const client: Client = io('http://127.0.0.1:3100', { autoConnect: false, forceNew: true });
+      const client: Client = io('http://127.0.0.1:3100', { autoConnect: false, forceNew: true,
+        auth: { token: await testAccessToken() } });
       clients.push(client);
       const ready = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Bootstrap timed out')), 5000);
