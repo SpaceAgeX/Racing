@@ -7,6 +7,7 @@ import { createCarVisual } from './rendering/car.ts';
 import { createFollowCamera } from './rendering/camera.ts';
 import { createScene } from './rendering/scene.ts';
 import { createMenuBackdrop } from './rendering/menu-backdrop.ts';
+import { createFrameLimiter } from './rendering/frame-limiter.ts';
 import { FixedStepClock, FIXED_TIMESTEP, PAUSE_THRESHOLD } from './simulation/fixed-step.ts';
 import { createLapTimer, resetCurrentLap, stepLapTimer } from './simulation/lap-timer.ts';
 import { createMinimap } from './ui/minimap.ts';
@@ -644,6 +645,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let bootstrap: MultiplayerBootstrap | null = null;
   let animationFrame = 0;
   let lastFrameTime: number | null = null;
+  const frameLimiter = createFrameLimiter(60);
   const chat = createChat(text => { if (socket.connected) socket.emit('multiplayer:chat', text); },
     open => input.setEnabled(currentMode === 'race' && !open));
   const networkStats = {
@@ -1050,12 +1052,14 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   function resetTiming(): void {
     lastFrameTime = null;
+    frameLimiter.reset();
   }
 
   function frame(): void {
     const time = performance.now();
     animationFrame = requestAnimationFrame(frame);
     if (document.hidden) return;
+    if (!frameLimiter.shouldDraw(time)) return;
 
     const elapsed = lastFrameTime === null ? 0 : (time - lastFrameTime) / 1000;
     lastFrameTime = time;
