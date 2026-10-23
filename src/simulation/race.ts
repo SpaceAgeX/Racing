@@ -10,6 +10,7 @@ export const RACE_SNAPSHOT_TICKS = 3;
 export const neutralControls: Readonly<DrivingControls> = { throttle: 0, steering: 0, brake: false };
 
 export interface RaceInput { sequence: number; lifeId: number; controls: DrivingControls }
+type CompatibleRaceInput = Omit<RaceInput, 'lifeId'> & { lifeId?: number };
 export interface RacePlayer {
   id: string;
   state: VehicleState;
@@ -33,12 +34,12 @@ interface InternalPlayer extends RacePlayer {
   lastInputAt: number;
 }
 
-export function validRaceInput(value: unknown): value is RaceInput {
+export function validRaceInput(value: unknown): value is CompatibleRaceInput {
   if (!value || typeof value !== 'object') return false;
   const input = value as Partial<RaceInput>;
   const controls = input.controls;
   return Number.isSafeInteger(input.sequence) && input.sequence! > 0
-    && Number.isSafeInteger(input.lifeId) && input.lifeId! >= 0
+    && (input.lifeId === undefined || (Number.isSafeInteger(input.lifeId) && input.lifeId >= 0))
     && !!controls && (controls.throttle === -1 || controls.throttle === 0 || controls.throttle === 1)
     && (controls.steering === -1 || controls.steering === 0 || controls.steering === 1)
     && typeof controls.brake === 'boolean';
@@ -71,11 +72,14 @@ export function createRaceSimulation(road: RoadGeometry, handling: Readonly<Hand
     },
     input(id: string, value: unknown, now: number): boolean {
       const player = players.get(id);
-      if (!player || !validRaceInput(value) || value.lifeId !== player.lifeId
+      if (!player || !validRaceInput(value) || (value.lifeId !== undefined && value.lifeId !== player.lifeId)
         || value.sequence <= player.lastReceivedInput) return false;
+      // Tabs left open across a deployment may still send the previous input format.
+      // Explicit life IDs retain respawn fencing; legacy inputs use the current life.
+      const lifeId = value.lifeId ?? player.lifeId;
       // Do not let a stalled sender grow an unbounded queue or make the server replay stale commands.
       player.lastReceivedInput = value.sequence;
-      player.pending.push({ sequence: value.sequence, lifeId: value.lifeId, controls: { ...value.controls } });
+      player.pending.push({ sequence: value.sequence, lifeId, controls: { ...value.controls } });
       if (player.pending.length > 12) player.pending.splice(0, player.pending.length - 12);
       player.lastInputAt = now;
       return true;

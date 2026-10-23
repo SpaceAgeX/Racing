@@ -115,10 +115,10 @@ app.use('/api', (error: unknown, _request: express.Request, response: express.Re
 });
 app.get('/favicon.ico', (_request, response) => response.sendStatus(204));
 app.use('/assets', express.static(bundleDirectory, {
-  setHeaders(response) { response.setHeader('Cache-Control', 'no-cache'); },
+  setHeaders(response) { response.setHeader('Cache-Control', 'no-store'); },
 }));
 app.use(express.static(publicDirectory, {
-  setHeaders(response) { response.setHeader('Cache-Control', 'no-cache'); },
+  setHeaders(response, filePath) { response.setHeader('Cache-Control', filePath.endsWith('.html') ? 'no-store' : 'no-cache'); },
 }));
 
 interface LobbyPlayerRecord {

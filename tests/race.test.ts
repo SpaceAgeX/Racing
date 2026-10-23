@@ -113,6 +113,27 @@ test('respawn drops queued controls and rejects late packets from the previous l
   assert.ok(race.snapshot().players[0]!.state.speed > 0);
 });
 
+test('a tab opened before deployment can keep driving with legacy inputs', () => {
+  const road = buildRoadGeometry(splinePresets[1]!.create());
+  const race = createRaceSimulation(road, handling);
+  const player = race.addPlayer('driver', 0);
+  const throttle = { throttle: 1 as const, steering: 0 as const, brake: false };
+  assert.equal(validRaceInput({ sequence: 1, controls: throttle }), true);
+  assert.equal(race.input('driver', { sequence: 1, controls: throttle }, 1000), true);
+  race.step(1000);
+  assert.ok(player.state.speed > 0);
+
+  player.state.position = { x: 5000, y: -100, z: 5000 };
+  player.state.grounded = false;
+  player.state.airborneTime = physicsParameters.respawnDelay;
+  race.step(1016);
+  assert.equal(player.lifeId, 1);
+  assert.equal(race.input('driver', { sequence: 2, controls: throttle }, 1032), true);
+  race.step(1032);
+  assert.ok(player.state.speed > 0);
+  assert.equal(race.input('driver', { sequence: 3, lifeId: 0, controls: throttle }, 1048), false);
+});
+
 test('death notices report server state without letting a client trigger a reset', () => {
   const road = buildRoadGeometry(splinePresets[1]!.create());
   const race = createRaceSimulation(road, handling);

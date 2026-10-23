@@ -68,7 +68,6 @@ interface RemoteCarEntry {
 
 const remoteInterpolationDelay = 120;
 const maxRemoteExtrapolation = 100;
-const maxPredictedInputs = 24;
 
 interface DrivingSession {
   trackId: string;
@@ -435,9 +434,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       const physicsStartedAt = performance.now();
       copyVehicleState(state, previous);
       const effectiveControls = deathPending ? neutralControls : controls;
-      // Do not let a slow server put the local car seconds ahead of its confirmed position.
-      const predictionPaused = multiplayer && state.grounded && pendingInputs.length >= maxPredictedInputs;
-      if (!predictionPaused && stepSplineVehicle(state, effectiveControls, timestep, collisionWorld, spawn,
+      if (stepSplineVehicle(state, effectiveControls, timestep, collisionWorld, spawn,
         tuning.physics, tuning.driving, !multiplayer)) {
         if (!multiplayer) resetCurrentLap(lapTimer);
         copyVehicleState(state, previous);
@@ -445,7 +442,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       } else if (!multiplayer) {
         stepLapTimer(lapTimer, previous.position, state.position, timestep, finishLine, road.checkpoints);
       }
-      if (multiplayer && !predictionPaused) {
+      if (multiplayer) {
         if (!deathPending && !state.grounded && state.airborneTime >= tuning.physics.respawnDelay) {
           deathPending = true;
           activeDeathNoticeId = ++nextDeathNoticeId;
@@ -500,7 +497,6 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
         lastServerTick: lastAppliedServerTick, unacknowledgedInputs: pendingInputs.length,
         positionErrorMeters: lastPositionErrorMeters, lastConfirmedRespawnTick,
         lifeId: confirmedLifeId, attemptId: confirmedAttemptId, deathPending,
-        predictionPaused: state.grounded && pendingInputs.length >= maxPredictedInputs,
         timerRunning: lapTimer.running, timerSeconds: lapTimer.elapsed },
       renderer: { pixelRatio: renderer.getPixelRatio(), drawCalls: drawStats.calls, triangles: drawStats.triangles,
         geometries: memoryStats.geometries, textures: memoryStats.textures, trackTriangles: view.road.triangles.length },
