@@ -13,10 +13,10 @@ test('server accepts only numbered controls and owns the resulting vehicle state
   const race = createRaceSimulation(buildRoadGeometry(splinePresets[1]!.create()), handling);
   const player = race.addPlayer('driver', 0);
   const start = { ...player.state.position };
-  assert.equal(validRaceInput({ sequence: 1, controls: { throttle: 1, steering: 0, brake: false }, state: { position: { x: 9000 } } }), true);
-  assert.equal(validRaceInput({ sequence: 2, controls: { throttle: 7, steering: 0, brake: false } }), false);
-  assert.equal(race.input('driver', { sequence: 1, controls: { throttle: 1, steering: 0, brake: false } }, 1000), true);
-  assert.equal(race.input('driver', { sequence: 1, controls: { throttle: 1, steering: 0, brake: false } }, 1000), false);
+  assert.equal(validRaceInput({ sequence: 1, lifeId: 0, controls: { throttle: 1, steering: 0, brake: false }, state: { position: { x: 9000 } } }), true);
+  assert.equal(validRaceInput({ sequence: 2, lifeId: 0, controls: { throttle: 7, steering: 0, brake: false } }), false);
+  assert.equal(race.input('driver', { sequence: 1, lifeId: 0, controls: { throttle: 1, steering: 0, brake: false } }, 1000), true);
+  assert.equal(race.input('driver', { sequence: 1, lifeId: 0, controls: { throttle: 1, steering: 0, brake: false } }, 1000), false);
   for (let i = 0; i < 12; i++) race.step(1000 + i * RACE_TIMESTEP * 1000);
   const snapshot = race.snapshot();
   assert.equal(snapshot.tick, 12);
@@ -32,7 +32,7 @@ test('overlapping players pass through one another without affecting each other'
   const a = race.addPlayer('a', 0), b = race.addPlayer('b', 0);
   const bStart = { ...b.state.position };
   assert.deepEqual(a.state.position, b.state.position);
-  race.input('a', { sequence: 1, controls: { throttle: 1, steering: 0, brake: false } }, 1000);
+  race.input('a', { sequence: 1, lifeId: 0, controls: { throttle: 1, steering: 0, brake: false } }, 1000);
   for (let i = 0; i < 30; i++) race.step(1000 + i * RACE_TIMESTEP * 1000);
   assert.ok(a.state.speed > 0);
   assert.equal(b.state.speed, 0);
@@ -59,6 +59,8 @@ test('server alone advances the lap timer on a finish crossing', () => {
   assert.equal(result.transitions[0]!.kind, 'start');
   assert.equal(result.transitions[0]!.tick, race.tick);
   assert.equal(result.transitions[0]!.player.lapTimer.running, true);
+  assert.equal(result.transitions[0]!.player.attemptId, 1);
+  assert.equal(result.transitions[0]!.player.lastTransition, 'start');
 });
 
 test('server confirms respawn and timer reset together, while client prediction waits', () => {
@@ -85,8 +87,50 @@ test('server confirms respawn and timer reset together, while client prediction 
   assert.equal(transition.tick, race.tick);
   assert.equal(transition.player.lapTimer.running, false);
   assert.equal(transition.player.lapTimer.elapsed, 0);
+  assert.equal(transition.player.lifeId, 1);
+  assert.equal(transition.player.attemptId, 1);
+  assert.equal(transition.player.lastTransition, 'respawn');
   assert.deepEqual(transition.player.state.position, road.spawns[0]!.position);
   assert.deepEqual(race.snapshot().players[0]!.lapTimer, transition.player.lapTimer);
+});
+
+test('respawn drops queued controls and rejects late packets from the previous life', () => {
+  const road = buildRoadGeometry(splinePresets[1]!.create());
+  const race = createRaceSimulation(road, handling);
+  const player = race.addPlayer('driver', 0);
+  player.state.position = { x: 5000, y: -100, z: 5000 };
+  player.state.grounded = false;
+  player.state.airborneTime = physicsParameters.respawnDelay;
+  const throttle = { throttle: 1 as const, steering: 0 as const, brake: false };
+  assert.equal(race.input('driver', { sequence: 1, lifeId: 0, controls: throttle }, 1000), true);
+  assert.equal(race.input('driver', { sequence: 2, lifeId: 0, controls: throttle }, 1000), true);
+  race.step(1000);
+  assert.equal(race.input('driver', { sequence: 3, lifeId: 0, controls: throttle }, 1016), false);
+  for (let i = 0; i < 20; i++) race.step(1016 + i * RACE_TIMESTEP * 1000);
+  assert.deepEqual(race.snapshot().players[0]!.state.position, road.spawns[0]!.position);
+  assert.equal(race.input('driver', { sequence: 3, lifeId: 1, controls: throttle }, 1400), true);
+  race.step(1400);
+  assert.ok(race.snapshot().players[0]!.state.speed > 0);
+});
+
+test('death notices report server state without letting a client trigger a reset', () => {
+  const road = buildRoadGeometry(splinePresets[1]!.create());
+  const race = createRaceSimulation(road, handling);
+  const player = race.addPlayer('driver', 0);
+  player.lapTimer.running = true;
+  player.lapTimer.elapsed = 12;
+  assert.equal(race.deathStatus('driver', 0), 'rejected');
+  assert.equal(race.deathStatus('driver', 1), 'rejected');
+  assert.equal(player.lapTimer.elapsed, 12);
+  player.state.grounded = false;
+  player.state.position = { x: 5000, y: -100, z: 5000 };
+  player.state.airborneTime = 0.5;
+  assert.equal(race.deathStatus('driver', 0), 'pending');
+  assert.equal(player.lapTimer.elapsed, 12);
+  player.state.airborneTime = physicsParameters.respawnDelay;
+  race.step(1000);
+  assert.equal(race.deathStatus('driver', 0), 'respawned');
+  assert.equal(player.lapTimer.elapsed, 0);
 });
 
 test('server requires every checkpoint before recording a lap', () => {
@@ -117,4 +161,6 @@ test('server requires every checkpoint before recording a lap', () => {
   assert.deepEqual(result.checkpointsVisited, []);
   assert.equal(completed.transitions[0]?.kind, 'lap');
   assert.equal(completed.transitions[0]?.player.lapTimer.completedLaps, 1);
+  assert.equal(completed.transitions[0]?.player.attemptId, 2);
+  assert.equal(completed.transitions[0]?.player.lastTransition, 'lap');
 });

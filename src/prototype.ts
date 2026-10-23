@@ -27,7 +27,7 @@ import { createVehicleState, copyVehicleState, interpolateVehicleState } from '.
 import { wrapAngle } from './simulation/math.ts';
 import { drivingParameters, physicsParameters } from './simulation/parameters.ts';
 import { respawnVehicle, stepSplineVehicle } from './simulation/spline-vehicle.ts';
-import { RACE_TIMESTEP, type RaceInput, type RacePlayer } from './simulation/race.ts';
+import { neutralControls, RACE_TIMESTEP, type RaceInput, type RacePlayer } from './simulation/race.ts';
 import type { DrivingControls, VehicleState } from './simulation/types.ts';
 import type { SplineTrack as TrackLayout } from './track/spline-records.ts';
 import type {
@@ -43,6 +43,8 @@ import type {
   TrackOption,
   RaceSnapshot,
   RaceTransition,
+  RaceDeathNotice,
+  RaceDeathAcknowledgement,
 } from './multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from './multiplayer/protocol.ts';
 
@@ -66,6 +68,7 @@ interface RemoteCarEntry {
 
 const remoteInterpolationDelay = 120;
 const maxRemoteExtrapolation = 100;
+const maxPredictedInputs = 24;
 
 interface DrivingSession {
   trackId: string;
@@ -79,6 +82,8 @@ interface DrivingSession {
   lapTimer: ReturnType<typeof createLapTimer>;
   step(elapsed: number, controls: Readonly<DrivingControls>): void;
   drainInputs(): RaceInput[];
+  pollDeathNotice(now: number): RaceDeathNotice | null;
+  applyDeathAck(ack: RaceDeathAcknowledgement): void;
   applySnapshot(snapshot: RaceSnapshot, localPlayerId: string): void;
   applyTransition(transition: RaceTransition): void;
   setClockOffset(offsetMs: number, roundTripMs: number): void;
@@ -184,6 +189,13 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   let lastAppliedServerTick = -1;
   let lastPositionErrorMeters = 0;
   let lastConfirmedRespawnTick = -1;
+  let confirmedLifeId = 0;
+  let confirmedAttemptId = 0;
+  let deathPending = false;
+  let nextDeathNoticeId = 0;
+  let activeDeathNoticeId = -1;
+  let lastDeathNoticeAt = -Infinity;
+  let lastAuthoritativeTimerAt = performance.now();
   let serverClockOffsetMs: number | null = null;
   let bestClockRoundTripMs = Infinity;
   const pendingInputs: RaceInput[] = [];
@@ -319,28 +331,43 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   }
 
   function applyAuthoritativePlayer(player: RacePlayer, tick: number, kind?: RaceTransition['kind']): void {
+    if (player.lifeId < confirmedLifeId || player.attemptId < confirmedAttemptId) return;
+    const newLife = player.lifeId > confirmedLifeId;
+    const newAttempt = player.attemptId > confirmedAttemptId;
+    const transitionKind = kind ?? (newAttempt ? player.lastTransition : null);
+    if (newLife) {
+      pendingInputs.length = 0;
+      unsentInputs.length = 0;
+      deathPending = false;
+      activeDeathNoticeId = -1;
+      clock.reset();
+    }
+    confirmedLifeId = player.lifeId;
+    confirmedAttemptId = player.attemptId;
     const before = { ...state.position };
     copyVehicleState(player.state, state);
     while (pendingInputs.length && pendingInputs[0]!.sequence <= player.acknowledgedInput) pendingInputs.shift();
     for (const input of pendingInputs) {
+      if (input.lifeId !== player.lifeId) continue;
       stepSplineVehicle(state, input.controls, RACE_TIMESTEP, collisionWorld, spawn,
         tuning.physics, tuning.driving, false);
     }
     Object.assign(lapTimer, player.lapTimer, { checkpointsVisited: [...player.lapTimer.checkpointsVisited] });
+    lastAuthoritativeTimerAt = performance.now();
     const error = Math.hypot(before.x - state.position.x, before.y - state.position.y, before.z - state.position.z);
     lastPositionErrorMeters = error;
-    if (kind === 'respawn' || error >= 5) {
+    if (newLife || transitionKind === 'respawn' || error >= 5) {
       visualCorrection.x = visualCorrection.y = visualCorrection.z = 0;
       copyVehicleState(state, rendered);
       followCamera.reset(rendered);
-      if (kind === 'respawn') lastConfirmedRespawnTick = tick;
+      if (newLife || transitionKind === 'respawn') lastConfirmedRespawnTick = tick;
     } else {
       visualCorrection.x += before.x - state.position.x;
       visualCorrection.y += before.y - state.position.y;
       visualCorrection.z += before.z - state.position.z;
     }
     copyVehicleState(state, previous);
-    if (kind) {
+    if (newAttempt || kind) {
       car.update(rendered);
       lapDisplay.update(lapTimer);
       updateMinimap();
@@ -369,6 +396,26 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     applyAuthoritativePlayer(transition.player, transition.tick, transition.kind);
   }
 
+  function applyDeathAck(ack: RaceDeathAcknowledgement): void {
+    if (!deathPending || ack.noticeId !== activeDeathNoticeId) return;
+    if (ack.status === 'pending') return;
+    if (ack.tick < lastAppliedServerTick) return;
+    if (ack.tick >= lastAppliedServerTick && ack.player.lifeId >= confirmedLifeId) {
+      lastAppliedServerTick = ack.tick;
+      applyAuthoritativePlayer(ack.player, ack.tick, ack.status === 'respawned' ? 'respawn' : undefined);
+    }
+    if (ack.status === 'rejected' || ack.player.lifeId > confirmedLifeId) {
+      deathPending = false;
+      activeDeathNoticeId = -1;
+    }
+  }
+
+  function pollDeathNotice(now: number): RaceDeathNotice | null {
+    if (!deathPending || now - lastDeathNoticeAt < 500) return null;
+    lastDeathNoticeAt = now;
+    return { noticeId: activeDeathNoticeId, lifeId: confirmedLifeId };
+  }
+
   function setClockOffset(offsetMs: number, roundTripMs: number): void {
     if (!multiplayer || !Number.isFinite(offsetMs) || !Number.isFinite(roundTripMs) || roundTripMs > 2000) return;
     if (roundTripMs <= bestClockRoundTripMs + 20) {
@@ -387,7 +434,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     const alpha = clock.advance(elapsed, (timestep) => {
       const physicsStartedAt = performance.now();
       copyVehicleState(state, previous);
-      if (stepSplineVehicle(state, controls, timestep, collisionWorld, spawn,
+      const effectiveControls = deathPending ? neutralControls : controls;
+      // Do not let a slow server put the local car seconds ahead of its confirmed position.
+      const predictionPaused = multiplayer && state.grounded && pendingInputs.length >= maxPredictedInputs;
+      if (!predictionPaused && stepSplineVehicle(state, effectiveControls, timestep, collisionWorld, spawn,
         tuning.physics, tuning.driving, !multiplayer)) {
         if (!multiplayer) resetCurrentLap(lapTimer);
         copyVehicleState(state, previous);
@@ -395,9 +445,17 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       } else if (!multiplayer) {
         stepLapTimer(lapTimer, previous.position, state.position, timestep, finishLine, road.checkpoints);
       }
-      if (multiplayer) {
-        const input = { sequence: ++nextInputSequence, controls: { ...controls } };
-        pendingInputs.push(input);
+      if (multiplayer && !predictionPaused) {
+        if (!deathPending && !state.grounded && state.airborneTime >= tuning.physics.respawnDelay) {
+          deathPending = true;
+          activeDeathNoticeId = ++nextDeathNoticeId;
+          lastDeathNoticeAt = -Infinity;
+          pendingInputs.length = 0;
+          unsentInputs.length = 0;
+        }
+        const input = { sequence: ++nextInputSequence, lifeId: confirmedLifeId,
+          controls: { ...(deathPending ? neutralControls : effectiveControls) } };
+        if (!deathPending) pendingInputs.push(input);
         unsentInputs.push(input);
         if (pendingInputs.length > 120) pendingInputs.shift();
       }
@@ -415,7 +473,6 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       visualCorrection.x *= smoothing;
       visualCorrection.y *= smoothing;
       visualCorrection.z *= smoothing;
-      if (lapTimer.running) lapTimer.elapsed += Math.max(0, Math.min(elapsed, 0.1));
     }
     car.update(rendered);
     renderRemotePlayers(performance.now());
@@ -423,8 +480,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     else followCamera.update(rendered, elapsed);
     view.followSun(rendered.position);
     view.renderer.render(view.scene, view.camera);
-    lapDisplay.update(lapTimer, multiplayer && !state.grounded
-      && state.airborneTime >= tuning.physics.respawnDelay);
+    const displayedElapsed = deathPending ? 0 : multiplayer && lapTimer.running
+      ? lapTimer.elapsed + Math.min(0.1, (performance.now() - lastAuthoritativeTimerAt) / 1000)
+      : lapTimer.elapsed;
+    lapDisplay.update({ ...lapTimer, elapsed: displayedElapsed }, deathPending);
     updateMinimap();
   }
 
@@ -440,6 +499,8 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
         stepsLastFrame: lastFrameSteps, physicsMsLastFrame: lastFramePhysicsMs, frameDeltaMs: lastFrameElapsedMs,
         lastServerTick: lastAppliedServerTick, unacknowledgedInputs: pendingInputs.length,
         positionErrorMeters: lastPositionErrorMeters, lastConfirmedRespawnTick,
+        lifeId: confirmedLifeId, attemptId: confirmedAttemptId, deathPending,
+        predictionPaused: state.grounded && pendingInputs.length >= maxPredictedInputs,
         timerRunning: lapTimer.running, timerSeconds: lapTimer.elapsed },
       renderer: { pixelRatio: renderer.getPixelRatio(), drawCalls: drawStats.calls, triangles: drawStats.triangles,
         geometries: memoryStats.geometries, textures: memoryStats.textures, trackTriangles: view.road.triangles.length },
@@ -465,6 +526,8 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     lapTimer,
     step,
     drainInputs(): RaceInput[] { return unsentInputs.splice(0); },
+    pollDeathNotice,
+    applyDeathAck,
     applySnapshot,
     applyTransition,
     setClockOffset,
@@ -1042,6 +1105,12 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     session.applyTransition(transition);
   });
 
+  socket.on('race:death-ack', ack => {
+    if (!session || (!activeRoom && !soloRaceActive)) return;
+    if (ack.roomId !== (activeRoom?.id ?? `solo:${socket.id}`)) return;
+    session.applyDeathAck(ack);
+  });
+
   socket.on('multiplayer:error', ({ message }) => {
     networkStats.errorsReceived++;
     homeScreen.setStatus(message);
@@ -1118,6 +1187,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
         else socket.emit('time-trial:input', input);
         networkStats.stateMessagesSent++;
         networkStats.approximateJsonBytesSent += new TextEncoder().encode(JSON.stringify(input)).byteLength;
+      }
+      const deathNotice = session.pollDeathNotice(time);
+      if (deathNotice && socket.connected && (activeRoom || soloRaceActive)) {
+        socket.emit('race:death-notice', deathNotice);
       }
       if ((activeRoom || soloRaceActive) && socket.connected && time - lastClockSyncAt >= 2000) {
         const currentSession = session;

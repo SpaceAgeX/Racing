@@ -742,6 +742,21 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('race:death-notice', notice => {
+    if (!Number.isSafeInteger(notice?.noticeId) || notice.noticeId < 0
+      || !Number.isSafeInteger(notice.lifeId) || notice.lifeId < 0) return;
+    const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
+    const race = lobby?.phase === 'race' ? lobby.race : timeTrials.get(socket.id)?.simulation;
+    if (!race) return;
+    const roomId = lobby?.phase === 'race' ? lobby.id : `solo:${socket.id}`;
+    // The notification never creates a death; the simulation independently decides.
+    const status = race.deathStatus(socket.id, notice.lifeId);
+    if (!status) return;
+    const player = race.snapshot().players.find(candidate => candidate.id === socket.id);
+    if (!player) return;
+    socket.emit('race:death-ack', { roomId, noticeId: notice.noticeId, tick: race.tick, status, player });
+  });
+
   socket.on('disconnect', (reason) => {
     soloGeneration++;
     timeTrials.delete(socket.id);

@@ -108,6 +108,19 @@ export interface RaceTransition {
   player: RacePlayer;
 }
 
+export interface RaceDeathNotice {
+  noticeId: number;
+  lifeId: number;
+}
+
+export interface RaceDeathAcknowledgement {
+  roomId: string;
+  noticeId: number;
+  tick: number;
+  status: 'pending' | 'rejected' | 'respawned';
+  player: RacePlayer;
+}
+
 export interface TimeTrialStart {
   requestId: number;
   trackId: string;
@@ -174,6 +187,7 @@ export interface ClientToServerEvents {
   'multiplayer:set-color': (payload: { color: string }) => void;
   'multiplayer:start-lobby': (payload: StartLobbyPayload) => void;
   'multiplayer:input': (payload: RaceInput) => void;
+  'race:death-notice': (payload: RaceDeathNotice) => void;
   'multiplayer:clock': (reply: (serverTimeMs: number) => void) => void;
   'time-trial:start': (payload: TimeTrialStart) => void;
   'time-trial:input': (payload: RaceInput) => void;
@@ -191,6 +205,7 @@ export interface ServerToClientEvents {
   'multiplayer:room': (payload: { lobby: LobbySnapshot | null }) => void;
   'multiplayer:snapshot': (payload: RaceSnapshot) => void;
   'race:transition': (payload: RaceTransition) => void;
+  'race:death-ack': (payload: RaceDeathAcknowledgement) => void;
   'time-trial:ready': (payload: TimeTrialReady) => void;
   'time-trial:snapshot': (payload: RaceSnapshot) => void;
   'time-trial:error': (payload: { requestId: number; message: string }) => void;
