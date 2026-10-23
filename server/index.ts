@@ -233,6 +233,9 @@ function flushActivity(): void {
 const activityClock = setInterval(flushActivity, 15_000);
 const raceTickDurationsMs: number[] = [];
 let raceTickOverrunsTotal = 0;
+let raceTickWindowStartedAt = performance.now();
+let raceTicksInWindow = 0;
+let actualRaceTickRateHz = 0;
 
 interface TrafficWindow {
   startedAt: number;
@@ -292,6 +295,7 @@ function getServerDiagnostics(socket: Parameters<typeof io.on>[1] extends (arg: 
       },
       authoritativeSimulation: true,
       simulationTickRateHz: 1 / RACE_TIMESTEP,
+      actualSimulationTickRateHz: actualRaceTickRateHz,
       simulationTickMs: {
         latest: raceTickDurationsMs.at(-1) ?? 0,
         average: raceTickDurationsMs.length ? raceTickDurationsMs.reduce((a, b) => a + b, 0) / raceTickDurationsMs.length : 0,
@@ -760,9 +764,20 @@ const raceClock = setInterval(() => {
     const tickStarted = performance.now();
     raceAccumulator -= RACE_TIMESTEP;
     steps++;
+    raceTicksInWindow++;
+    if (now - raceTickWindowStartedAt >= 1000) {
+      actualRaceTickRateHz = raceTicksInWindow * 1000 / (now - raceTickWindowStartedAt);
+      raceTicksInWindow = 0;
+      raceTickWindowStartedAt = now;
+    }
     for (const lobby of lobbies.values()) {
       if (lobby.phase !== 'race' || !lobby.race) continue;
       const result = lobby.race.step(now);
+      for (const transition of result.transitions) {
+        io.to(transition.player.id).emit('race:transition', {
+          roomId: lobby.id, serverTimeMs: performance.now(), ...transition,
+        });
+      }
       for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
       for (const lap of result.laps) {
         const userId = accountId(lap.playerId);
@@ -788,6 +803,11 @@ const raceClock = setInterval(() => {
     for (const [playerId, solo] of timeTrials) {
       const race = solo.simulation;
       const result = race.step(now);
+      for (const transition of result.transitions) {
+        io.to(playerId).emit('race:transition', {
+          roomId: `solo:${playerId}`, serverTimeMs: performance.now(), ...transition,
+        });
+      }
       for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
       for (const lap of result.laps) {
         const userId = accountId(lap.playerId);

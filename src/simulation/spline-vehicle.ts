@@ -26,6 +26,8 @@ export function stepSplineVehicle(
   spawn: Readonly<VehicleSpawn>,
   parameters: Readonly<PhysicsParameters> = physicsParameters,
   driving: Readonly<DrivingParameters> = drivingParameters,
+  // Network clients wait for a server transition before teleporting.
+  allowRespawn = true,
 ): boolean {
   if (!Number.isFinite(timestep) || timestep <= 0) return false;
 
@@ -217,7 +219,7 @@ export function stepSplineVehicle(
     return false;
   }
 
-  if (state.airborneTime + 1e-10 >= parameters.respawnDelay) {
+  if (allowRespawn && state.airborneTime + 1e-10 >= parameters.respawnDelay) {
     respawnVehicle(state, spawn);
     body.heading = state.heading;
     body.pitch = state.pitch;

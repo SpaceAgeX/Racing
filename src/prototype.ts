@@ -27,7 +27,7 @@ import { createVehicleState, copyVehicleState, interpolateVehicleState } from '.
 import { wrapAngle } from './simulation/math.ts';
 import { drivingParameters, physicsParameters } from './simulation/parameters.ts';
 import { respawnVehicle, stepSplineVehicle } from './simulation/spline-vehicle.ts';
-import { RACE_TIMESTEP, type RaceInput } from './simulation/race.ts';
+import { RACE_TIMESTEP, type RaceInput, type RacePlayer } from './simulation/race.ts';
 import type { DrivingControls, VehicleState } from './simulation/types.ts';
 import type { SplineTrack as TrackLayout } from './track/spline-records.ts';
 import type {
@@ -42,6 +42,7 @@ import type {
   ServerToClientEvents,
   TrackOption,
   RaceSnapshot,
+  RaceTransition,
 } from './multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from './multiplayer/protocol.ts';
 
@@ -79,6 +80,7 @@ interface DrivingSession {
   step(elapsed: number, controls: Readonly<DrivingControls>): void;
   drainInputs(): RaceInput[];
   applySnapshot(snapshot: RaceSnapshot, localPlayerId: string): void;
+  applyTransition(transition: RaceTransition): void;
   setClockOffset(offsetMs: number, roundTripMs: number): void;
   toggleCamera(): void;
   syncRemotePlayers(players: LobbyPlayerSnapshot[], localPlayerId: string): void;
@@ -180,6 +182,8 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   let lastFrameElapsedMs = 0;
   let nextInputSequence = 0;
   let lastAppliedServerTick = -1;
+  let lastPositionErrorMeters = 0;
+  let lastConfirmedRespawnTick = -1;
   let serverClockOffsetMs: number | null = null;
   let bestClockRoundTripMs = Infinity;
   const pendingInputs: RaceInput[] = [];
@@ -314,6 +318,35 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     }
   }
 
+  function applyAuthoritativePlayer(player: RacePlayer, tick: number, kind?: RaceTransition['kind']): void {
+    const before = { ...state.position };
+    copyVehicleState(player.state, state);
+    while (pendingInputs.length && pendingInputs[0]!.sequence <= player.acknowledgedInput) pendingInputs.shift();
+    for (const input of pendingInputs) {
+      stepSplineVehicle(state, input.controls, RACE_TIMESTEP, collisionWorld, spawn,
+        tuning.physics, tuning.driving, false);
+    }
+    Object.assign(lapTimer, player.lapTimer, { checkpointsVisited: [...player.lapTimer.checkpointsVisited] });
+    const error = Math.hypot(before.x - state.position.x, before.y - state.position.y, before.z - state.position.z);
+    lastPositionErrorMeters = error;
+    if (kind === 'respawn' || error >= 5) {
+      visualCorrection.x = visualCorrection.y = visualCorrection.z = 0;
+      copyVehicleState(state, rendered);
+      followCamera.reset(rendered);
+      if (kind === 'respawn') lastConfirmedRespawnTick = tick;
+    } else {
+      visualCorrection.x += before.x - state.position.x;
+      visualCorrection.y += before.y - state.position.y;
+      visualCorrection.z += before.z - state.position.z;
+    }
+    copyVehicleState(state, previous);
+    if (kind) {
+      car.update(rendered);
+      lapDisplay.update(lapTimer);
+      updateMinimap();
+    }
+  }
+
   function applySnapshot(snapshot: RaceSnapshot, localPlayerId: string): void {
     if (!multiplayer || snapshot.tick <= lastAppliedServerTick) return;
     lastAppliedServerTick = snapshot.tick;
@@ -324,26 +357,16 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     for (const player of snapshot.players) {
       if (player.id !== localPlayerId) {
         updateRemotePlayer(player.id, player.state, snapshot.tick, snapshot.serverTimeMs);
-        continue;
-      }
-      const before = { ...state.position };
-      copyVehicleState(player.state, state);
-      while (pendingInputs.length && pendingInputs[0]!.sequence <= player.acknowledgedInput) pendingInputs.shift();
-      for (const input of pendingInputs) {
-        stepSplineVehicle(state, input.controls, RACE_TIMESTEP, collisionWorld, spawn, tuning.physics, tuning.driving);
-      }
-      Object.assign(lapTimer, player.lapTimer, { checkpointsVisited: [...player.lapTimer.checkpointsVisited] });
-      const error = Math.hypot(before.x - state.position.x, before.y - state.position.y, before.z - state.position.z);
-      if (error < 5) {
-        visualCorrection.x += before.x - state.position.x;
-        visualCorrection.y += before.y - state.position.y;
-        visualCorrection.z += before.z - state.position.z;
       } else {
-        visualCorrection.x = visualCorrection.y = visualCorrection.z = 0;
-        followCamera.reset(state);
+        applyAuthoritativePlayer(player, snapshot.tick);
       }
-      copyVehicleState(state, previous);
     }
+  }
+
+  function applyTransition(transition: RaceTransition): void {
+    if (!multiplayer || transition.tick <= lastAppliedServerTick) return;
+    lastAppliedServerTick = transition.tick;
+    applyAuthoritativePlayer(transition.player, transition.tick, transition.kind);
   }
 
   function setClockOffset(offsetMs: number, roundTripMs: number): void {
@@ -364,7 +387,8 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     const alpha = clock.advance(elapsed, (timestep) => {
       const physicsStartedAt = performance.now();
       copyVehicleState(state, previous);
-      if (stepSplineVehicle(state, controls, timestep, collisionWorld, spawn, tuning.physics, tuning.driving)) {
+      if (stepSplineVehicle(state, controls, timestep, collisionWorld, spawn,
+        tuning.physics, tuning.driving, !multiplayer)) {
         if (!multiplayer) resetCurrentLap(lapTimer);
         copyVehicleState(state, previous);
         respawned = true;
@@ -399,7 +423,8 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     else followCamera.update(rendered, elapsed);
     view.followSun(rendered.position);
     view.renderer.render(view.scene, view.camera);
-    lapDisplay.update(lapTimer);
+    lapDisplay.update(lapTimer, multiplayer && !state.grounded
+      && state.airborneTime >= tuning.physics.respawnDelay);
     updateMinimap();
   }
 
@@ -412,7 +437,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       vehicle: { speedMps: state.speed, speedKph: Math.abs(state.speed) * 3.6, grounded: state.grounded,
         airborneSeconds: state.airborneTime, headingRadians: state.heading },
       simulation: { tickRateHz: 1 / (multiplayer ? RACE_TIMESTEP : FIXED_TIMESTEP), totalTicks: simulationTicks,
-        stepsLastFrame: lastFrameSteps, physicsMsLastFrame: lastFramePhysicsMs, frameDeltaMs: lastFrameElapsedMs },
+        stepsLastFrame: lastFrameSteps, physicsMsLastFrame: lastFramePhysicsMs, frameDeltaMs: lastFrameElapsedMs,
+        lastServerTick: lastAppliedServerTick, unacknowledgedInputs: pendingInputs.length,
+        positionErrorMeters: lastPositionErrorMeters, lastConfirmedRespawnTick,
+        timerRunning: lapTimer.running, timerSeconds: lapTimer.elapsed },
       renderer: { pixelRatio: renderer.getPixelRatio(), drawCalls: drawStats.calls, triangles: drawStats.triangles,
         geometries: memoryStats.geometries, textures: memoryStats.textures, trackTriangles: view.road.triangles.length },
       remotePlayers: [...remoteCars].map(([id, remote]) => {
@@ -438,6 +466,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     step,
     drainInputs(): RaceInput[] { return unsentInputs.splice(0); },
     applySnapshot,
+    applyTransition,
     setClockOffset,
     toggleCamera(): void { followCamera.toggleMode(); },
     syncRemotePlayers,
@@ -1003,6 +1032,14 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     }
     networkStats.lastStateReceivedAt = receivedAt;
     session.applySnapshot(snapshot, socket.id!);
+  });
+
+  socket.on('race:transition', transition => {
+    if (!session) return;
+    const expectedRoomId = activeRoom?.id ?? (soloRaceActive ? `solo:${socket.id}` : null);
+    const expectedPlayerId = activeRoom ? localPlayerId : socket.id;
+    if (transition.roomId !== expectedRoomId || transition.player.id !== expectedPlayerId) return;
+    session.applyTransition(transition);
   });
 
   socket.on('multiplayer:error', ({ message }) => {

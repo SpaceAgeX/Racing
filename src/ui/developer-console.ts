@@ -23,6 +23,7 @@ function compactServerSnapshot(value: unknown): unknown {
       eventLoopDelayMs: eventLoop,
       authoritativeSimulation: server.authoritativeSimulation,
       simulationTickRateHz: server.simulationTickRateHz,
+      actualSimulationTickRateHz: server.actualSimulationTickRateHz,
       simulationTickMs: server.simulationTickMs,
     } : null,
     load: server ? {

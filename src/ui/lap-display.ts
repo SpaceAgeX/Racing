@@ -20,7 +20,7 @@ export function createLapDisplay(container: HTMLElement, hasFinishLine: boolean)
   }
 
   return {
-    update(timer: Readonly<LapTimerState>): void {
+    update(timer: Readonly<LapTimerState>, waitingForRespawn = false): void {
       text(current, formatLapTime(timer.elapsed));
       text(best, formatLapTime(timer.best));
       text(last, formatLapTime(timer.last));
@@ -29,7 +29,7 @@ export function createLapDisplay(container: HTMLElement, hasFinishLine: boolean)
       delta.classList.toggle('is-faster', timer.delta !== null && roundedDelta < 0);
       delta.classList.toggle('is-slower', timer.delta !== null && roundedDelta > 0);
       text(delta, timer.delta === null ? 'First lap' : `${roundedDelta < 0 ? '−' : roundedDelta > 0 ? '+' : '±'}${(Math.abs(roundedDelta) / 100).toFixed(2)} s vs best`);
-      text(status, !hasFinishLine ? 'Place a finish line to time laps'
+      text(status, waitingForRespawn ? 'Respawning…' : !hasFinishLine ? 'Place a finish line to time laps'
         : timer.running ? `Lap ${timer.completedLaps + 1}${timer.checkpointCount ? ` | Checkpoints ${timer.checkpointsVisited.length}/${timer.checkpointCount}` : ""}${timer.missedCheckpoints ? " | Cross remaining checkpoints, then finish" : ""}` : 'Cross the line to start');
     },
   };

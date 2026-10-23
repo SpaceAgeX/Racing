@@ -4,6 +4,8 @@ import { buildRoadGeometry } from '../src/track/road-geometry.ts';
 import { splinePresets } from '../src/track/spline-presets.ts';
 import { drivingParameters, physicsParameters } from '../src/simulation/parameters.ts';
 import { createRaceSimulation, RACE_TIMESTEP, validRaceInput } from '../src/simulation/race.ts';
+import { createRoadWorld } from '../src/simulation/road-world.ts';
+import { stepSplineVehicle } from '../src/simulation/spline-vehicle.ts';
 
 const handling = { driving: drivingParameters, physics: physicsParameters };
 
@@ -51,8 +53,40 @@ test('server alone advances the lap timer on a finish crossing', () => {
     z: finish.center.z - direction.z * 0.2 };
   player.state.heading = Math.atan2(-direction.x, -direction.z);
   player.state.speed = 30;
-  race.step(1000);
+  const result = race.step(1000);
   assert.equal(race.snapshot().players[0]!.lapTimer.running, true);
+  assert.equal(result.transitions.length, 1);
+  assert.equal(result.transitions[0]!.kind, 'start');
+  assert.equal(result.transitions[0]!.tick, race.tick);
+  assert.equal(result.transitions[0]!.player.lapTimer.running, true);
+});
+
+test('server confirms respawn and timer reset together, while client prediction waits', () => {
+  const road = buildRoadGeometry(splinePresets[1]!.create());
+  const race = createRaceSimulation(road, handling);
+  const player = race.addPlayer('driver', 0);
+  player.state.position = { x: 5000, y: -100, z: 5000 };
+  player.state.grounded = false;
+  player.state.airborneTime = physicsParameters.respawnDelay;
+  player.lapTimer.running = true;
+  player.lapTimer.elapsed = 12;
+
+  const predicted = structuredClone(player.state);
+  const neutral = { throttle: 0 as const, steering: 0 as const, brake: false };
+  const didPredictRespawn = stepSplineVehicle(predicted, neutral, RACE_TIMESTEP,
+    createRoadWorld(road), road.spawns[0]!, physicsParameters, drivingParameters, false);
+  assert.equal(didPredictRespawn, false);
+  assert.ok(predicted.position.x > 4000);
+
+  const result = race.step(1000);
+  assert.equal(result.transitions.length, 1);
+  const transition = result.transitions[0]!;
+  assert.equal(transition.kind, 'respawn');
+  assert.equal(transition.tick, race.tick);
+  assert.equal(transition.player.lapTimer.running, false);
+  assert.equal(transition.player.lapTimer.elapsed, 0);
+  assert.deepEqual(transition.player.state.position, road.spawns[0]!.position);
+  assert.deepEqual(race.snapshot().players[0]!.lapTimer, transition.player.lapTimer);
 });
 
 test('server requires every checkpoint before recording a lap', () => {
@@ -61,13 +95,13 @@ test('server requires every checkpoint before recording a lap', () => {
   const road = buildRoadGeometry(layout);
   const race = createRaceSimulation(road, handling);
   const player = race.addPlayer('driver', 0);
-  function cross(gate: NonNullable<typeof road.finish>, now: number): void {
+  function cross(gate: NonNullable<typeof road.finish>, now: number) {
     const direction = gate.direction!;
     player.state.position = { x: gate.center.x - direction.x * 0.2, y: gate.center.y,
       z: gate.center.z - direction.z * 0.2 };
     player.state.heading = Math.atan2(-direction.x, -direction.z);
     player.state.speed = 30;
-    race.step(now);
+    return race.step(now);
   }
   cross(road.finish!, 1000);
   assert.equal(race.snapshot().players[0]!.lapTimer.running, true);
@@ -76,9 +110,11 @@ test('server requires every checkpoint before recording a lap', () => {
   assert.equal(race.snapshot().players[0]!.lapTimer.missedCheckpoints, true);
   cross(road.checkpoints[0]!, 3000);
   assert.deepEqual(race.snapshot().players[0]!.lapTimer.checkpointsVisited, [1]);
-  cross(road.finish!, 4000);
+  const completed = cross(road.finish!, 4000);
   const result = race.snapshot().players[0]!.lapTimer;
   assert.equal(result.completedLaps, 1);
   assert.ok(result.last !== null && result.last > 0);
   assert.deepEqual(result.checkpointsVisited, []);
+  assert.equal(completed.transitions[0]?.kind, 'lap');
+  assert.equal(completed.transitions[0]?.player.lapTimer.completedLaps, 1);
 });

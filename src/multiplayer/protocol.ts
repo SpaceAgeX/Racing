@@ -100,6 +100,14 @@ export interface RaceSnapshot {
   players: RacePlayer[];
 }
 
+export interface RaceTransition {
+  roomId: string;
+  serverTimeMs: number;
+  tick: number;
+  kind: 'respawn' | 'start' | 'lap';
+  player: RacePlayer;
+}
+
 export interface TimeTrialStart {
   requestId: number;
   trackId: string;
@@ -127,6 +135,7 @@ export interface ServerDiagnosticsSnapshot {
     eventLoopDelayMs: { mean: number | null; p95: number | null; max: number | null };
     authoritativeSimulation: boolean;
     simulationTickRateHz: number;
+    actualSimulationTickRateHz: number;
     simulationTickMs: { latest: number; average: number; max: number; overrunsTotal: number };
     connectedSockets: number;
     lobbyCount: number;
@@ -181,6 +190,7 @@ export interface ServerToClientEvents {
   'multiplayer:lobbies': (payload: { lobbies: LobbySummary[] }) => void;
   'multiplayer:room': (payload: { lobby: LobbySnapshot | null }) => void;
   'multiplayer:snapshot': (payload: RaceSnapshot) => void;
+  'race:transition': (payload: RaceTransition) => void;
   'time-trial:ready': (payload: TimeTrialReady) => void;
   'time-trial:snapshot': (payload: RaceSnapshot) => void;
   'time-trial:error': (payload: { requestId: number; message: string }) => void;

@@ -19,6 +19,7 @@ export interface RacePlayer {
 export interface RaceStepResult {
   laps: { playerId: string; durationSeconds: number }[];
   activity: { playerId: string; seconds: number; distanceMeters: number }[];
+  transitions: { kind: 'respawn' | 'start' | 'lap'; tick: number; player: RacePlayer }[];
 }
 
 interface InternalPlayer extends RacePlayer {
@@ -69,10 +70,11 @@ export function createRaceSimulation(road: RoadGeometry, handling: Readonly<Hand
     },
     step(now: number): RaceStepResult {
       tick++;
-      const result: RaceStepResult = { laps: [], activity: [] };
+      const result: RaceStepResult = { laps: [], activity: [], transitions: [] };
       for (const player of players.values()) {
         const previousPosition = { ...player.state.position };
         const previousLaps = player.lapTimer.completedLaps;
+        const wasRunning = player.lapTimer.running;
         const input = player.pending.shift();
         if (input) {
           player.controls = input.controls;
@@ -96,6 +98,13 @@ export function createRaceSimulation(road: RoadGeometry, handling: Readonly<Hand
         if (player.lapTimer.completedLaps > previousLaps && player.lapTimer.last !== null) {
           result.laps.push({ playerId: player.id, durationSeconds: player.lapTimer.last });
         }
+        const kind = respawned ? 'respawn'
+          : player.lapTimer.completedLaps > previousLaps ? 'lap'
+            : !wasRunning && player.lapTimer.running ? 'start' : null;
+        if (kind) result.transitions.push({ kind, tick, player: {
+          id: player.id, state: structuredClone(player.state), lapTimer: structuredClone(player.lapTimer),
+          acknowledgedInput: player.acknowledgedInput,
+        } });
       }
       return result;
     },
