@@ -4,7 +4,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildSplineSurface, splineSurfaceHeightAt } from '../track/spline-surface.ts';
 import { getSplineTrackFrame, SPLINE_EDITOR_WORLD_SIZE, type SplineGraph } from '../track/spline.ts';
-import { createFrameLimiter } from './frame-limiter.ts';
 
 export function createSplinePreview(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
@@ -53,7 +52,6 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
   scene.add(raceMarkers);
   let active = false;
   let animationFrame = 0;
-  const frameLimiter = createFrameLimiter(60);
   let framed = false;
   let warningCount = 0;
   let polygonCount = 0;
@@ -272,11 +270,10 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
 
   function render(): void {
     if (!active) return;
-    animationFrame = requestAnimationFrame(render);
-    if (!frameLimiter.shouldDraw(performance.now())) return;
     resize();
     controls.update();
     renderer.render(scene, camera);
+    animationFrame = requestAnimationFrame(render);
   }
 
   return {
@@ -284,7 +281,7 @@ export function createSplinePreview(canvas: HTMLCanvasElement) {
     setActive(value: boolean): void {
       if (active === value) return;
       active = value;
-      if (active) { frameLimiter.reset(); render(); }
+      if (active) render();
       else cancelAnimationFrame(animationFrame);
     },
     getDiagnostics() {
