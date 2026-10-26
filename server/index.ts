@@ -25,7 +25,7 @@ import type {
   UpdateLobbySettingsPayload,
 } from '../src/multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
-import { buildRoadGeometry } from '../src/track/road-geometry.ts';
+import { prepareRaceRoad, type PreparedRaceRoad } from './road-preparation.ts';
 import { splineTrackError } from '../src/track/spline-records.ts';
 
 import type { VehicleState } from '../src/simulation/types.ts';
@@ -541,12 +541,11 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
   return lobby;
 }
 
-function startLobby(socketId: string): LobbyRecord | null {
+function startLobby(socketId: string, road: PreparedRaceRoad, settings: LobbySettings): LobbyRecord | null {
   const lobbyId = playerLobby.get(socketId);
   if (!lobbyId) return null;
   const lobby = lobbies.get(lobbyId);
-  if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
-  const road = buildRoadGeometry(lobby.settings.layout);
+  if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby' || lobby.settings !== settings) return null;
   const race = createRaceSimulation(road, lobby.settings.handling);
   const players = [...lobby.players.values()];
 
@@ -605,7 +604,9 @@ io.on('connection', (socket) => {
       }
       if (!socket.connected || generation !== soloGeneration) return;
       if (playerLobby.has(socket.id)) throw new Error('Leave the lobby before starting a time trial.');
-      const race = createRaceSimulation(buildRoadGeometry(track.layout), handling);
+      const road = await prepareRaceRoad(track.layout);
+      if (!socket.connected || generation !== soloGeneration) return;
+      const race = createRaceSimulation(road, handling);
       race.addPlayer(socket.id, 0);
       await accounts.startRace([socket.data.account.id]);
       if (!socket.connected || generation !== soloGeneration) return;
@@ -714,15 +715,22 @@ io.on('connection', (socket) => {
     }
     pendingLobby.starting = true;
     try {
+      const settings = pendingLobby.settings;
+      const road = await prepareRaceRoad(settings.layout);
+      if (!socket.connected || lobbies.get(pendingLobby.id) !== pendingLobby
+        || pendingLobby.hostId !== socket.id || pendingLobby.phase !== 'lobby'
+        || pendingLobby.settings !== settings) return;
       await accounts.startRace([...pendingLobby.players.keys()].map(accountId).filter((id): id is string => id !== null));
-    } catch (error) { pendingLobby.starting = false; throw error; }
-    const lobby = startLobby(socket.id);
-    if (!lobby) {
-      socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
-      return;
+      const lobby = startLobby(socket.id, road, settings);
+      if (!lobby) {
+        socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
+        return;
+      }
+      broadcastLobbyRoom(lobby);
+      broadcastLobbyList();
+    } finally {
+      if (pendingLobby.phase === 'lobby') pendingLobby.starting = false;
     }
-    broadcastLobbyRoom(lobby);
-    broadcastLobbyList();
     } catch (error) {
       socket.emit('multiplayer:error', { message: error instanceof Error ? error.message : 'Could not prepare the track.' });
     }

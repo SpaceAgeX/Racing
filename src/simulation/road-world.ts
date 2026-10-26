@@ -19,7 +19,7 @@ const mul = (a: Vec, n: number): Vec => ({ x: a.x * n, y: a.y * n, z: a.z * n })
 
 /** Triangle mesh collisions in plain meters. Static broad phase, continuous OBB/triangle SAT.
  * Only exposed road faces participate; there are no interior tile/triangle-prism walls. */
-export function createRoadWorld(road: RoadGeometry) {
+export function createRoadWorld(road: Pick<RoadGeometry, 'triangles'>) {
   const faces = road.triangles.map((t, id) => ({
     ...t,
     id: String(id),

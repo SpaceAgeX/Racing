@@ -45,7 +45,10 @@ export function validRaceInput(value: unknown): value is CompatibleRaceInput {
     && typeof controls.brake === 'boolean';
 }
 
-export function createRaceSimulation(road: RoadGeometry, handling: Readonly<HandlingParameters>) {
+export function createRaceSimulation(
+  road: Pick<RoadGeometry, 'triangles' | 'spawns' | 'finish' | 'checkpoints'>,
+  handling: Readonly<HandlingParameters>,
+) {
   const world = createRoadWorld(road);
   const players = new Map<string, InternalPlayer>();
   let currentHandling: Readonly<HandlingParameters> = handling;
