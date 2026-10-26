@@ -65,6 +65,7 @@ const sections = [
 
 export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement) {
   const parameters: TuningParameters = { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
+  let competitiveSettingsChanged = false;
   const cleanup: (() => void)[] = [];
   const controls: { definition: SliderDefinition; input: HTMLInputElement; output: HTMLOutputElement }[] = [];
 
@@ -84,7 +85,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
   panel.innerHTML = `
     <header class="tuning-header">
       <h1>Handling</h1>
-      <p>Optional. Changing handling makes this time trial unranked.</p>
+      <p>Physics Time can be changed without affecting ranking. Other tuning makes this run unranked.</p>
       <div class="tuning-telemetry"><output id="current-speed">0.0 km/h</output><span id="ground-status">On track</span></div>
     </header>
     <div class="tuning-fields"></div>
@@ -136,9 +137,13 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
       group.append(row);
       controls.push({ definition, input, output });
       const onInput = (): void => {
+        const previous = getValue(definition);
         setValue(definition, Number(input.value));
         sync();
-        message.textContent = 'Custom handling: this session is unranked.';
+        if (definition.key !== 'physicsTime' && getValue(definition) !== previous) competitiveSettingsChanged = true;
+        message.textContent = competitiveSettingsChanged
+          ? 'Custom handling: this session is unranked.'
+          : 'Physics Time can change without disqualifying this run.';
       };
       input.addEventListener('input', onInput);
       cleanup.push(() => input.removeEventListener('input', onInput));
@@ -152,7 +157,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     Object.assign(parameters.driving, drivingParameters);
     Object.assign(parameters.physics, physicsParameters);
     sync();
-    message.textContent = 'Defaults restored.';
+    message.textContent = competitiveSettingsChanged ? 'Defaults restored. This run remains unranked.' : 'Defaults restored.';
   };
   reset.addEventListener('click', onReset);
   cleanup.push(() => reset.removeEventListener('click', onReset));
@@ -190,6 +195,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     resetDefaults(): void {
       Object.assign(parameters.driving, drivingParameters);
       Object.assign(parameters.physics, physicsParameters);
+      competitiveSettingsChanged = false;
       sync();
       setCollapsed(true);
       message.textContent = 'Default handling is active.';
@@ -243,6 +249,7 @@ export function createLobbyHandlingEditor(root: HTMLElement, onCommit: (paramete
     legend.textContent = section.title;
     group.append(legend);
     for (const definition of section.sliders) {
+      if (definition.key === 'physicsTime') continue;
       const row = document.createElement('div');
       row.className = 'tuning-slider';
       const heading = document.createElement('div');
@@ -285,6 +292,7 @@ export function createLobbyHandlingEditor(root: HTMLElement, onCommit: (paramete
     setRoomHandling(value: Readonly<TuningParameters>, canEdit: boolean): void {
       Object.assign(parameters.driving, value.driving);
       Object.assign(parameters.physics, value.physics);
+      parameters.physics.physicsTime = 1;
       for (const { input } of controls) input.disabled = !canEdit;
       reset.disabled = !canEdit;
       note.textContent = canEdit

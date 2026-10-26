@@ -111,7 +111,7 @@ for (const [label, value] of metrics) {
 const bests = document.querySelector<HTMLElement>('#personal-bests')!;
 if (!data.personalBests.length) {
   bests.classList.add('empty-state');
-  bests.textContent = 'No ranked laps yet. Set a time with default handling to see your personal bests.';
+  bests.textContent = 'No ranked laps yet. Set a time with default handling; Physics Time can vary.';
 }
 for (const best of data.personalBests) {
   const row = document.createElement('div');

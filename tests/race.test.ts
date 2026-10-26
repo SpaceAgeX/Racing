@@ -29,7 +29,10 @@ test('Physics Time scales authoritative driving and lap time without changing ol
   const { physicsTime: _physicsTime, ...oldPhysics } = physicsParameters;
   const previousDefaultHash = createHash('sha256').update(JSON.stringify({ driving: drivingParameters, physics: oldPhysics })).digest('hex');
   assert.equal(handlingHash(handling), previousDefaultHash);
-  assert.notEqual(handlingHash({ driving: drivingParameters, physics: { ...physicsParameters, physicsTime: 0.5 } }), previousDefaultHash);
+  for (const physicsTime of [0.1, 0.5, 3]) {
+    assert.equal(handlingHash({ driving: drivingParameters, physics: { ...physicsParameters, physicsTime } }), previousDefaultHash);
+  }
+  assert.notEqual(handlingHash({ driving: { ...drivingParameters, acceleration: 20 }, physics: physicsParameters }), previousDefaultHash);
 });
 
 test('server accepts only numbered controls and owns the resulting vehicle state', () => {

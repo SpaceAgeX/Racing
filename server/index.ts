@@ -474,6 +474,7 @@ function leaveLobby(socketId: string): void {
 async function createLobby(socketId: string, playerName: string, lobbyName: string, trackId: string, requestedHandling: unknown): Promise<LobbyRecord> {
   const track = await resolveTrack(trackId);
   const handling = normalizeHandling(requestedHandling) ?? { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
+  if (handling.physics.physicsTime !== 1) throw new Error('Physics Time is fixed at 1× in multiplayer.');
   if (!io.sockets.sockets.has(socketId)) throw new Error('The player disconnected.');
   leaveLobby(socketId);
   timeTrials.delete(socketId);
@@ -531,6 +532,7 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
   if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
   const handling = requestedHandling === undefined ? null : normalizeHandling(requestedHandling);
   if (requestedHandling !== undefined && !handling) throw new Error('The handling settings are invalid.');
+  if (handling && handling.physics.physicsTime !== 1) throw new Error('Physics Time is fixed at 1× in multiplayer.');
   const track = trackId === undefined ? null : await resolveTrack(trackId);
   if (lobbies.get(lobbyId) !== lobby || playerLobby.get(socketId) !== lobbyId || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
   lobby.settings = {
@@ -596,7 +598,7 @@ io.on('connection', (socket) => {
       const known = presetTrackOptions.find(track => track.id === payload.trackId)
         ?? await accounts.getTrack(payload.trackId, socket.data.account.id);
       let track: TrackOption;
-      if (known) track = { id: known.id, name: known.name, layout: known.layout };
+      if (known) track = { id: known.id, name: known.name, layout: known.layout, visibility: known.visibility };
       else {
         const layoutJson = JSON.stringify(payload.layout);
         if (!layoutJson || Buffer.byteLength(layoutJson) > 256 * 1024) throw new Error('The track is too large.');
@@ -635,7 +637,12 @@ io.on('connection', (socket) => {
   socket.on('time-trial:handling', value => {
     const handling = normalizeHandling(value);
     const solo = timeTrials.get(socket.id);
-    if (handling && solo) { solo.simulation.setHandling(handling); solo.rulesetHash = handlingHash(handling); solo.rankedEligible = false; }
+    if (handling && solo) {
+      solo.simulation.setHandling(handling);
+      solo.rulesetHash = handlingHash(handling);
+      solo.rankedEligible = solo.rankedEligible && solo.rulesetHash === defaultRulesetHash;
+      socket.emit('time-trial:ranking', { ranked: solo.rankedEligible });
+    }
   });
   socket.on('time-trial:leave', () => { soloGeneration++; timeTrials.delete(socket.id); });
   socket.on('multiplayer:chat', (text) => {

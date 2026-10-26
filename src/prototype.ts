@@ -1061,6 +1061,17 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     session.applySnapshot(snapshot, localPlayerId);
   });
 
+  function showTimeTrialRanking(ranked: boolean): void {
+    if (ranked) {
+      const physicsTime = tuningPanel.parameters.physics.physicsTime;
+      raceRoomStatusElement.textContent = physicsTime === 1 ? 'Ranked · server-timed'
+        : `Ranked · Physics Time ${physicsTime.toFixed(1)}× · server-timed`;
+    } else {
+      raceRoomStatusElement.textContent = timeTrialTrack.visibility === 'personal'
+        ? 'Personal track · unranked' : 'Custom handling or local track · unranked';
+    }
+  }
+
   socket.on('time-trial:ready', ({ requestId, track, handling, ranked }) => {
     if (requestId !== pendingSoloRequest || currentMode !== 'time-trial-setup') return;
     pendingSoloRequest = 0;
@@ -1072,9 +1083,13 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     timeTrialSetup.hide();
     setMode('race');
     raceRoomNameElement.textContent = 'Time Trial';
-    raceRoomStatusElement.textContent = ranked ? 'Ranked with default handling · server-timed'
-      : track.visibility === 'personal' ? 'Personal track · unranked' : 'Local track · unranked';
+    showTimeTrialRanking(ranked);
     ensureSession(null);
+  });
+
+  socket.on('time-trial:ranking', ({ ranked }) => {
+    if (!soloRaceActive) return;
+    showTimeTrialRanking(ranked);
   });
 
   socket.on('time-trial:error', ({ requestId, message }) => {
@@ -1177,7 +1192,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
         if (handling !== lastSoloHandling) {
           lastSoloHandling = handling;
           socket.emit('time-trial:handling', copyTuningParameters(tuningPanel.parameters));
-          raceRoomStatusElement.textContent = 'Custom handling · unranked';
         }
       }
       for (const input of session.drainInputs()) {

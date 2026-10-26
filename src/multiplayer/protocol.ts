@@ -207,6 +207,7 @@ export interface ServerToClientEvents {
   'race:transition': (payload: RaceTransition) => void;
   'race:death-ack': (payload: RaceDeathAcknowledgement) => void;
   'time-trial:ready': (payload: TimeTrialReady) => void;
+  'time-trial:ranking': (payload: { ranked: boolean }) => void;
   'time-trial:snapshot': (payload: RaceSnapshot) => void;
   'time-trial:error': (payload: { requestId: number; message: string }) => void;
   'multiplayer:error': (payload: { message: string }) => void;

@@ -48,6 +48,7 @@ test('shared maps, host settings, and server-owned car states reach a guest', as
     await expect(guest.locator('#lobby-track-select')).toBeDisabled();
     await page.getByRole('button', { name: 'Edit handling' }).click();
     await expect(page.locator('#lobby-handling-acceleration')).toBeEnabled();
+    await expect(page.locator('#lobby-handling-physicsTime')).toHaveCount(0);
     await expect(guest.locator('#lobby-shared-settings')).toBeHidden();
     await page.locator('#lobby-handling-acceleration').evaluate((element: HTMLInputElement) => {
       element.value = '1';

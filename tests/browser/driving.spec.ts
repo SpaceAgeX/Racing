@@ -219,10 +219,11 @@ test('optional tuning changes driving, disqualifies the session, and resets for 
   await expect(page.locator('#tuning-panel')).toBeVisible();
   await expect(page.locator('#tuning-panel input[type="range"]')).toHaveCount(22);
   await expect(page.locator('#tuning-panel').getByLabel('Physics Time', { exact: true })).toHaveValue('1');
+  await setSlider(page, 'Physics Time', 0.5);
+  await expect(page.locator('#race-room-status')).toContainText('Ranked · Physics Time 0.5×');
   await setSlider(page, 'Top speed limit', 5);
   await setSlider(page, 'Acceleration', 20);
   await setSlider(page, 'Respawn delay', 2);
-  await setSlider(page, 'Physics Time', 0.5);
   const tuned = await tuningSnapshot(page);
   expect(tuned.driving.maxSpeed).toBe(5);
   expect(tuned.driving.acceleration).toBe(20);
