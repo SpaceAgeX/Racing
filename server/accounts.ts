@@ -17,7 +17,12 @@ export function trackLayoutHash(layout: SplineTrack): string {
   return createHash('sha256').update(JSON.stringify(layout)).digest('hex');
 }
 export function handlingHash(handling: Readonly<HandlingParameters>): string {
-  return createHash('sha256').update(JSON.stringify(handling)).digest('hex');
+  // Physics Time did not exist in the original ruleset. Preserve the original
+  // hash at 1x so previously ranked laps remain visible on leaderboards.
+  const { physicsTime, ...physics } = handling.physics;
+  const canonical = physicsTime === 1 || physicsTime === undefined
+    ? { driving: handling.driving, physics } : handling;
+  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
 export interface AccountIdentity { id: string; email: string | null }

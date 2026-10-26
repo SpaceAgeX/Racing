@@ -217,14 +217,17 @@ test('optional tuning changes driving, disqualifies the session, and resets for 
   await expect(page.locator('#race-speed-value')).toBeVisible();
   await page.getByRole('button', { name: 'Tuning', exact: true }).click();
   await expect(page.locator('#tuning-panel')).toBeVisible();
-  await expect(page.locator('#tuning-panel input[type="range"]')).toHaveCount(21);
+  await expect(page.locator('#tuning-panel input[type="range"]')).toHaveCount(22);
+  await expect(page.locator('#tuning-panel').getByLabel('Physics Time', { exact: true })).toHaveValue('1');
   await setSlider(page, 'Top speed limit', 5);
   await setSlider(page, 'Acceleration', 20);
   await setSlider(page, 'Respawn delay', 2);
+  await setSlider(page, 'Physics Time', 0.5);
   const tuned = await tuningSnapshot(page);
   expect(tuned.driving.maxSpeed).toBe(5);
   expect(tuned.driving.acceleration).toBe(20);
   expect(tuned.physics.respawnDelay).toBe(2);
+  expect(tuned.physics.physicsTime).toBe(0.5);
   await expect(page.locator('#race-room-status')).toContainText('unranked');
 
   // Driving still works while a slider has focus.
@@ -256,6 +259,7 @@ test('optional tuning changes driving, disqualifies the session, and resets for 
   expect(reset.driving.maxSteeringAngle).toBe(0.55);
   expect(reset.driving.highSpeedSteeringAngle).toBe(0.07);
   expect(reset.physics.respawnDelay).toBe(1);
+  expect(reset.physics.physicsTime).toBe(1);
   await expect(page.locator('#race-room-status')).toContainText('unranked');
   await page.reload();
   await enterRace(page);

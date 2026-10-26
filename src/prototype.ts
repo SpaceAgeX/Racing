@@ -316,7 +316,8 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       } else {
         const anchor = newer && renderTime > newer.serverTimeMs ? newer : older;
         copyVehicleState(anchor.state, remote.state);
-        const extrapolation = Math.max(0, Math.min(maxRemoteExtrapolation, renderTime - anchor.serverTimeMs)) / 1000;
+        const extrapolation = Math.max(0, Math.min(maxRemoteExtrapolation, renderTime - anchor.serverTimeMs))
+          / 1000 * tuning.physics.physicsTime;
         if (extrapolation > 0) {
           const heading = anchor.state.heading;
           remote.state.position.x += (-Math.sin(heading) * anchor.state.speed + Math.cos(heading) * anchor.state.lateralSpeed) * extrapolation;
@@ -348,7 +349,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     while (pendingInputs.length && pendingInputs[0]!.sequence <= player.acknowledgedInput) pendingInputs.shift();
     for (const input of pendingInputs) {
       if (input.lifeId !== player.lifeId) continue;
-      stepSplineVehicle(state, input.controls, RACE_TIMESTEP, collisionWorld, spawn,
+      stepSplineVehicle(state, input.controls, RACE_TIMESTEP * tuning.physics.physicsTime, collisionWorld, spawn,
         tuning.physics, tuning.driving, false);
     }
     Object.assign(lapTimer, player.lapTimer, { checkpointsVisited: [...player.lapTimer.checkpointsVisited] });
@@ -432,15 +433,16 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     lastFrameElapsedMs = elapsed * 1000;
     const alpha = clock.advance(elapsed, (timestep) => {
       const physicsStartedAt = performance.now();
+      const simulatedTimestep = timestep * tuning.physics.physicsTime;
       copyVehicleState(state, previous);
       const effectiveControls = deathPending ? neutralControls : controls;
-      if (stepSplineVehicle(state, effectiveControls, timestep, collisionWorld, spawn,
+      if (stepSplineVehicle(state, effectiveControls, simulatedTimestep, collisionWorld, spawn,
         tuning.physics, tuning.driving, !multiplayer)) {
         if (!multiplayer) resetCurrentLap(lapTimer);
         copyVehicleState(state, previous);
         respawned = true;
       } else if (!multiplayer) {
-        stepLapTimer(lapTimer, previous.position, state.position, timestep, finishLine, road.checkpoints);
+        stepLapTimer(lapTimer, previous.position, state.position, simulatedTimestep, finishLine, road.checkpoints);
       }
       if (multiplayer) {
         if (!deathPending && !state.grounded && state.airborneTime >= tuning.physics.respawnDelay) {
@@ -479,6 +481,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     view.renderer.render(view.scene, view.camera);
     const displayedElapsed = deathPending ? 0 : multiplayer && lapTimer.running
       ? lapTimer.elapsed + Math.min(0.1, (performance.now() - lastAuthoritativeTimerAt) / 1000)
+        * tuning.physics.physicsTime
       : lapTimer.elapsed;
     lapDisplay.update({ ...lapTimer, elapsed: displayedElapsed }, deathPending);
     updateMinimap();

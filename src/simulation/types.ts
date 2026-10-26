@@ -30,6 +30,8 @@ export interface VehicleSpawn {
 }
 
 export interface PhysicsParameters {
+  /** Simulated seconds per real second; 1 is normal speed. */
+  physicsTime: number;
   gravity: number;
   respawnDelay: number;
   groundSnapDistance: number;

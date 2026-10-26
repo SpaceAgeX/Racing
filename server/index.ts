@@ -147,7 +147,7 @@ const drivingBounds: Record<keyof DrivingParameters, readonly [number, number]> 
   steeringLimitSpeed: [1, 80], steeringSpeed: [0.1, 8], steeringReturnSpeed: [0.1, 10],
 };
 const physicsBounds: Record<keyof PhysicsParameters, readonly [number, number]> = {
-  gravity: [0, 30], respawnDelay: [0.2, 5], groundSnapDistance: [0.01, 1],
+  physicsTime: [0.1, 3], gravity: [0, 30], respawnDelay: [0.2, 5], groundSnapDistance: [0.01, 1],
   collisionRestitution: [0, 0.8], spinDamping: [0.1, 8], crashGrip: [0.1, 12], crashRecoveryTime: [0.1, 4],
 };
 
@@ -161,6 +161,8 @@ function normalizeNumericSettings<T extends object>(
   const result = { ...defaults } as T;
   for (const key of Object.keys(defaults) as (keyof T)[]) {
     const number = candidate[String(key)];
+    // Browser tabs opened before this release do not send Physics Time.
+    if (key === 'physicsTime' && number === undefined) continue;
     const [minimum, maximum] = bounds[key];
     if (typeof number !== 'number' || !Number.isFinite(number) || number < minimum || number > maximum) return null;
     result[key] = number as T[keyof T];

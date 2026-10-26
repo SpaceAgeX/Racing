@@ -90,6 +90,7 @@ export function createRaceSimulation(
     step(now: number): RaceStepResult {
       tick++;
       const result: RaceStepResult = { laps: [], activity: [], transitions: [] };
+      const simulatedTimestep = RACE_TIMESTEP * currentHandling.physics.physicsTime;
       for (const player of players.values()) {
         const previousPosition = { ...player.state.position };
         const previousLaps = player.lapTimer.completedLaps;
@@ -101,7 +102,7 @@ export function createRaceSimulation(
         }
         const controls = now - player.lastInputAt > 250 ? neutralControls : player.controls;
         const spawn = road.spawns[player.spawnIndex] ?? road.spawns[0]!;
-        const respawned = stepSplineVehicle(player.state, controls, RACE_TIMESTEP, world, spawn, currentHandling.physics, currentHandling.driving);
+        const respawned = stepSplineVehicle(player.state, controls, simulatedTimestep, world, spawn, currentHandling.physics, currentHandling.driving);
         if (respawned) {
           resetCurrentLap(player.lapTimer);
           player.lifeId++;
@@ -112,7 +113,7 @@ export function createRaceSimulation(
           player.lastInputAt = 0;
         } else {
           stepLapTimer(player.lapTimer, previousPosition, player.state.position,
-            RACE_TIMESTEP, road.finish, road.checkpoints);
+            simulatedTimestep, road.finish, road.checkpoints);
         }
         const distance = respawned ? 0 : Math.hypot(
           player.state.position.x - previousPosition.x,

@@ -6,8 +6,31 @@ import { drivingParameters, physicsParameters } from '../src/simulation/paramete
 import { createRaceSimulation, RACE_TIMESTEP, validRaceInput } from '../src/simulation/race.ts';
 import { createRoadWorld } from '../src/simulation/road-world.ts';
 import { stepSplineVehicle } from '../src/simulation/spline-vehicle.ts';
+import { handlingHash } from '../server/accounts.ts';
+import { createHash } from 'node:crypto';
 
 const handling = { driving: drivingParameters, physics: physicsParameters };
+
+test('Physics Time scales authoritative driving and lap time without changing old default leaderboard hashes', () => {
+  const road = { ...buildRoadGeometry(splinePresets[1]!.create()), finish: null };
+  const speeds: number[] = [];
+  for (const physicsTime of [0.5, 1, 3]) {
+    const race = createRaceSimulation(road, { driving: drivingParameters, physics: { ...physicsParameters, physicsTime } });
+    const player = race.addPlayer('driver', 0);
+    player.lapTimer.running = true;
+    race.input('driver', { sequence: 1, lifeId: 0,
+      controls: { throttle: 1, steering: 0, brake: false } }, 1000);
+    for (let i = 0; i < 12; i++) race.step(1000 + i * RACE_TIMESTEP * 1000);
+    assert.ok(Math.abs(player.lapTimer.elapsed - 12 * RACE_TIMESTEP * physicsTime) < 1e-9);
+    speeds.push(player.state.speed);
+  }
+  assert.ok(speeds[0]! < speeds[1]! && speeds[1]! < speeds[2]!);
+
+  const { physicsTime: _physicsTime, ...oldPhysics } = physicsParameters;
+  const previousDefaultHash = createHash('sha256').update(JSON.stringify({ driving: drivingParameters, physics: oldPhysics })).digest('hex');
+  assert.equal(handlingHash(handling), previousDefaultHash);
+  assert.notEqual(handlingHash({ driving: drivingParameters, physics: { ...physicsParameters, physicsTime: 0.5 } }), previousDefaultHash);
+});
 
 test('server accepts only numbered controls and owns the resulting vehicle state', () => {
   const race = createRaceSimulation(buildRoadGeometry(splinePresets[1]!.create()), handling);

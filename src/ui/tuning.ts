@@ -50,6 +50,7 @@ const sections = [
     driving('quadraticDrag', 'Quadratic drag', 0, 0.03, 0.0005, '1/m'),
   ] },
   { title: 'Falling & ground contact', sliders: [
+    physics('physicsTime', 'Physics Time', 0.1, 3, 0.1, 'x'),
     physics('gravity', 'Gravity', 0, 30, 0.01, 'm/s²'),
     physics('respawnDelay', 'Respawn delay', 0.2, 5, 0.1, 's'),
     physics('groundSnapDistance', 'Ground snap distance', 0.01, 1, 0.01, 'm'),

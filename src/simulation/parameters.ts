@@ -23,6 +23,7 @@ export const drivingParameters: Readonly<DrivingParameters> = Object.freeze({
 
 /** Ground contact, falling, and collision recovery; meters, seconds, and radians. */
 export const physicsParameters: Readonly<PhysicsParameters> = Object.freeze({
+  physicsTime: 1,            // simulated seconds per real second
   gravity: 9.81,              // m/s² downward
   respawnDelay: 1,            // seconds continuously airborne
   groundSnapDistance: 0.25,   // m for following nearby ground heights
