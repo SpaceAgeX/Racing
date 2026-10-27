@@ -7,14 +7,16 @@ import { createVehicleState } from '../simulation/vehicle.ts';
 import { carColorNames } from '../ui/car-colors.ts';
 
 const lastColorKey = 'auth-scene-last-car-color';
+const authColorNames = new Set(['Sky blue', 'Orange', 'Red', 'Pearl']);
 
 function chooseCarColor(): number {
-  const colors = [...carColorNames.keys()];
+  const colors = [...carColorNames].filter(([, name]) => authColorNames.has(name)).map(([color]) => color);
   let previous: string | null = null;
   try { previous = sessionStorage.getItem(lastColorKey); } catch { /* Storage may be unavailable. */ }
   const choices = colors.filter((color) => color !== previous);
   const selected = choices[Math.floor(Math.random() * choices.length)]!;
   try { sessionStorage.setItem(lastColorKey, selected); } catch { /* The color still works without storage. */ }
+  document.documentElement.style.setProperty('--auth-accent', selected);
   return Number.parseInt(selected.slice(1), 16);
 }
 
@@ -41,13 +43,13 @@ export function createAuthCarScene(canvas: HTMLCanvasElement) {
 
   scene.add(new AmbientLight(0xdcebf2, 0.28));
   const key = new DirectionalLight(0xfff1e9, 5);
-  key.position.set(-3, 8, -2);
+  key.position.set(-6, 6, -2);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = -6;
-  key.shadow.camera.right = 6;
-  key.shadow.camera.top = 6;
-  key.shadow.camera.bottom = -6;
+  key.shadow.camera.left = -8;
+  key.shadow.camera.right = 8;
+  key.shadow.camera.top = 8;
+  key.shadow.camera.bottom = -8;
   key.shadow.camera.near = 0.5;
   key.shadow.camera.far = 25;
   key.shadow.normalBias = 0.025;
