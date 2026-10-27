@@ -429,7 +429,7 @@ body.tuning-collapsed { --panel-width: 0px; }
   height: 100%;
 }
 
-.race-left-hud { position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 10px; width: min(320px, calc(100% - 32px)); max-height: calc(100% - 212px); pointer-events: none; }
+.race-left-hud { position: absolute; z-index: 2; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 10px; width: min(320px, calc(100% - 32px)); max-height: calc(100% - 212px); pointer-events: none; }
 .lap-display {
   position: relative;
   flex: none;
@@ -442,6 +442,7 @@ body.tuning-collapsed { --panel-width: 0px; }
   pointer-events: none;
 }
 .race-leaderboard { min-height: 0; overflow: auto; padding: 10px 12px; border: 1px solid #ffffff26; border-radius: 8px; background: #23313acc; font-variant-numeric: tabular-nums; pointer-events: auto; }
+.multiplayer-race .lap-display { box-sizing: border-box; width: 100%; }
 .race-leaderboard h2 { margin: 0 0 8px; font-size: 13px; }
 .race-leaderboard table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: right; }
 .race-leaderboard th, .race-leaderboard td { padding: 5px 3px; border-bottom: 1px solid #ffffff19; white-space: nowrap; }

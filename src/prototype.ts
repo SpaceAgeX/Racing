@@ -700,6 +700,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const lapBest = document.querySelector<HTMLOutputElement>('#lap-best')!;
   const lapLast = document.querySelector<HTMLOutputElement>('#lap-last')!;
   const lapDelta = document.querySelector<HTMLOutputElement>('#lap-delta')!;
+  const lapBestRow = lapBest.closest<HTMLElement>('.lap-row')!;
   const lapBestLabel = document.querySelector<HTMLElement>('#lap-best')!.previousElementSibling as HTMLElement;
   const lapLastLabel = document.querySelector<HTMLElement>('#lap-last')!.previousElementSibling as HTMLElement;
   const lapLabel = document.querySelector<HTMLElement>('#lap-display .lap-label')!;
@@ -741,7 +742,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let activeRoom: LobbySnapshot | null = null;
   let lobbyPanelOpen = false;
   let raceSetupOpen = false;
-  let freeDriveClockStart: number | null = null;
   let lastRoundReceivedAt = 0;
   let displayedRaceTime = 0;
   let displayedRaceRoundId = '';
@@ -810,7 +810,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     disposeSession();
     lobbyPanelOpen = false;
     raceSetupOpen = false;
-    freeDriveClockStart = null;
     lobbyScreen?.setRoom(null, localPlayerId);
     setMode('home');
     timeTrialSetup?.hide();
@@ -827,9 +826,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   function enterRaceScreen(room: LobbySnapshot): void {
     const enteringFromMenu = currentMode !== 'race';
-    if (room.phase === 'lobby' && (freeDriveClockStart === null || activeRoom?.phase !== 'lobby')) {
-      freeDriveClockStart = performance.now();
-    }
     if (room.round) lastRoundReceivedAt = performance.now();
     if (room.phase === 'loading') roundUi.hideResults();
     if (activeRoom?.id === room.id && (activeRoom.phase === 'lobby') !== (room.phase === 'lobby')) disposeSession();
@@ -858,7 +854,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   function enterLobbyScreen(room: LobbySnapshot): void {
     activeRoom = room;
     lobbyPanelOpen = false;
-    freeDriveClockStart = null;
     setMode('lobby');
     lobbyScreen.setOnTrack(false);
     lobbyScreen.setRoom(room, localPlayerId);
@@ -1286,6 +1281,8 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       const spectate = frozen && localRoundPlayer?.status === 'eliminated'
         ? round?.players.find(player => player.id !== localPlayerId && player.status === 'racing')?.id ?? null : null;
       session.step(elapsed, input.sample(), frozen, spectate);
+      const qualifying = round?.stage === 'qualifying';
+      lapBestRow.hidden = qualifying;
       if (activeRoom?.round?.stage === 'race') {
         const currentRound = activeRoom.round;
         if (displayedRaceRoundId !== currentRound.id) {
@@ -1304,16 +1301,16 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
         lapStatus.textContent = localRoundPlayer?.status === 'finished' ? 'Finished · keep driving'
           : localRoundPlayer?.status === 'eliminated' ? 'Eliminated'
             : `Lap ${Math.min(currentRound.options.laps, (localRoundPlayer?.laps ?? 0) + 1)} of ${currentRound.options.laps}`;
-      } else if (activeRoom?.phase === 'lobby' && freeDriveClockStart !== null) {
-        lapLabel.textContent = 'Free drive time';
+      } else if (activeRoom?.phase === 'lobby') {
+        lapLabel.textContent = 'Current lap';
         lapBestLabel.textContent = 'Best lap';
         lapLastLabel.textContent = 'Last lap';
-        lapCurrent.value = formatLapTime((time - freeDriveClockStart) / 1000);
-        if (!session.lapTimer.running) lapStatus.textContent = 'Free drive · cross the line to start a lap';
+        if (!session.lapTimer.running) lapStatus.textContent = 'Cross the line to start a lap';
       } else {
-        lapLabel.textContent = 'Current';
+        lapLabel.textContent = qualifying ? 'Qualifying lap' : 'Current';
         lapBestLabel.textContent = 'Best';
         lapLastLabel.textContent = 'Last';
+        if (qualifying) lapDelta.hidden = true;
       }
       roundUi.update();
       tuningPanel.update(session.state);
