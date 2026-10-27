@@ -20,18 +20,19 @@ export function createMultiplayerRoundUi(viewport: HTMLElement) {
   overlay.setAttribute('aria-modal', 'true');
   overlay.setAttribute('aria-label', 'Race results');
   overlay.innerHTML = `<div class="round-results-card">
-    <header><div><span class="menu-eyebrow">RACE COMPLETE</span><h2>Final results</h2>
-      <p id="round-results-subtitle"></p></div><button id="round-results-close" type="button" aria-label="Close results">&times;</button></header>
+    <header><h2>Race results</h2><button id="round-results-close" type="button" aria-label="Close results">&times;</button></header>
     <div class="round-results-content"><table><thead><tr><th>Place</th><th>Driver</th><th>Time</th><th>Laps</th><th>Falls</th></tr></thead>
-      <tbody id="round-results-rows"></tbody></table>
-      <h3>Distance over time</h3><div id="round-results-chart" class="round-results-chart"></div>
-      <h3>Driver details</h3><div id="round-results-details"></div></div>
-    <footer><button id="round-results-done" type="button">Return to lobby</button></footer>
+      <tbody id="round-results-rows"></tbody></table></div>
   </div>`;
   document.body.append(overlay);
-  const close = () => { overlay.hidden = true; };
+  let previousFocus: HTMLElement | null = null;
+  const close = () => {
+    overlay.hidden = true;
+    previousFocus?.focus({ preventScroll: true });
+    previousFocus = null;
+  };
   overlay.querySelector('#round-results-close')!.addEventListener('click', close);
-  overlay.querySelector('#round-results-done')!.addEventListener('click', close);
+  overlay.addEventListener('keydown', event => { if (event.key === 'Escape') close(); });
   let round: RoundSnapshot | null = null;
   let localPlayerId = '';
   let localCountdownEnd: number | null = null;
@@ -89,65 +90,55 @@ export function createMultiplayerRoundUi(viewport: HTMLElement) {
   function showResults(results: RoundResults): void {
     round = null;
     banner.hidden = true;
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     overlay.hidden = false;
-    overlay.querySelector('#round-results-subtitle')!.textContent =
-      `${results.trackName} · ${results.options.laps} laps · ${results.options.fallMode}
-        · ${results.options.qualifying ? 'qualifying' : 'no qualifying'}`;
+    overlay.querySelector<HTMLButtonElement>('#round-results-close')!.focus({ preventScroll: true });
     const rows = overlay.querySelector<HTMLElement>('#round-results-rows')!;
     rows.replaceChildren();
-    for (const player of results.players) {
+    for (const [index, player] of results.players.entries()) {
       const row = document.createElement('tr');
-      if (player.id === localPlayerId) row.className = 'round-results-you';
-      for (const text of [String(player.place), player.name, resultTime(player.finishSeconds),
+      row.className = `round-results-player${player.id === localPlayerId ? ' round-results-you' : ''}`;
+      for (const text of [String(player.place), resultTime(player.finishSeconds),
         String(player.laps), String(player.falls)]) {
         const cell = document.createElement('td');
         cell.textContent = text;
         row.append(cell);
       }
-      row.children[1]?.setAttribute('style', `--player-color: ${player.color}`);
-      rows.append(row);
-    }
-    const chart = overlay.querySelector<HTMLElement>('#round-results-chart')!;
-    chart.replaceChildren();
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 720 230');
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', 'Each driver’s distance traveled over race time');
-    const maxTime = Math.max(1, results.durationSeconds);
-    const maxDistance = Math.max(1, ...results.players.map(player => player.distanceMeters));
-    for (const player of results.players) {
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      const samples = [{ seconds: 0, distanceMeters: 0 }, ...player.samples];
-      line.setAttribute('points', samples.map(sample => `${35 + sample.seconds / maxTime * 665},${205 - sample.distanceMeters / maxDistance * 180}`).join(' '));
-      line.setAttribute('fill', 'none');
-      line.setAttribute('stroke', player.color);
-      line.setAttribute('stroke-width', player.id === localPlayerId ? '4' : '2.5');
-      line.setAttribute('stroke-linejoin', 'round');
-      svg.append(line);
-    }
-    chart.append(svg);
-    const legend = document.createElement('div');
-    legend.className = 'round-chart-legend';
-    for (const player of results.players) {
-      const item = document.createElement('span');
-      item.style.setProperty('--player-color', player.color);
-      item.textContent = player.name;
-      legend.append(item);
-    }
-    chart.append(legend);
-    const details = overlay.querySelector<HTMLElement>('#round-results-details')!;
-    details.replaceChildren();
-    for (const player of results.players) {
-      const section = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = `${player.place}. ${player.name} · ${player.status === 'finished' ? resultTime(player.finishSeconds) : player.status}`;
-      const body = document.createElement('p');
-      body.textContent = `Distance ${Math.round(player.distanceMeters)} m · Falls ${player.falls}
-        · Qualifying ${player.qualifyingSeconds !== null ? formatLapTime(player.qualifyingSeconds)
-          : player.qualifyingSurvivalSeconds !== null ? `fell after ${formatLapTime(player.qualifyingSurvivalSeconds)}` : 'off'}
-        · Laps ${player.lapTimes.length ? player.lapTimes.map((time, index) => `#${index + 1} ${formatLapTime(time)}`).join(', ') : 'none'}`;
-      section.append(summary, body);
-      details.append(section);
+      const nameCell = document.createElement('td');
+      nameCell.style.setProperty('--player-color', player.color);
+      const nameButton = document.createElement('button');
+      nameButton.type = 'button';
+      nameButton.className = 'round-results-player-name';
+      nameButton.textContent = player.name;
+      nameButton.setAttribute('aria-label', `Show ${player.name}'s lap splits`);
+      nameButton.setAttribute('aria-expanded', 'false');
+      nameCell.append(nameButton);
+      row.insertBefore(nameCell, row.children[1]!);
+
+      const splitsRow = document.createElement('tr');
+      splitsRow.className = 'round-results-splits';
+      splitsRow.id = `round-results-splits-${index}`;
+      nameButton.setAttribute('aria-controls', splitsRow.id);
+      const splitsCell = document.createElement('td');
+      splitsCell.colSpan = 5;
+      const splits = document.createElement('div');
+      splits.className = 'round-results-split-list';
+      if (player.lapTimes.length) {
+        player.lapTimes.forEach((seconds, index) => {
+          const split = document.createElement('span');
+          split.textContent = `Lap ${index + 1}: ${formatLapTime(seconds)}`;
+          splits.append(split);
+        });
+      } else {
+        splits.textContent = 'No completed laps';
+      }
+      splitsCell.append(splits);
+      splitsRow.append(splitsCell);
+      nameButton.addEventListener('click', () => {
+        const expanded = row.classList.toggle('is-expanded');
+        nameButton.setAttribute('aria-expanded', String(expanded));
+      });
+      rows.append(row, splitsRow);
     }
   }
 
