@@ -1,9 +1,22 @@
 import {
-  AmbientLight, CircleGeometry, Color, DirectionalLight, Mesh, MeshBasicMaterial,
-  MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, WebGLRenderer,
+  AmbientLight, Color, DirectionalLight, Fog, Mesh, PerspectiveCamera,
+  PlaneGeometry, Scene, ShadowMaterial, WebGLRenderer,
 } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
+import { carColorNames } from '../ui/car-colors.ts';
+
+const lastColorKey = 'auth-scene-last-car-color';
+
+function chooseCarColor(): number {
+  const colors = [...carColorNames.keys()];
+  let previous: string | null = null;
+  try { previous = sessionStorage.getItem(lastColorKey); } catch { /* Storage may be unavailable. */ }
+  const choices = colors.filter((color) => color !== previous);
+  const selected = choices[Math.floor(Math.random() * choices.length)]!;
+  try { sessionStorage.setItem(lastColorKey, selected); } catch { /* The color still works without storage. */ }
+  return Number.parseInt(selected.slice(1), 16);
+}
 
 /** A lightweight, reusable studio view of the same car used in races. */
 export function createAuthCarScene(canvas: HTMLCanvasElement) {
@@ -15,34 +28,35 @@ export function createAuthCarScene(canvas: HTMLCanvasElement) {
     return { dispose() {} };
   }
 
+  renderer.shadowMap.enabled = true;
   const scene = new Scene();
-  scene.background = new Color(0x10212a);
+  scene.background = new Color(0x111417);
+  scene.fog = new Fog(0x111417, 16, 42);
   const camera = new PerspectiveCamera(38, 1, 0.1, 60);
-  const floor = new Mesh(new PlaneGeometry(80, 80), new MeshStandardMaterial({ color: 0x0b1921, roughness: 1 }));
+  const floor = new Mesh(new PlaneGeometry(100, 100), new ShadowMaterial({ color: 0x000000, opacity: 0.8 }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.08;
+  floor.receiveShadow = true;
   scene.add(floor);
-  const platform = new Mesh(new CircleGeometry(3.1, 64), new MeshStandardMaterial({ color: 0x1b313a, roughness: 0.92 }));
-  platform.rotation.x = -Math.PI / 2;
-  platform.position.y = -0.065;
-  scene.add(platform);
-  const shadow = new Mesh(new CircleGeometry(2.25, 48), new MeshBasicMaterial({ color: 0x071014, transparent: true, opacity: 0.42, depthWrite: false }));
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = -0.055;
-  scene.add(shadow);
 
-  scene.add(new AmbientLight(0xdcebf2, 2.2));
-  const key = new DirectionalLight(0xfff1df, 3);
-  key.position.set(-4, 8, -5);
+  scene.add(new AmbientLight(0xdcebf2, 0.28));
+  const key = new DirectionalLight(0xfff1e9, 5);
+  key.position.set(-3, 8, -2);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -6;
+  key.shadow.camera.right = 6;
+  key.shadow.camera.top = 6;
+  key.shadow.camera.bottom = -6;
+  key.shadow.camera.near = 0.5;
+  key.shadow.camera.far = 25;
+  key.shadow.normalBias = 0.025;
+  key.shadow.radius = 2;
+  key.target.position.set(0, 0.4, 0);
+  scene.add(key.target);
   scene.add(key);
-  const fill = new DirectionalLight(0x83b7d3, 1.25);
-  fill.position.set(6, 4, 4);
-  scene.add(fill);
-  const accent = new DirectionalLight(0xf4773e, 1.5);
-  accent.position.set(2, 3, 6);
-  scene.add(accent);
 
-  const car = createCarVisual(0xf4773e);
+  const car = createCarVisual(chooseCarColor());
   car.update(createVehicleState());
   scene.add(car.object);
 
@@ -107,11 +121,8 @@ export function createAuthCarScene(canvas: HTMLCanvasElement) {
       motion.removeEventListener('change', schedule);
       car.dispose();
       floor.geometry.dispose();
-      (floor.material as MeshStandardMaterial).dispose();
-      platform.geometry.dispose();
-      (platform.material as MeshStandardMaterial).dispose();
-      shadow.geometry.dispose();
-      (shadow.material as MeshBasicMaterial).dispose();
+      (floor.material as ShadowMaterial).dispose();
+      key.shadow.dispose();
       renderer.dispose();
     },
   };
