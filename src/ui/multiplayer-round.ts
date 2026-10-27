@@ -40,6 +40,7 @@ export function createMultiplayerRoundUi(viewport: HTMLElement) {
   function setRound(next: RoundSnapshot | null, playerId: string): void {
     round = next;
     localPlayerId = playerId;
+    banner.classList.toggle('round-banner-racing', next?.stage === 'race');
     if (!next) { banner.hidden = true; return; }
     banner.hidden = false;
     const key = `${next.id}:${next.countdownEndsAtMs}`;
@@ -70,7 +71,7 @@ export function createMultiplayerRoundUi(viewport: HTMLElement) {
           : 'Complete one lap to set your grid position';
     } else {
       title = local?.status === 'eliminated' ? 'Eliminated' : local?.status === 'finished'
-        ? 'Finished' : `Race · ${round.options.laps} laps`;
+        ? 'Finished' : `Race ${round.options.laps} Laps`;
       subtitle = local?.status === 'racing'
         ? `Lap ${Math.min(round.options.laps, (local.laps ?? 0) + 1)} of ${round.options.laps}`
         : local?.status === 'finished' ? 'Waiting for the other drivers'

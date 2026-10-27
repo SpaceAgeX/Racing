@@ -11,6 +11,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   onUpdateSettings(payload: UpdateLobbySettingsPayload): void;
   onColor(color: string): void;
   onConfigureRound(options: RoundOptions): void;
+  onEnterTrack(): void;
   onClosePanel(): void;
   onSetupVisibility(open: boolean): void;
 }) {
@@ -48,6 +49,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         </section>
         <footer class="lobby-setup-footer">
           <div id="lobby-status" class="lobby-status" role="status"></div>
+          <button id="lobby-enter-track" class="trial-start-button" type="button">Enter track</button>
           <button id="lobby-start" class="trial-start-button" type="button">Set up race <span class="lobby-space-hint">(hold Space)</span></button>
         </footer>
       </div>
@@ -72,6 +74,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const trackSelect = root.querySelector<HTMLSelectElement>('#lobby-track-select')!;
   const playerList = root.querySelector<HTMLElement>('#lobby-player-list')!;
   const startButton = root.querySelector<HTMLButtonElement>('#lobby-start')!;
+  const enterTrackButton = root.querySelector<HTMLButtonElement>('#lobby-enter-track')!;
   const preview = root.querySelector<HTMLCanvasElement>('#lobby-preview')!;
   const colors = root.querySelector<HTMLElement>('#lobby-colors')!;
   const settingsSection = root.querySelector<HTMLElement>('#lobby-shared-settings')!;
@@ -88,6 +91,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   let trackOptions: TrackOption[] = [];
   let currentRoom: LobbySnapshot | null = null;
   let localPlayerId = '';
+  let onTrack = false;
   let minimap: ReturnType<typeof createMinimap> | null = null;
   let previewKey = '';
   const raceSetup = root.querySelector<HTMLElement>('#lobby-race-setup')!;
@@ -112,7 +116,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     callbacks.onSetupVisibility(false);
   }
   function openRaceSetup(): void {
-    if (!currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
+    if (!onTrack || !currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
     raceSetup.hidden = false;
     raceSetup.focus();
     callbacks.onSetupVisibility(true);
@@ -128,11 +132,11 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   }
   function onSpaceDown(event: KeyboardEvent): void {
     if (event.code === 'Escape' && !raceSetup.hidden) { closeRaceSetup(); return; }
-    if (event.code === 'Escape' && !root.hidden) { callbacks.onClosePanel(); return; }
+    if (event.code === 'Escape' && onTrack && !root.hidden) { callbacks.onClosePanel(); return; }
     const target = event.target instanceof HTMLElement ? event.target : null;
     const editing = target && (target.isContentEditable || target.tagName === 'TEXTAREA'
       || target.tagName === 'SELECT' || target.tagName === 'BUTTON' || target.tagName === 'INPUT');
-    if (event.code !== 'Space' || spaceDown || !currentRoom
+    if (event.code !== 'Space' || !onTrack || !root.hidden || spaceDown || !currentRoom
       || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby'
       || editing || document.querySelector('.round-results-overlay:not([hidden])')) return;
     event.preventDefault();
@@ -155,6 +159,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   window.addEventListener('keyup', onSpaceUp);
   window.addEventListener('blur', cancelHold);
   startButton.addEventListener('click', openRaceSetup);
+  enterTrackButton.addEventListener('click', callbacks.onEnterTrack);
   raceSetup.querySelector('#lobby-race-setup-close')!.addEventListener('click', closeRaceSetup);
   raceSetup.querySelector('#lobby-round-confirm')!.addEventListener('click', startRace);
   for (const control of [lapsInput, fallSelect, qualifyingInput]) {
@@ -237,6 +242,12 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   });
 
   return {
+    setOnTrack(value: boolean): void {
+      onTrack = value;
+      enterTrackButton.hidden = value;
+      startButton.hidden = !value || !currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby';
+      root.querySelector<HTMLButtonElement>('#lobby-close-panel')!.hidden = !value;
+    },
     setRoom(room: LobbySnapshot | null, playerId: string): void {
       currentRoom = room;
       localPlayerId = playerId;
@@ -256,8 +267,10 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       }
       roomName.textContent = room.name;
       roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · ${room.ranked ? 'Formal race laps ranked' : 'Formal race laps unranked · custom handling'}`;
-      status.textContent = isHost ? 'Free drive is open. Hold Space on the track to set up a formal race.'
-        : `Free drive is open · host's next race: ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
+      status.textContent = isHost
+        ? onTrack ? 'Free drive is open. Hold Space on the track to set up a formal race.'
+          : 'Choose the track and handling, then enter the track. Hold Space while driving to set up a formal race.'
+        : `${onTrack ? 'Free drive is open' : 'Choose a color, then enter the track'} · host's next race: ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
           · ${room.nextRoundOptions.qualifying ? 'Qualifying on' : 'No qualifying'}`;
       renderPlayers(room);
       renderTrackOptions();
@@ -277,7 +290,8 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       }
       root.querySelector('#lobby-track-permission')!.textContent = isHost
         ? 'Choose the track for everyone.' : 'Only the host can change the track.';
-      startButton.hidden = !isHost || room.phase !== 'lobby';
+      enterTrackButton.hidden = onTrack || room.phase !== 'lobby';
+      startButton.hidden = !onTrack || !isHost || room.phase !== 'lobby';
       handlingEditor.setRoomHandling(room.settings.handling, isHost && room.phase === 'lobby');
     },
     setTrackOptions(options: TrackOption[]): void { trackOptions = options; renderTrackOptions(); },

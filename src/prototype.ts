@@ -103,6 +103,7 @@ interface HomeScreenController {
 
 interface LobbyScreenController {
   setRoom(room: LobbySnapshot | null, localPlayerId: string): void;
+  setOnTrack(onTrack: boolean): void;
   setTrackOptions(trackOptions: TrackOption[]): void;
   setStatus(message: string): void;
   openRaceSetup(): void;
@@ -822,6 +823,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
         : room.phase === 'loading' ? 'Waiting for drivers to load' : 'Race in progress';
     const currentSession = ensureSession(room);
     if (enteringFromMenu && room.phase === 'lobby') canvas.focus({ preventScroll: true });
+    lobbyScreen.setOnTrack(true);
     lobbyScreen.setRoom(room, localPlayerId);
     raceLeaderboard.setRoom(room, localPlayerId);
     roundUi.setRound(room.round, localPlayerId);
@@ -830,6 +832,16 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       lastReadyRoundId = room.round.id;
       socket.emit('multiplayer:ready', { roundId: room.round.id });
     }
+    saveMultiplayerPreferences({ lobbyId: room.id });
+  }
+
+  function enterLobbyScreen(room: LobbySnapshot): void {
+    activeRoom = room;
+    lobbyPanelOpen = false;
+    setMode('lobby');
+    lobbyScreen.setOnTrack(false);
+    lobbyScreen.setRoom(room, localPlayerId);
+    raceLeaderboard.setRoom(room, localPlayerId);
     saveMultiplayerPreferences({ lobbyId: room.id });
   }
 
@@ -906,7 +918,8 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       return;
     }
 
-    enterRaceScreen(room);
+    if (room.phase === 'lobby' && currentMode !== 'race') enterLobbyScreen(room);
+    else enterRaceScreen(room);
   }
 
   function refreshSessionFromRoom(): void {
@@ -1001,6 +1014,9 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   }, timeTrialColor);
 
   lobbyScreen = createLobbyScreen(lobbyRoot, {
+    onEnterTrack() {
+      if (activeRoom) enterRaceScreen(activeRoom);
+    },
     onStartLobby(payload) {
       socket.emit('multiplayer:start-lobby', payload);
       lobbyScreen.setStatus('Starting race...');
@@ -1051,6 +1067,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     // Keep that room and refresh its host controls now that our socket ID is known.
     if (activeRoom) {
       if (currentMode === 'race') enterRaceScreen(activeRoom);
+      else if (currentMode === 'lobby') enterLobbyScreen(activeRoom);
       return;
     }
     if (pendingSoloRequest || soloRaceActive || currentMode === 'time-trial-setup') return;

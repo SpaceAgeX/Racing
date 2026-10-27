@@ -34,6 +34,9 @@ test('shared maps, host settings, and server-owned car states reach a guest', as
 
     await page.getByRole('button', { name: 'Create', exact: true }).click();
     await page.getByRole('button', { name: 'Create lobby', exact: true }).click();
+    await expect(page.locator('#lobby-screen')).toBeVisible();
+    await expect(page.locator('#game')).toBeHidden();
+    await page.locator('#lobby-enter-track').click();
     await expect(page.locator('#race-screen')).toBeVisible();
     await expect(page.locator('#game')).toBeVisible();
     await page.locator('#lobby-panel-toggle').click();
@@ -48,6 +51,8 @@ test('shared maps, host settings, and server-owned car states reach a guest', as
     await expect(page.locator('#lobby-room-meta')).toContainText('Formal race laps ranked');
     await guest.getByRole('button', { name: 'Join', exact: true }).click();
     await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
+    await expect(guest.locator('#lobby-screen')).toBeVisible();
+    await guest.locator('#lobby-enter-track').click();
     await expect(guest.locator('#race-screen')).toBeVisible();
     await expect(guest.locator('#race-room-status')).toContainText('Free drive');
     await guest.keyboard.down('w');
@@ -142,8 +147,7 @@ test('a player switching rooms no longer receives car states from the old room',
     await expect(page.locator('#home-status')).toContainText('Connected');
     await page.getByRole('button', { name: 'Create', exact: true }).click();
     await page.getByRole('button', { name: 'Create lobby', exact: true }).click();
-    await expect(page.locator('#race-screen')).toBeVisible();
-    await page.locator('#lobby-panel-toggle').click();
+    await expect(page.locator('#lobby-screen')).toBeVisible();
     const lobbyName = await page.locator('#lobby-room-name').textContent();
     await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
     await expect(page.locator('#lobby-player-list .player-entry')).toHaveCount(2);
@@ -155,8 +159,7 @@ test('a player switching rooms no longer receives car states from the old room',
     await guest.getByRole('button', { name: 'Create', exact: true }).click();
 
     await guest.getByRole('button', { name: 'Create lobby', exact: true }).click();
-    await expect(guest.locator('#race-screen')).toBeVisible();
-    await guest.locator('#lobby-panel-toggle').click();
+    await expect(guest.locator('#lobby-screen')).toBeVisible();
     await guest.locator('#lobby-track-select').selectOption('simple-loop');
     await startMultiplayerRace(guest);
     await page.bringToFront();
