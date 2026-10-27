@@ -16,11 +16,14 @@ test('lobby previews, colors and host settings update live for guests', async ({
     }
     await page.getByRole('button', { name: 'Create', exact: true }).click();
     await page.getByRole('button', { name: 'Create lobby', exact: true }).click();
-    await expect(page.locator('#lobby-screen')).toBeVisible();
+    await expect(page.locator('#race-screen')).toBeVisible();
+    await page.locator('#lobby-panel-toggle').click();
     const lobbyName = await page.locator('#lobby-room-name').textContent();
     expect(lobbyName).toMatch(/'s Lobby$/);
     await guest.getByRole('button', { name: 'Join', exact: true }).click();
     await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
+    await expect(guest.locator('#race-screen')).toBeVisible();
+    await guest.locator('#lobby-panel-toggle').click();
     await expect(guest.locator('#lobby-player-count')).toHaveText('2 / 10');
     await expect(guest.locator('#lobby-preview')).toBeVisible();
     await expect(page.locator('#lobby-colors button')).toHaveCount(15);

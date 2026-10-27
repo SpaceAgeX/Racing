@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#a8d2ed" />
     <title>Driving Prototype</title>
-    <link rel="stylesheet" href="/styles.css?v=room-chat-2" />
+    <link rel="stylesheet" href="/styles.css?v=lobby-free-drive-1" />
     <link rel="stylesheet" href="/auth.css" />
   </head>
   <body data-auth-state="pending">
     <main id="home-screen" class="screen screen-home" aria-label="Lobby browser"></main>
-    <main id="lobby-screen" class="screen screen-lobby" hidden aria-label="Waiting lobby"></main>
+    <main id="lobby-screen" class="screen screen-lobby" hidden aria-label="Lobby settings"></main>
     <main id="race-screen" class="screen screen-race" hidden aria-label="Active race">
       <header class="race-toolbar">
         <div>
@@ -21,6 +21,8 @@
           <span>FPS <output data-fps>—</output></span>
           <span>Ping <output data-ping>—</output></span>
         </div>
+        <button id="lobby-panel-toggle" type="button" hidden>Lobby</button>
+        <button id="round-setup-toggle" type="button" hidden>Set up race · hold Space</button>
         <button id="race-leave" type="button">Leave game</button>
       </header>
       <div class="race-stage">

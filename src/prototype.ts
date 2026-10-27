@@ -105,6 +105,7 @@ interface LobbyScreenController {
   setRoom(room: LobbySnapshot | null, localPlayerId: string): void;
   setTrackOptions(trackOptions: TrackOption[]): void;
   setStatus(message: string): void;
+  openRaceSetup(): void;
   dispose(): void;
 }
 
@@ -686,13 +687,15 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const tuningPanelElement = document.querySelector<HTMLElement>('#tuning-panel');
   const tuningToggle = document.querySelector<HTMLButtonElement>('#tuning-toggle');
   const raceLeaveButton = document.querySelector<HTMLButtonElement>('#race-leave');
+  const lobbyPanelToggle = document.querySelector<HTMLButtonElement>('#lobby-panel-toggle');
+  const roundSetupToggle = document.querySelector<HTMLButtonElement>('#round-setup-toggle');
   const raceRoomName = document.querySelector<HTMLElement>('#race-room-name');
   const raceRoomStatus = document.querySelector<HTMLElement>('#race-room-status');
   const performanceStatsElement = document.querySelector<HTMLElement>('#performance-stats');
   const raceSpeed = document.querySelector<HTMLOutputElement>('#race-speed-value')!;
   const raceLeaderboardElement = document.querySelector<HTMLElement>('#race-leaderboard');
 
-  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
+  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !lobbyPanelToggle || !roundSetupToggle || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
     throw new Error('Multiplayer UI is missing.');
   }
 
@@ -707,6 +710,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const performanceStats = createPerformanceStats(performanceStatsElement);
   const raceLeaderboard = createRaceLeaderboard(raceLeaderboardElement);
   const raceViewport = raceScreenRoot.querySelector<HTMLElement>('.game-viewport')!;
+  canvas.tabIndex = -1;
   const roundUi = createMultiplayerRoundUi(raceViewport);
   const menuBackdropCanvas = document.createElement('canvas');
   menuBackdropCanvas.className = 'menu-car-backdrop';
@@ -724,6 +728,8 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let session: DrivingSession | null = null;
   let currentMode: 'home' | 'multiplayer' | 'time-trial-setup' | 'lobby' | 'race' = 'home';
   let activeRoom: LobbySnapshot | null = null;
+  let lobbyPanelOpen = false;
+  let raceSetupOpen = false;
   let soloRaceActive = false;
   let soloRequestId = 0;
   let pendingSoloRequest = 0;
@@ -735,7 +741,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let animationFrame = 0;
   let lastFrameTime: number | null = null;
   const chat = createChat(text => { if (socket.connected) socket.emit('multiplayer:chat', text); },
-    open => input.setEnabled(currentMode === 'race' && !open));
+    open => input.setEnabled(currentMode === 'race' && !open && !lobbyPanelOpen && !raceSetupOpen));
   const networkStats = {
     startedAt: performance.now(),
     stateMessagesSent: 0, stateMessagesReceived: 0, approximateJsonBytesSent: 0, approximateJsonBytesReceived: 0,
@@ -748,14 +754,17 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     currentMode = mode;
     menuBackdrop.setActive(mode !== 'race');
     setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer' || mode === 'time-trial-setup');
-    setScreenVisibility(lobbyScreenRoot, mode === 'lobby');
+    setScreenVisibility(lobbyScreenRoot, mode === 'lobby' || mode === 'race' && lobbyPanelOpen);
+    lobbyScreenRoot.classList.toggle('is-overlay', mode === 'race' && lobbyPanelOpen);
     setScreenVisibility(raceScreenRoot, mode === 'race');
     const isTimeTrial = mode === 'race' && activeRoom === null;
     tuningPanelRoot.hidden = !isTimeTrial || document.body.classList.contains('tuning-collapsed');
     tuningToggleButton.hidden = !isTimeTrial;
     raceScreenRoot.classList.toggle('multiplayer-race', mode === 'race' && activeRoom !== null);
+    lobbyPanelToggle!.hidden = mode !== 'race' || activeRoom?.phase !== 'lobby';
+    roundSetupToggle!.hidden = mode !== 'race' || activeRoom?.phase !== 'lobby' || activeRoom.hostId !== localPlayerId;
     chat.setRoom((mode === 'lobby' || mode === 'race') ? activeRoom?.id ?? null : null);
-    input.setEnabled(mode === 'race' && !chat.isOpen);
+    input.setEnabled(mode === 'race' && !chat.isOpen && !lobbyPanelOpen && !raceSetupOpen);
     performanceStats.setActive(mode === 'race');
   }
 
@@ -783,6 +792,9 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       if (socket.connected) socket.emit('time-trial:leave');
     }
     disposeSession();
+    lobbyPanelOpen = false;
+    raceSetupOpen = false;
+    lobbyScreen?.setRoom(null, localPlayerId);
     setMode('home');
     timeTrialSetup?.hide();
     homeScreen.showLanding();
@@ -796,26 +808,21 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     saveMultiplayerPreferences({ lobbyId: null });
   }
 
-  function enterLobbyScreen(room: LobbySnapshot): void {
-    disposeSession();
-    activeRoom = room;
-    setMode('lobby');
-    lobbyScreen.setRoom(room, localPlayerId);
-    roundUi.setRound(null, localPlayerId);
-    raceRoomNameElement.textContent = room.name;
-    raceRoomStatusElement.textContent = room.phase === 'race' ? 'Race started' : 'Lobby open';
-    saveMultiplayerPreferences({ lobbyId: room.id });
-  }
-
   function enterRaceScreen(room: LobbySnapshot): void {
+    const enteringFromMenu = currentMode !== 'race';
     if (room.phase === 'loading') roundUi.hideResults();
+    if (activeRoom?.id === room.id && (activeRoom.phase === 'lobby') !== (room.phase === 'lobby')) disposeSession();
+    if (room.phase !== 'lobby') lobbyPanelOpen = false;
     activeRoom = room;
     setMode('race');
     raceRoomNameElement.textContent = room.name;
-    raceRoomStatusElement.textContent = room.phase === 'qualifying' ? 'Qualifying lap'
+    raceRoomStatusElement.textContent = room.phase === 'lobby' ? 'Free drive · host can set up a race'
+      : room.phase === 'qualifying' ? 'Qualifying lap'
       : room.phase === 'countdown' ? 'Starting countdown'
         : room.phase === 'loading' ? 'Waiting for drivers to load' : 'Race in progress';
     const currentSession = ensureSession(room);
+    if (enteringFromMenu && room.phase === 'lobby') canvas.focus({ preventScroll: true });
+    lobbyScreen.setRoom(room, localPlayerId);
     raceLeaderboard.setRoom(room, localPlayerId);
     roundUi.setRound(room.round, localPlayerId);
     currentSession.syncRemotePlayers(room.players, localPlayerId);
@@ -830,6 +837,9 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     tuningPanel.resetDefaults();
     const leavingRoom = activeRoom !== null;
     activeRoom = null;
+    lobbyPanelOpen = false;
+    raceSetupOpen = false;
+    lobbyScreen.setRoom(null, localPlayerId);
     raceLeaderboard.setRoom(null, localPlayerId);
     timeTrialTrack = track;
     timeTrialBest = null;
@@ -896,12 +906,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       return;
     }
 
-    if (room.phase !== 'lobby') {
-      enterRaceScreen(room);
-      return;
-    }
-
-    enterLobbyScreen(room);
+    enterRaceScreen(room);
   }
 
   function refreshSessionFromRoom(): void {
@@ -1006,11 +1011,29 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     },
     onColor(color) { socket.emit('multiplayer:set-color', { color }); },
     onConfigureRound(options) { socket.emit('multiplayer:configure-round', options); },
+    onClosePanel() {
+      lobbyPanelOpen = false;
+      setMode('race');
+      canvas.focus({ preventScroll: true });
+    },
+    onSetupVisibility(open) {
+      const wasOpen = raceSetupOpen;
+      raceSetupOpen = open;
+      input.setEnabled(currentMode === 'race' && !chat.isOpen && !lobbyPanelOpen && !open);
+      if (wasOpen && !open && activeRoom?.phase === 'lobby' && !lobbyPanelOpen) canvas.focus({ preventScroll: true });
+    },
     onUpdateSettings(payload) {
       socket.emit('multiplayer:update-settings', payload);
       lobbyScreen.setStatus('Updating lobby settings...');
     },
   });
+
+  lobbyPanelToggle.addEventListener('click', () => {
+    if (activeRoom?.phase !== 'lobby') return;
+    lobbyPanelOpen = true;
+    setMode('race');
+  });
+  roundSetupToggle.addEventListener('click', () => lobbyScreen.openRaceSetup());
 
   socket.on('multiplayer:bootstrap', (payload) => {
     networkStats.bootstrapEventsReceived++;
@@ -1027,8 +1050,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     // A newly created room can arrive before this async bootstrap response.
     // Keep that room and refresh its host controls now that our socket ID is known.
     if (activeRoom) {
-      if (currentMode === 'lobby') lobbyScreen.setRoom(activeRoom, localPlayerId);
-      else if (currentMode === 'race') enterRaceScreen(activeRoom);
+      if (currentMode === 'race') enterRaceScreen(activeRoom);
       return;
     }
     if (pendingSoloRequest || soloRaceActive || currentMode === 'time-trial-setup') return;
@@ -1212,7 +1234,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     if (currentMode === 'race' && session) {
       const round = activeRoom?.round;
       const localRoundPlayer = round?.players.find(player => player.id === localPlayerId);
-      const frozen = Boolean(activeRoom && (round?.stage === 'loading' || round?.stage === 'countdown'
+      const frozen = Boolean(round && (round.stage === 'loading' || round.stage === 'countdown'
         || localRoundPlayer?.status !== 'racing'));
       const spectate = frozen && (localRoundPlayer?.status === 'eliminated' || localRoundPlayer?.status === 'finished')
         ? round?.players.find(player => player.id !== localPlayerId && player.status === 'racing')?.id ?? null : null;

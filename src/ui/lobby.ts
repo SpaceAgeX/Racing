@@ -11,6 +11,8 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   onUpdateSettings(payload: UpdateLobbySettingsPayload): void;
   onColor(color: string): void;
   onConfigureRound(options: RoundOptions): void;
+  onClosePanel(): void;
+  onSetupVisibility(open: boolean): void;
 }) {
   root.innerHTML = `
     <section class="time-trial-setup lobby-setup">
@@ -18,6 +20,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         <header class="time-trial-setup-header">
           <button id="lobby-leave" class="back-button" type="button" aria-label="Leave lobby">&#8592; Back</button>
           <div><span class="menu-eyebrow">MULTIPLAYER</span><h1 id="lobby-room-name">Lobby</h1><p id="lobby-room-meta"></p></div>
+          <button id="lobby-close-panel" class="back-button" type="button" aria-label="Close lobby settings">&times;</button>
         </header>
         <div class="time-trial-setup-grid">
           <section class="track-preview-card">
@@ -88,6 +91,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   let minimap: ReturnType<typeof createMinimap> | null = null;
   let previewKey = '';
   const raceSetup = root.querySelector<HTMLElement>('#lobby-race-setup')!;
+  document.body.append(raceSetup);
   raceSetup.tabIndex = -1;
   const lapsInput = root.querySelector<HTMLInputElement>('#lobby-round-laps')!;
   const fallSelect = root.querySelector<HTMLSelectElement>('#lobby-round-fall')!;
@@ -105,11 +109,13 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     raceSetup.classList.remove('is-holding');
     if (holdTimer !== null) clearTimeout(holdTimer);
     holdTimer = null;
+    callbacks.onSetupVisibility(false);
   }
   function openRaceSetup(): void {
     if (!currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
     raceSetup.hidden = false;
     raceSetup.focus();
+    callbacks.onSetupVisibility(true);
   }
   function startRace(): void {
     if (!currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
@@ -122,12 +128,13 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   }
   function onSpaceDown(event: KeyboardEvent): void {
     if (event.code === 'Escape' && !raceSetup.hidden) { closeRaceSetup(); return; }
+    if (event.code === 'Escape' && !root.hidden) { callbacks.onClosePanel(); return; }
     const target = event.target instanceof HTMLElement ? event.target : null;
     const editing = target && (target.isContentEditable || target.tagName === 'TEXTAREA'
       || target.tagName === 'SELECT' || target.tagName === 'BUTTON' || target.tagName === 'INPUT');
-    if (event.code !== 'Space' || root.hidden || spaceDown || !currentRoom
+    if (event.code !== 'Space' || spaceDown || !currentRoom
       || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby'
-      || editing) return;
+      || editing || document.querySelector('.round-results-overlay:not([hidden])')) return;
     event.preventDefault();
     spaceDown = true;
     if (raceSetup.hidden) openRaceSetup();
@@ -222,6 +229,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   }
 
   root.querySelector('#lobby-leave')!.addEventListener('click', callbacks.onLeaveLobby);
+  root.querySelector('#lobby-close-panel')!.addEventListener('click', callbacks.onClosePanel);
   trackSelect.addEventListener('change', () => {
     if (currentRoom?.hostId === localPlayerId && currentRoom.phase === 'lobby') {
       callbacks.onUpdateSettings({ trackId: trackSelect.value });
@@ -247,9 +255,9 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         qualifyingInput.checked = room.nextRoundOptions.qualifying;
       }
       roomName.textContent = room.name;
-      roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · ${room.ranked ? 'Ranked laps' : 'Unranked · custom handling'}`;
-      status.textContent = isHost ? 'Choose your settings. Hold Space or select Set up race.'
-        : `Waiting for the host · ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
+      roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · ${room.ranked ? 'Formal race laps ranked' : 'Formal race laps unranked · custom handling'}`;
+      status.textContent = isHost ? 'Free drive is open. Hold Space on the track to set up a formal race.'
+        : `Free drive is open · host's next race: ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
           · ${room.nextRoundOptions.qualifying ? 'Qualifying on' : 'No qualifying'}`;
       renderPlayers(room);
       renderTrackOptions();
@@ -274,11 +282,12 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     },
     setTrackOptions(options: TrackOption[]): void { trackOptions = options; renderTrackOptions(); },
     setStatus(message: string): void { status.textContent = message; },
+    openRaceSetup,
     dispose(): void {
       window.removeEventListener('keydown', onSpaceDown);
       window.removeEventListener('keyup', onSpaceUp);
       window.removeEventListener('blur', cancelHold);
-      minimap?.dispose(); handlingEditor.dispose(); root.replaceChildren();
+      minimap?.dispose(); handlingEditor.dispose(); raceSetup.remove(); root.replaceChildren();
     },
   };
 }

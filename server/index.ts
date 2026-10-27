@@ -137,6 +137,7 @@ interface LobbyRecord {
   phase: LobbyPhase;
   settings: LobbySettings;
   players: Map<string, LobbyPlayerRecord>;
+  road: PreparedRaceRoad;
   race: ReturnType<typeof createRaceSimulation> | null;
   round: ReturnType<typeof createMultiplayerRound> | null;
   nextRoundOptions: StartLobbyPayload['options'];
@@ -377,6 +378,7 @@ function createLobbySummary(lobby: LobbyRecord): LobbySummary {
 }
 
 function createLobbySnapshot(lobby: LobbyRecord): LobbySnapshot {
+  const currentStates = new Map(lobby.race?.snapshot().players.map(player => [player.id, player.state]));
   return {
     id: lobby.id,
     name: lobby.name,
@@ -390,7 +392,7 @@ function createLobbySnapshot(lobby: LobbyRecord): LobbySnapshot {
       name: player.name,
       isHost: player.id === lobby.hostId,
       color: player.color,
-      state: player.state,
+      state: currentStates.get(player.id) ?? player.state,
     })) as LobbyPlayerSnapshot[],
     round: lobby.round?.snapshot(performance.now()) ?? null,
     nextRoundOptions: lobby.nextRoundOptions,
@@ -478,6 +480,7 @@ function leaveLobby(socketId: string): void {
 
 async function createLobby(socketId: string, trackId: string, requestedHandling: unknown): Promise<LobbyRecord> {
   const track = await resolveTrack(trackId);
+  const road = await prepareRaceRoad(track.layout);
   const handling = normalizeHandling(requestedHandling) ?? { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
   if (handling.physics.physicsTime !== 1) throw new Error('Physics Time is fixed at 1× in multiplayer.');
   const socket = io.sockets.sockets.get(socketId);
@@ -485,6 +488,7 @@ async function createLobby(socketId: string, trackId: string, requestedHandling:
   const username = socket.data.username as string;
   leaveLobby(socketId);
   timeTrials.delete(socketId);
+  const race = createRaceSimulation(road, handling);
   const lobby: LobbyRecord = {
     id: makeLobbyId(),
     name: `${username}'s Lobby`,
@@ -497,7 +501,8 @@ async function createLobby(socketId: string, trackId: string, requestedHandling:
       handling,
     },
     players: new Map(),
-    race: null,
+    road,
+    race,
     round: null,
     nextRoundOptions: { laps: 3, fallMode: 'respawn', qualifying: false },
     layoutHash: trackLayoutHash(track.layout),
@@ -507,7 +512,7 @@ async function createLobby(socketId: string, trackId: string, requestedHandling:
     id: socketId,
     name: username,
     color: colorForIndex(0),
-    state: null,
+    state: race.addPlayer(socketId, 0).state,
   });
   lobbies.set(lobby.id, lobby);
   playerLobby.set(socketId, lobby.id);
@@ -529,7 +534,7 @@ function joinLobby(socketId: string, lobbyId: string): LobbyRecord | null {
     id: socketId,
     name: username,
     color,
-    state: null,
+    state: lobby.race?.addPlayer(socketId, lobby.players.size).state ?? null,
   } satisfies LobbyPlayerRecord;
   lobby.players.set(socketId, player);
   playerLobby.set(socketId, lobby.id);
@@ -545,6 +550,7 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
   if (requestedHandling !== undefined && !handling) throw new Error('The handling settings are invalid.');
   if (handling && handling.physics.physicsTime !== 1) throw new Error('Physics Time is fixed at 1× in multiplayer.');
   const track = trackId === undefined ? null : await resolveTrack(trackId);
+  const road = track && track.id !== lobby.settings.trackId ? await prepareRaceRoad(track.layout) : null;
   if (lobbies.get(lobbyId) !== lobby || playerLobby.get(socketId) !== lobbyId || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
   lobby.settings = {
     trackId: track?.id ?? lobby.settings.trackId,
@@ -553,15 +559,23 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
     handling: handling ?? lobby.settings.handling,
   };
   lobby.layoutHash = trackLayoutHash(lobby.settings.layout);
+  if (road) {
+    lobby.road = road;
+    lobby.race = createRaceSimulation(road, lobby.settings.handling);
+    let index = 0;
+    for (const player of lobby.players.values()) player.state = lobby.race.addPlayer(player.id, index++).state;
+  } else {
+    lobby.race?.setHandling(lobby.settings.handling);
+  }
   return lobby;
 }
 
-function startLobby(socketId: string, road: PreparedRaceRoad, settings: LobbySettings, options: StartLobbyPayload['options']): LobbyRecord | null {
+function startLobby(socketId: string, settings: LobbySettings, options: StartLobbyPayload['options']): LobbyRecord | null {
   const lobbyId = playerLobby.get(socketId);
   if (!lobbyId) return null;
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby' || lobby.settings !== settings) return null;
-  const race = createRaceSimulation(road, lobby.settings.handling);
+  const race = createRaceSimulation(lobby.road, lobby.settings.handling);
   const players = [...lobby.players.values()];
 
   for (let index = 0; index < players.length; index++) {
@@ -591,8 +605,9 @@ function applyRoundUpdate(lobby: LobbyRecord, update: RoundUpdate): void {
     }
     lobby.phase = 'lobby';
     lobby.round = null;
-    lobby.race = null;
-    for (const player of lobby.players.values()) player.state = null;
+    lobby.race = createRaceSimulation(lobby.road, lobby.settings.handling);
+    let index = 0;
+    for (const player of lobby.players.values()) player.state = lobby.race.addPlayer(player.id, index++).state;
     lobby.starting = false;
     broadcastLobbyRoom(lobby);
     broadcastLobbyList();
@@ -789,11 +804,10 @@ io.on('connection', (socket) => {
     pendingLobby.nextRoundOptions = { ...payload.options };
     try {
       const settings = pendingLobby.settings;
-      const road = await prepareRaceRoad(settings.layout);
       if (!socket.connected || lobbies.get(pendingLobby.id) !== pendingLobby
         || pendingLobby.hostId !== socket.id || pendingLobby.phase !== 'lobby'
         || pendingLobby.settings !== settings) return;
-      const lobby = startLobby(socket.id, road, settings, payload.options);
+      const lobby = startLobby(socket.id, settings, payload.options);
       if (!lobby) {
         socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
         return;
@@ -816,7 +830,7 @@ io.on('connection', (socket) => {
 
   socket.on('multiplayer:input', (input) => {
     const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
-    if ((lobby?.phase !== 'race' && lobby?.phase !== 'qualifying')
+    if ((lobby?.phase !== 'race' && lobby?.phase !== 'qualifying' && lobby?.phase !== 'lobby')
       || !lobby.race?.input(socket.id, input, performance.now())) return;
     const incomingBytes = Buffer.byteLength(JSON.stringify(input));
     recorder.received(socket.id, incomingBytes);
@@ -833,10 +847,10 @@ io.on('connection', (socket) => {
     if (!Number.isSafeInteger(notice?.noticeId) || notice.noticeId < 0
       || !Number.isSafeInteger(notice.lifeId) || notice.lifeId < 0) return;
     const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
-    const race = lobby?.phase === 'race' || lobby?.phase === 'qualifying'
+    const race = lobby?.phase === 'race' || lobby?.phase === 'qualifying' || lobby?.phase === 'lobby'
       ? lobby.race : timeTrials.get(socket.id)?.simulation;
     if (!race) return;
-    const roomId = lobby?.phase === 'race' || lobby?.phase === 'qualifying'
+    const roomId = lobby?.phase === 'race' || lobby?.phase === 'qualifying' || lobby?.phase === 'lobby'
       ? lobby.id : `solo:${socket.id}`;
     // The notification never creates a death; the simulation independently decides.
     const status = race.deathStatus(socket.id, notice.lifeId);
@@ -875,9 +889,9 @@ const raceClock = setInterval(() => {
       raceTickWindowStartedAt = now;
     }
     for (const lobby of lobbies.values()) {
-      if (!lobby.race || !lobby.round) continue;
-      applyRoundUpdate(lobby, lobby.round.advance(now));
-      if (!lobby.race || !lobby.round) continue;
+      if (!lobby.race) continue;
+      if (lobby.round) applyRoundUpdate(lobby, lobby.round.advance(now));
+      if (!lobby.race) continue;
       const result = lobby.race.step(now);
       for (const transition of result.transitions) {
         io.to(transition.player.id).emit('race:transition', {
@@ -885,7 +899,7 @@ const raceClock = setInterval(() => {
         });
       }
       for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
-      for (const lap of lobby.round.stage === 'race' ? result.laps : []) {
+      for (const lap of lobby.round?.stage === 'race' ? result.laps : []) {
         const userId = accountId(lap.playerId);
         const rulesetHash = handlingHash(lobby.settings.handling);
         if (userId) queueWrite(accounts.recordLap({ userId, trackId: lobby.settings.trackId,
@@ -893,11 +907,11 @@ const raceClock = setInterval(() => {
           rulesetHash, durationSeconds: lap.durationSeconds,
           ranked: rulesetHash === defaultRulesetHash, mode: 'multiplayer' }));
       }
-      applyRoundUpdate(lobby, lobby.round.step(result, now));
-      if (!lobby.race || !lobby.round) continue;
+      if (lobby.round) applyRoundUpdate(lobby, lobby.round.step(result, now));
+      if (!lobby.race) continue;
       if (lobby.race.tick % RACE_SNAPSHOT_TICKS !== 0) continue;
       const payload = { roomId: lobby.id, serverTimeMs: performance.now(),
-        ...lobby.race.snapshot(), round: lobby.round.snapshot(performance.now()) };
+        ...lobby.race.snapshot(), round: lobby.round?.snapshot(performance.now()) ?? null };
       const bytes = Buffer.byteLength(JSON.stringify(payload));
       io.to(lobby.id).volatile.emit('multiplayer:snapshot', payload);
       for (const playerId of lobby.players.keys()) {

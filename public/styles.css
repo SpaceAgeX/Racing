@@ -304,6 +304,13 @@ body.tuning-collapsed { --panel-width: 0px; }
 .screen-lobby {
   align-items: start;
 }
+.screen-lobby.is-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #0b1419a8;
+  backdrop-filter: blur(8px);
+}
 
 .lobby-shell {
   width: min(1240px, 100%);

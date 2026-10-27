@@ -148,7 +148,7 @@ export interface RaceSnapshot {
   tick: number;
   serverTimeMs: number;
   players: RacePlayer[];
-  round?: RoundSnapshot;
+  round?: RoundSnapshot | null;
 }
 
 export interface RaceTransition {

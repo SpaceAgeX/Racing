@@ -31,7 +31,8 @@ export async function enterRace(page: Page, trackId?: string): Promise<void> {
 
 /** Start a hosted multiplayer round and wait until the server releases the grid. */
 export async function startMultiplayerRace(page: Page): Promise<void> {
-  await page.locator('#lobby-start').click();
+  if (await page.locator('#lobby-screen').isVisible()) await page.locator('#lobby-start').click();
+  else await page.locator('#round-setup-toggle').click();
   await page.locator('#lobby-round-confirm').click();
   await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('#race-room-status')).toHaveText('Race in progress', { timeout: 20_000 });
