@@ -144,6 +144,7 @@ interface LobbyRecord {
   nextRoundOptions: StartLobbyPayload['options'];
   layoutHash: string;
   starting: boolean;
+  pendingRaceLaps: Parameters<typeof accounts.recordLap>[0][];
 }
 
 const drivingBounds: Record<keyof DrivingParameters, readonly [number, number]> = {
@@ -507,9 +508,10 @@ async function createLobby(socketId: string, trackId: string, requestedHandling:
     road,
     race,
     round: null,
-    nextRoundOptions: { laps: 3, fallMode: 'respawn', qualifying: false },
+    nextRoundOptions: { laps: 3, fallMode: 'respawn', qualifying: true },
     layoutHash: trackLayoutHash(track.layout),
     starting: false,
+    pendingRaceLaps: [],
   };
   lobby.players.set(socketId, {
     id: socketId,
@@ -587,6 +589,7 @@ function startLobby(socketId: string, settings: LobbySettings, options: StartLob
   }
   lobby.race = race;
   lobby.round = createMultiplayerRound(race, players, settings.trackName, options);
+  lobby.pendingRaceLaps = [];
   lobby.phase = 'loading';
   return lobby;
 }
@@ -598,6 +601,8 @@ function applyRoundUpdate(lobby: LobbyRecord, update: RoundUpdate): void {
       serverTimeMs: performance.now(), tick: lobby.race.tick, kind: 'respawn', player });
   }
   if (update.results) {
+    for (const lap of lobby.pendingRaceLaps) queueWrite(accounts.recordLap(lap));
+    lobby.pendingRaceLaps = [];
     io.to(lobby.id).emit('multiplayer:results', { roomId: lobby.id, results: update.results });
     const winner = update.results.players[0];
     if (winner && update.results.players.length >= 2
@@ -839,6 +844,20 @@ io.on('connection', (socket) => {
     applyRoundUpdate(lobby, lobby.round.ready(socket.id, performance.now()));
   });
 
+  socket.on('multiplayer:cancel-round', () => {
+    const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
+    if (!lobby || lobby.hostId !== socket.id || !lobby.round || lobby.phase === 'lobby') return;
+    lobby.round = null;
+    lobby.pendingRaceLaps = [];
+    lobby.phase = 'lobby';
+    lobby.race = createRaceSimulation(lobby.road, lobby.settings.handling);
+    let index = 0;
+    for (const player of lobby.players.values()) player.state = lobby.race.addPlayer(player.id, index++).state;
+    lobby.starting = false;
+    broadcastLobbyRoom(lobby);
+    broadcastLobbyList();
+  });
+
   socket.on('multiplayer:input', (input) => {
     const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
     if ((lobby?.phase !== 'race' && lobby?.phase !== 'qualifying' && lobby?.phase !== 'lobby')
@@ -915,10 +934,10 @@ const raceClock = setInterval(() => {
         ? result.laps.filter(entry => lobby.round?.isRacing(entry.playerId)) : []) {
         const userId = accountId(lap.playerId);
         const rulesetHash = handlingHash(lobby.settings.handling);
-        if (userId) queueWrite(accounts.recordLap({ userId, trackId: lobby.settings.trackId,
+        if (userId) lobby.pendingRaceLaps.push({ userId, trackId: lobby.settings.trackId,
           trackName: lobby.settings.trackName, layoutHash: lobby.layoutHash,
           rulesetHash, durationSeconds: lap.durationSeconds,
-          ranked: rulesetHash === defaultRulesetHash, mode: 'multiplayer' }));
+          ranked: rulesetHash === defaultRulesetHash, mode: 'multiplayer' });
       }
       if (lobby.round) applyRoundUpdate(lobby, lobby.round.step(result, now));
       if (!lobby.race) continue;

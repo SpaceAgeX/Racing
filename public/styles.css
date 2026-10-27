@@ -407,6 +407,7 @@ body.tuning-collapsed { --panel-width: 0px; }
 }
 .race-toolbar button:hover { background: #ffffff1b; }
 .race-toolbar button:focus-visible { outline: 2px solid #ee7136; outline-offset: 3px; }
+#round-cancel-hint { color: #ffbb9f; font-size: 12px; }
 
 .game-viewport {
   position: relative;
@@ -441,7 +442,6 @@ body.tuning-collapsed { --panel-width: 0px; }
   pointer-events: none;
 }
 .race-leaderboard { min-height: 0; overflow: auto; padding: 10px 12px; border: 1px solid #ffffff26; border-radius: 8px; background: #23313acc; font-variant-numeric: tabular-nums; pointer-events: auto; }
-.multiplayer-race #lap-display { display: none; }
 .race-leaderboard h2 { margin: 0 0 8px; font-size: 13px; }
 .race-leaderboard table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: right; }
 .race-leaderboard th, .race-leaderboard td { padding: 5px 3px; border-bottom: 1px solid #ffffff19; white-space: nowrap; }

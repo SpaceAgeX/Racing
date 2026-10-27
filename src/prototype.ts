@@ -691,16 +691,22 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const raceLeaveButton = document.querySelector<HTMLButtonElement>('#race-leave');
   const lobbyPanelToggle = document.querySelector<HTMLButtonElement>('#lobby-panel-toggle');
   const roundSetupToggle = document.querySelector<HTMLButtonElement>('#round-setup-toggle');
+  const roundCancelHint = document.querySelector<HTMLElement>('#round-cancel-hint');
   const raceRoomName = document.querySelector<HTMLElement>('#race-room-name');
   const raceRoomStatus = document.querySelector<HTMLElement>('#race-room-status');
   const performanceStatsElement = document.querySelector<HTMLElement>('#performance-stats');
   const raceSpeed = document.querySelector<HTMLOutputElement>('#race-speed-value')!;
   const lapCurrent = document.querySelector<HTMLOutputElement>('#lap-current')!;
+  const lapBest = document.querySelector<HTMLOutputElement>('#lap-best')!;
+  const lapLast = document.querySelector<HTMLOutputElement>('#lap-last')!;
+  const lapDelta = document.querySelector<HTMLOutputElement>('#lap-delta')!;
+  const lapBestLabel = document.querySelector<HTMLElement>('#lap-best')!.previousElementSibling as HTMLElement;
+  const lapLastLabel = document.querySelector<HTMLElement>('#lap-last')!.previousElementSibling as HTMLElement;
   const lapLabel = document.querySelector<HTMLElement>('#lap-display .lap-label')!;
   const lapStatus = document.querySelector<HTMLElement>('#lap-status')!;
   const raceLeaderboardElement = document.querySelector<HTMLElement>('#race-leaderboard');
 
-  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !lobbyPanelToggle || !roundSetupToggle || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
+  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !lobbyPanelToggle || !roundSetupToggle || !roundCancelHint || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
     throw new Error('Multiplayer UI is missing.');
   }
 
@@ -772,6 +778,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     raceScreenRoot.classList.toggle('multiplayer-race', mode === 'race' && activeRoom !== null);
     lobbyPanelToggle!.hidden = mode !== 'race' || activeRoom?.phase !== 'lobby';
     roundSetupToggle!.hidden = mode !== 'race' || activeRoom?.phase !== 'lobby' || activeRoom.hostId !== localPlayerId;
+    roundCancelHint!.hidden = mode !== 'race' || !activeRoom || activeRoom.phase === 'lobby' || activeRoom.hostId !== localPlayerId;
     chat.setRoom((mode === 'lobby' || mode === 'race') ? activeRoom?.id ?? null : null);
     input.setEnabled(mode === 'race' && !chat.isOpen && !lobbyPanelOpen && !raceSetupOpen);
     performanceStats.setActive(mode === 'race');
@@ -1034,6 +1041,11 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
         socket.emit('multiplayer:enter-track');
       }
     },
+    onCancelRound() {
+      if (activeRoom?.hostId === localPlayerId && activeRoom.phase !== 'lobby') {
+        socket.emit('multiplayer:cancel-round');
+      }
+    },
     onStartLobby(payload) {
       socket.emit('multiplayer:start-lobby', payload);
       lobbyScreen.setStatus('Starting race...');
@@ -1284,15 +1296,24 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
           + Math.min(0.15, Math.max(0, (time - lastRoundReceivedAt) / 1000)));
         lapLabel.textContent = 'Race time';
         lapCurrent.value = formatLapTime(displayedRaceTime);
+        lapBestLabel.textContent = 'Best split';
+        lapLastLabel.textContent = 'Last split';
+        lapBest.value = formatLapTime(localRoundPlayer?.bestSeconds ?? null);
+        lapLast.value = formatLapTime(localRoundPlayer?.lastSeconds ?? null);
+        lapDelta.hidden = true;
         lapStatus.textContent = localRoundPlayer?.status === 'finished' ? 'Finished · keep driving'
           : localRoundPlayer?.status === 'eliminated' ? 'Eliminated'
             : `Lap ${Math.min(currentRound.options.laps, (localRoundPlayer?.laps ?? 0) + 1)} of ${currentRound.options.laps}`;
       } else if (activeRoom?.phase === 'lobby' && freeDriveClockStart !== null) {
-        lapLabel.textContent = 'Track time';
+        lapLabel.textContent = 'Free drive time';
+        lapBestLabel.textContent = 'Best lap';
+        lapLastLabel.textContent = 'Last lap';
         lapCurrent.value = formatLapTime((time - freeDriveClockStart) / 1000);
         if (!session.lapTimer.running) lapStatus.textContent = 'Free drive · cross the line to start a lap';
       } else {
         lapLabel.textContent = 'Current';
+        lapBestLabel.textContent = 'Best';
+        lapLastLabel.textContent = 'Last';
       }
       roundUi.update();
       tuningPanel.update(session.state);

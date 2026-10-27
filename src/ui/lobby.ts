@@ -12,6 +12,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   onColor(color: string): void;
   onConfigureRound(options: RoundOptions): void;
   onEnterTrack(): void;
+  onCancelRound(): void;
   onClosePanel(): void;
   onSetupVisibility(open: boolean): void;
 }) {
@@ -63,7 +64,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         <input id="lobby-round-laps" type="number" min="1" max="20" step="1" value="3">
         <label for="lobby-round-fall">When a car falls off</label>
         <select id="lobby-round-fall"><option value="respawn">Respawn and keep racing</option><option value="elimination">Eliminate the player</option></select>
-        <label class="race-setup-checkbox"><input id="lobby-round-qualifying" type="checkbox"> Qualifying lap before the race</label>
+        <label class="race-setup-checkbox"><input id="lobby-round-qualifying" type="checkbox" checked> Qualifying lap before the race</label>
         <div class="race-setup-actions"><button id="lobby-round-confirm" class="trial-start-button" type="button">Start race</button>
           <span class="race-setup-hold">Hold Space to start<span></span></span></div>
       </div>
@@ -101,6 +102,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const fallSelect = raceSetup.querySelector<HTMLSelectElement>('#lobby-round-fall')!;
   const qualifyingInput = raceSetup.querySelector<HTMLInputElement>('#lobby-round-qualifying')!;
   let spaceDown = false;
+  let cancelRequested = false;
   let holdTimer: ReturnType<typeof setTimeout> | null = null;
 
   function roundOptions(): RoundOptions {
@@ -137,13 +139,21 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     const editing = target && (target.isContentEditable || target.tagName === 'TEXTAREA'
       || target.tagName === 'SELECT' || target.tagName === 'BUTTON' || target.tagName === 'INPUT');
     if (event.code !== 'Space' || !onTrack || !root.hidden || spaceDown || !currentRoom
-      || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby'
-      || editing || document.querySelector('.round-results-overlay:not([hidden])')) return;
+      || currentRoom.hostId !== localPlayerId
+      || editing || cancelRequested || document.querySelector('.round-results-overlay:not([hidden])')) return;
     event.preventDefault();
     spaceDown = true;
-    if (raceSetup.hidden) openRaceSetup();
-    raceSetup.classList.add('is-holding');
-    holdTimer = setTimeout(startRace, 900);
+    if (currentRoom.phase === 'lobby') {
+      if (raceSetup.hidden) openRaceSetup();
+      raceSetup.classList.add('is-holding');
+      holdTimer = setTimeout(startRace, 900);
+    } else {
+      holdTimer = setTimeout(() => {
+        cancelRequested = true;
+        callbacks.onCancelRound();
+        cancelHold();
+      }, 900);
+    }
   }
   function onSpaceUp(event: KeyboardEvent): void {
     if (event.code !== 'Space') return;
@@ -251,6 +261,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     setRoom(room: LobbySnapshot | null, playerId: string): void {
       currentRoom = room;
       localPlayerId = playerId;
+      if (!room || room.phase === 'lobby') cancelRequested = false;
       if (!room) {
         closeRaceSetup();
         minimap?.dispose();

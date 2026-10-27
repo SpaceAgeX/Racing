@@ -243,6 +243,7 @@ export interface ClientToServerEvents {
   'multiplayer:start-lobby': (payload: StartLobbyPayload) => void;
   'multiplayer:configure-round': (payload: RoundOptions) => void;
   'multiplayer:ready': (payload: { roundId: string }) => void;
+  'multiplayer:cancel-round': () => void;
   'multiplayer:input': (payload: RaceInput) => void;
   'race:death-notice': (payload: RaceDeathNotice) => void;
   'multiplayer:clock': (reply: (serverTimeMs: number) => void) => void;
