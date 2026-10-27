@@ -25,7 +25,6 @@ const trackLayout = splinePresets[0]!.create();
 
 import { createRoadWorld } from './simulation/road-world.ts';
 import { createVehicleState, copyVehicleState, interpolateVehicleState } from './simulation/vehicle.ts';
-import { wrapAngle } from './simulation/math.ts';
 import { drivingParameters, physicsParameters } from './simulation/parameters.ts';
 import { respawnVehicle, stepSplineVehicle } from './simulation/spline-vehicle.ts';
 import { neutralControls, RACE_TIMESTEP, type RaceInput, type RacePlayer } from './simulation/race.ts';
@@ -48,6 +47,7 @@ import type {
   RaceDeathAcknowledgement,
 } from './multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from './multiplayer/protocol.ts';
+import { projectRemoteVehicle } from './multiplayer/remote-motion.ts';
 
 interface MultiplayerPreferences {
   lobbyId: string | null;
@@ -65,9 +65,6 @@ interface RemoteCarEntry {
   color: string;
   visible: boolean;
 }
-
-const remoteInterpolationDelay = 120;
-const maxRemoteExtrapolation = 100;
 
 interface DrivingSession {
   trackId: string;
@@ -288,7 +285,9 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   }
 
   function renderRemotePlayers(now: number): void {
-    const renderTime = now - (serverClockOffsetMs ?? now) - remoteInterpolationDelay;
+    // Local prediction draws the player's car close to the present. Render
+    // other players on that same server timeline instead of 120 ms in the past.
+    const renderTime = now - (serverClockOffsetMs ?? now);
     for (const remote of remoteCars.values()) {
       const snapshots = remote.snapshots;
       if (!remote.visible || snapshots.length === 0) continue;
@@ -305,16 +304,9 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
         interpolateVehicleState(older.state, newer.state, alpha, remote.state);
       } else {
         const anchor = newer && renderTime > newer.serverTimeMs ? newer : older;
-        copyVehicleState(anchor.state, remote.state);
-        const extrapolation = Math.max(0, Math.min(maxRemoteExtrapolation, renderTime - anchor.serverTimeMs))
-          / 1000 * tuning.physics.physicsTime;
-        if (extrapolation > 0) {
-          const heading = anchor.state.heading;
-          remote.state.position.x += (-Math.sin(heading) * anchor.state.speed + Math.cos(heading) * anchor.state.lateralSpeed) * extrapolation;
-          remote.state.position.z += (-Math.cos(heading) * anchor.state.speed - Math.sin(heading) * anchor.state.lateralSpeed) * extrapolation;
-          remote.state.position.y += anchor.state.verticalSpeed * extrapolation;
-          remote.state.heading = wrapAngle(remote.state.heading + anchor.state.yawSpeed * extrapolation);
-        }
+        projectRemoteVehicle(anchor.state,
+          Math.max(0, renderTime - anchor.serverTimeMs) * tuning.physics.physicsTime,
+          tuning.driving.wheelbase, remote.state);
       }
       remote.visual.update(remote.state);
     }
