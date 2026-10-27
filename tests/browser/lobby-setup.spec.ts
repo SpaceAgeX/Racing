@@ -25,6 +25,7 @@ test('lobby previews, colors and host settings update live for guests', async ({
     await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
     await expect(guest.locator('#lobby-screen')).toBeVisible();
     await expect(guest.locator('#race-screen')).toBeHidden();
+    await expect(guest.locator('#lobby-enter-track')).toBeHidden();
     await expect(guest.locator('#lobby-player-count')).toHaveText('2 / 10');
     await expect(guest.locator('#lobby-preview')).toBeVisible();
     await expect(page.locator('#lobby-colors button')).toHaveCount(15);
@@ -48,10 +49,17 @@ test('lobby previews, colors and host settings update live for guests', async ({
     await expect(guest.locator('#lobby-handling-acceleration')).toHaveValue('18');
     await expect(guest.locator('#lobby-start')).toBeHidden();
     await page.screenshot({ path: 'test-results/lobby-setup.png', fullPage: true });
-    await guest.getByRole('button', { name: 'Leave lobby' }).click();
+    await page.locator('#lobby-enter-track').click();
+    await expect(page.locator('#race-screen')).toBeVisible();
+    await expect(guest.locator('#race-screen')).toBeVisible();
+    await expect(page.locator('#lap-display .lap-label')).toHaveText('Track time');
+    await expect(guest.locator('#lap-display .lap-label')).toHaveText('Track time');
+    await guest.getByRole('button', { name: 'Leave game', exact: true }).click();
+    await page.locator('#lobby-panel-toggle').click();
     await expect(page.locator('#lobby-player-count')).toHaveText('1 / 10');
     await expect(page.locator('#lobby-colors').getByRole('button', { name: 'Pink', exact: true })).toBeEnabled();
     await startMultiplayerRace(page);
+    await expect(page.locator('#lap-display .lap-label')).toHaveText('Race time');
   } finally { await guestContext.close(); }
 });
 

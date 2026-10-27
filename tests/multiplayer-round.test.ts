@@ -89,3 +89,29 @@ test('respawn mode counts a fall without eliminating the driver', () => {
   assert.equal(status.falls, 1);
   assert.equal(status.status, 'racing');
 });
+
+test('qualifying finish parks the car at its start position while others continue', () => {
+  const { race, round } = setup({ laps: 3, fallMode: 'respawn', qualifying: true });
+  round.ready('one', 0); round.ready('two', 0); round.advance(3000);
+  const lap = round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 31 }] }, 3017);
+  assert.equal(round.stage, 'qualifying');
+  assert.equal(round.snapshot(3017).players.find(player => player.id === 'one')?.status, 'qualified');
+  assert.equal(lap.resets.length, 1);
+  assert.deepEqual(lap.resets[0]?.state.position, road.spawns[0]?.position);
+  assert.equal(lap.resets[0]?.state.speed, 0);
+  assert.equal(race.input('one', { sequence: 1, lifeId: lap.resets[0]!.lifeId,
+    controls: { throttle: 1, steering: 0, brake: false } }, 3034), false);
+});
+
+test('race finish locks the result but leaves the driver able to keep moving', () => {
+  const { race, round } = setup({ laps: 1, fallMode: 'elimination', qualifying: false });
+  round.ready('one', 0); round.ready('two', 0); round.advance(3000);
+  round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 30 }] }, 3017);
+  assert.equal(round.snapshot(3017).players.find(player => player.id === 'one')?.status, 'finished');
+  assert.equal(round.isRacing('one'), false);
+  assert.equal(race.input('one', { sequence: 1, lifeId: 1,
+    controls: { throttle: 1, steering: 0, brake: false } }, 3034), true);
+  const continued = race.step(3034).activity.find(player => player.playerId === 'one');
+  assert.ok(continued);
+  assert.ok(race.snapshot().players.find(player => player.id === 'one')!.state.speed > 0);
+});

@@ -51,8 +51,6 @@ test('shared maps, host settings, and server-owned car states reach a guest', as
     await expect(page.locator('#lobby-room-meta')).toContainText('Formal race laps ranked');
     await guest.getByRole('button', { name: 'Join', exact: true }).click();
     await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
-    await expect(guest.locator('#lobby-screen')).toBeVisible();
-    await guest.locator('#lobby-enter-track').click();
     await expect(guest.locator('#race-screen')).toBeVisible();
     await expect(guest.locator('#race-room-status')).toContainText('Free drive');
     await guest.keyboard.down('w');

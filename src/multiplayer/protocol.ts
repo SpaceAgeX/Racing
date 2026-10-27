@@ -101,6 +101,7 @@ export interface LobbySnapshot {
   hostId: string;
   hostName: string;
   phase: LobbyPhase;
+  trackOpen: boolean;
   ranked: boolean;
   settings: LobbySettings;
   players: LobbyPlayerSnapshot[];
@@ -235,6 +236,7 @@ export interface ClientToServerEvents {
   'multiplayer:chat': (text: string) => void;
   'multiplayer:create-lobby': (payload: CreateLobbyPayload) => void;
   'multiplayer:join-lobby': (payload: JoinLobbyPayload) => void;
+  'multiplayer:enter-track': () => void;
   'multiplayer:leave-lobby': () => void;
   'multiplayer:update-settings': (payload: UpdateLobbySettingsPayload) => void;
   'multiplayer:set-color': (payload: { color: string }) => void;

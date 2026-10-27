@@ -49,7 +49,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         </section>
         <footer class="lobby-setup-footer">
           <div id="lobby-status" class="lobby-status" role="status"></div>
-          <button id="lobby-enter-track" class="trial-start-button" type="button">Enter track</button>
+          <button id="lobby-enter-track" class="trial-start-button" type="button">Open track for everyone</button>
           <button id="lobby-start" class="trial-start-button" type="button">Set up race <span class="lobby-space-hint">(hold Space)</span></button>
         </footer>
       </div>
@@ -244,7 +244,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   return {
     setOnTrack(value: boolean): void {
       onTrack = value;
-      enterTrackButton.hidden = value;
+      enterTrackButton.hidden = value || !currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.trackOpen;
       startButton.hidden = !value || !currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby';
       root.querySelector<HTMLButtonElement>('#lobby-close-panel')!.hidden = !value;
     },
@@ -269,8 +269,8 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · ${room.ranked ? 'Formal race laps ranked' : 'Formal race laps unranked · custom handling'}`;
       status.textContent = isHost
         ? onTrack ? 'Free drive is open. Hold Space on the track to set up a formal race.'
-          : 'Choose the track and handling, then enter the track. Hold Space while driving to set up a formal race.'
-        : `${onTrack ? 'Free drive is open' : 'Choose a color, then enter the track'} · host's next race: ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
+          : 'Choose the track and handling, then open the track for everyone.'
+        : `${onTrack ? 'Free drive is open' : 'Choose a color and wait for the host to open the track'} · host's next race: ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
           · ${room.nextRoundOptions.qualifying ? 'Qualifying on' : 'No qualifying'}`;
       renderPlayers(room);
       renderTrackOptions();
@@ -290,7 +290,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       }
       root.querySelector('#lobby-track-permission')!.textContent = isHost
         ? 'Choose the track for everyone.' : 'Only the host can change the track.';
-      enterTrackButton.hidden = onTrack || room.phase !== 'lobby';
+      enterTrackButton.hidden = onTrack || !isHost || room.trackOpen || room.phase !== 'lobby';
       startButton.hidden = !onTrack || !isHost || room.phase !== 'lobby';
       handlingEditor.setRoomHandling(room.settings.handling, isHost && room.phase === 'lobby');
     },

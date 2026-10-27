@@ -149,6 +149,7 @@ export function createMultiplayerRound(
     if (stage !== 'qualifying' && stage !== 'race') return emptyUpdate();
     elapsedSeconds += RACE_TIMESTEP;
     let changed = false;
+    const resets: RacePlayer[] = [];
     for (const activity of result.activity) {
       const player = participants.get(activity.playerId);
       if (!player || player.status !== 'racing') continue;
@@ -162,7 +163,8 @@ export function createMultiplayerRound(
         player.qualifyingSeconds = lap.durationSeconds;
         player.status = 'qualified';
         changed = true;
-        race.setFrozen(player.id, true);
+        const reset = race.resetPlayer(player.id, player.gridPosition - 1, true);
+        if (reset) resets.push(reset);
       } else {
         player.laps++;
         player.lapTimes.push(lap.durationSeconds);
@@ -173,11 +175,10 @@ export function createMultiplayerRound(
           player.finishSeconds = elapsedSeconds;
           player.status = 'finished';
           changed = true;
-          race.setFrozen(player.id, true);
+          race.setRespawnEnabledForPlayer(player.id, true);
         }
       }
     }
-    const resets: RacePlayer[] = [];
     if (stage === 'qualifying' || options.fallMode === 'elimination') {
       for (const fall of result.falls) {
         const player = participants.get(fall.playerId);
@@ -238,6 +239,7 @@ export function createMultiplayerRound(
   return {
     id,
     get stage() { return stage; },
+    isRacing(playerId: string): boolean { return participants.get(playerId)?.status === 'racing'; },
     snapshot,
     advance,
     step,

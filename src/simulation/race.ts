@@ -34,6 +34,7 @@ interface InternalPlayer extends RacePlayer {
   controls: DrivingControls;
   lastInputAt: number;
   frozen: boolean;
+  respawnOverride: boolean;
 }
 
 export function validRaceInput(value: unknown): value is CompatibleRaceInput {
@@ -67,6 +68,10 @@ export function createRaceSimulation(
     get tick() { return tick; },
     setHandling(value: Readonly<HandlingParameters>): void { currentHandling = value; },
     setRespawnEnabled(value: boolean): void { respawnEnabled = value; },
+    setRespawnEnabledForPlayer(id: string, value: boolean): void {
+      const player = players.get(id);
+      if (player) player.respawnOverride = value;
+    },
     setFrozen(id: string, frozen: boolean): void {
       const player = players.get(id);
       if (!player) return;
@@ -91,6 +96,7 @@ export function createRaceSimulation(
       player.attemptId++;
       player.lastTransition = 'respawn';
       player.frozen = frozen;
+      player.respawnOverride = false;
       return publicPlayer(player);
     },
     addPlayer(id: string, spawnIndex: number): RacePlayer {
@@ -99,7 +105,7 @@ export function createRaceSimulation(
       const player: InternalPlayer = { id, spawnIndex, state, lapTimer: createLapTimer(),
         lifeId: 0, attemptId: 0, lastTransition: null,
         acknowledgedInput: 0, lastReceivedInput: 0, pending: [], controls: { ...neutralControls }, lastInputAt: 0,
-        frozen: false };
+        frozen: false, respawnOverride: false };
       players.set(id, player);
       return player;
     },
@@ -145,7 +151,7 @@ export function createRaceSimulation(
         const controls = now - player.lastInputAt > 250 ? neutralControls : player.controls;
         const spawn = road.spawns[player.spawnIndex] ?? road.spawns[0]!;
         const respawned = stepSplineVehicle(player.state, controls, simulatedTimestep, world, spawn,
-          currentHandling.physics, currentHandling.driving, respawnEnabled);
+          currentHandling.physics, currentHandling.driving, respawnEnabled || player.respawnOverride);
         if (!respawnEnabled && previousAirborneTime < currentHandling.physics.respawnDelay
           && player.state.airborneTime >= currentHandling.physics.respawnDelay) {
           result.falls.push({ playerId: player.id });

@@ -40,7 +40,7 @@ export function createMultiplayerRoundUi(viewport: HTMLElement) {
   function setRound(next: RoundSnapshot | null, playerId: string): void {
     round = next;
     localPlayerId = playerId;
-    banner.classList.toggle('round-banner-racing', next?.stage === 'race');
+    banner.classList.toggle('round-banner-racing', next !== null && next.stage !== 'countdown');
     if (!next) { banner.hidden = true; return; }
     banner.hidden = false;
     const key = `${next.id}:${next.countdownEndsAtMs}`;
@@ -53,6 +53,11 @@ export function createMultiplayerRoundUi(viewport: HTMLElement) {
 
   function update(): void {
     if (!round) return;
+    if (round.stage === 'countdown' && localCountdownEnd !== null && performance.now() >= localCountdownEnd) {
+      banner.hidden = true;
+      return;
+    }
+    banner.hidden = false;
     const local = round.players.find(player => player.id === localPlayerId);
     let title: string;
     let subtitle: string;

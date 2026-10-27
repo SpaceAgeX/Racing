@@ -17,8 +17,9 @@ test('room chat survives race start, displays text safely and releases driving c
     const lobbyName = await page.locator('#lobby-room-name').textContent();
     await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
     await expect(guest.locator('#lobby-screen')).toBeVisible();
+    await expect(guest.locator('#lobby-enter-track')).toBeHidden();
     await page.locator('#lobby-enter-track').click();
-    await guest.locator('#lobby-enter-track').click();
+    await expect(guest.locator('#race-screen')).toBeVisible();
     await page.keyboard.press('t');
     await expect(page.getByRole('textbox', { name: 'Chat message' })).toBeFocused();
     await page.getByRole('textbox', { name: 'Chat message' }).fill('<img src=x onerror=alert(1)> hello');

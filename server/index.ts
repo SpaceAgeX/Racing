@@ -135,6 +135,7 @@ interface LobbyRecord {
   name: string;
   hostId: string;
   phase: LobbyPhase;
+  trackOpen: boolean;
   settings: LobbySettings;
   players: Map<string, LobbyPlayerRecord>;
   road: PreparedRaceRoad;
@@ -385,6 +386,7 @@ function createLobbySnapshot(lobby: LobbyRecord): LobbySnapshot {
     hostId: lobby.hostId,
     hostName: lobby.players.get(lobby.hostId)?.name ?? 'Host',
     phase: lobby.phase,
+    trackOpen: lobby.trackOpen,
     ranked: handlingHash(lobby.settings.handling) === defaultRulesetHash,
     settings: lobby.settings,
     players: [...lobby.players.values()].map((player) => ({
@@ -494,6 +496,7 @@ async function createLobby(socketId: string, trackId: string, requestedHandling:
     name: `${username}'s Lobby`,
     hostId: socketId,
     phase: 'lobby',
+    trackOpen: false,
     settings: {
       trackId: track.id,
       trackName: track.name,
@@ -574,7 +577,7 @@ function startLobby(socketId: string, settings: LobbySettings, options: StartLob
   const lobbyId = playerLobby.get(socketId);
   if (!lobbyId) return null;
   const lobby = lobbies.get(lobbyId);
-  if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby' || lobby.settings !== settings) return null;
+  if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby' || !lobby.trackOpen || lobby.settings !== settings) return null;
   const race = createRaceSimulation(lobby.road, lobby.settings.handling);
   const players = [...lobby.players.values()];
 
@@ -746,6 +749,14 @@ io.on('connection', (socket) => {
     broadcastLobbyList();
   });
 
+  socket.on('multiplayer:enter-track', async () => {
+    await pendingSettings;
+    const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
+    if (!lobby || lobby.hostId !== socket.id || lobby.phase !== 'lobby' || lobby.trackOpen) return;
+    lobby.trackOpen = true;
+    broadcastLobbyRoom(lobby);
+  });
+
   socket.on('multiplayer:leave-lobby', () => {
     leaveLobby(socket.id);
     socket.emit('multiplayer:room', { lobby: null });
@@ -796,7 +807,7 @@ io.on('connection', (socket) => {
     }
     await pendingSettings;
     const pendingLobby = lobbies.get(playerLobby.get(socket.id) ?? '');
-    if (!pendingLobby || pendingLobby.hostId !== socket.id || pendingLobby.phase !== 'lobby' || pendingLobby.starting) {
+    if (!pendingLobby || pendingLobby.hostId !== socket.id || pendingLobby.phase !== 'lobby' || !pendingLobby.trackOpen || pendingLobby.starting) {
       socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
       return;
     }
@@ -831,6 +842,7 @@ io.on('connection', (socket) => {
   socket.on('multiplayer:input', (input) => {
     const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
     if ((lobby?.phase !== 'race' && lobby?.phase !== 'qualifying' && lobby?.phase !== 'lobby')
+      || (lobby?.phase === 'lobby' && !lobby.trackOpen)
       || !lobby.race?.input(socket.id, input, performance.now())) return;
     const incomingBytes = Buffer.byteLength(JSON.stringify(input));
     recorder.received(socket.id, incomingBytes);
@@ -899,7 +911,8 @@ const raceClock = setInterval(() => {
         });
       }
       for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
-      for (const lap of lobby.round?.stage === 'race' ? result.laps : []) {
+      for (const lap of lobby.round?.stage === 'race'
+        ? result.laps.filter(entry => lobby.round?.isRacing(entry.playerId)) : []) {
         const userId = accountId(lap.playerId);
         const rulesetHash = handlingHash(lobby.settings.handling);
         if (userId) queueWrite(accounts.recordLap({ userId, trackId: lobby.settings.trackId,

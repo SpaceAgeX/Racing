@@ -11,6 +11,7 @@ import { FixedStepClock, FIXED_TIMESTEP, PAUSE_THRESHOLD } from './simulation/fi
 import { createLapTimer, resetCurrentLap, stepLapTimer } from './simulation/lap-timer.ts';
 import { createMinimap } from './ui/minimap.ts';
 import { createLapDisplay } from './ui/lap-display.ts';
+import { formatLapTime } from './ui/lap-display.ts';
 import { createRaceLeaderboard } from './ui/race-leaderboard.ts';
 import { createMultiplayerRoundUi } from './ui/multiplayer-round.ts';
 import { createPerformanceStats } from './ui/performance-stats.ts';
@@ -694,6 +695,9 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const raceRoomStatus = document.querySelector<HTMLElement>('#race-room-status');
   const performanceStatsElement = document.querySelector<HTMLElement>('#performance-stats');
   const raceSpeed = document.querySelector<HTMLOutputElement>('#race-speed-value')!;
+  const lapCurrent = document.querySelector<HTMLOutputElement>('#lap-current')!;
+  const lapLabel = document.querySelector<HTMLElement>('#lap-display .lap-label')!;
+  const lapStatus = document.querySelector<HTMLElement>('#lap-status')!;
   const raceLeaderboardElement = document.querySelector<HTMLElement>('#race-leaderboard');
 
   if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !lobbyPanelToggle || !roundSetupToggle || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
@@ -731,6 +735,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let activeRoom: LobbySnapshot | null = null;
   let lobbyPanelOpen = false;
   let raceSetupOpen = false;
+  let freeDriveClockStart: number | null = null;
+  let lastRoundReceivedAt = 0;
+  let displayedRaceTime = 0;
+  let displayedRaceRoundId = '';
   let soloRaceActive = false;
   let soloRequestId = 0;
   let pendingSoloRequest = 0;
@@ -795,6 +803,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     disposeSession();
     lobbyPanelOpen = false;
     raceSetupOpen = false;
+    freeDriveClockStart = null;
     lobbyScreen?.setRoom(null, localPlayerId);
     setMode('home');
     timeTrialSetup?.hide();
@@ -811,6 +820,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   function enterRaceScreen(room: LobbySnapshot): void {
     const enteringFromMenu = currentMode !== 'race';
+    if (room.phase === 'lobby' && (freeDriveClockStart === null || activeRoom?.phase !== 'lobby')) {
+      freeDriveClockStart = performance.now();
+    }
+    if (room.round) lastRoundReceivedAt = performance.now();
     if (room.phase === 'loading') roundUi.hideResults();
     if (activeRoom?.id === room.id && (activeRoom.phase === 'lobby') !== (room.phase === 'lobby')) disposeSession();
     if (room.phase !== 'lobby') lobbyPanelOpen = false;
@@ -838,6 +851,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   function enterLobbyScreen(room: LobbySnapshot): void {
     activeRoom = room;
     lobbyPanelOpen = false;
+    freeDriveClockStart = null;
     setMode('lobby');
     lobbyScreen.setOnTrack(false);
     lobbyScreen.setRoom(room, localPlayerId);
@@ -918,7 +932,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       return;
     }
 
-    if (room.phase === 'lobby' && currentMode !== 'race') enterLobbyScreen(room);
+    if (room.phase === 'lobby' && !room.trackOpen && currentMode !== 'race') enterLobbyScreen(room);
     else enterRaceScreen(room);
   }
 
@@ -1015,7 +1029,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   lobbyScreen = createLobbyScreen(lobbyRoot, {
     onEnterTrack() {
-      if (activeRoom) enterRaceScreen(activeRoom);
+      if (activeRoom?.hostId === localPlayerId && !activeRoom.trackOpen) {
+        lobbyScreen.setStatus('Opening the track for everyone...');
+        socket.emit('multiplayer:enter-track');
+      }
     },
     onStartLobby(payload) {
       socket.emit('multiplayer:start-lobby', payload);
@@ -1111,6 +1128,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     session.applySnapshot(snapshot, localPlayerId);
     if (snapshot.round) {
       activeRoom.round = snapshot.round;
+      lastRoundReceivedAt = receivedAt;
       roundUi.setRound(snapshot.round, localPlayerId);
     }
     raceLeaderboard.updateSnapshot(snapshot);
@@ -1252,10 +1270,30 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       const round = activeRoom?.round;
       const localRoundPlayer = round?.players.find(player => player.id === localPlayerId);
       const frozen = Boolean(round && (round.stage === 'loading' || round.stage === 'countdown'
-        || localRoundPlayer?.status !== 'racing'));
-      const spectate = frozen && (localRoundPlayer?.status === 'eliminated' || localRoundPlayer?.status === 'finished')
+        || localRoundPlayer?.status !== 'racing' && !(round.stage === 'race' && localRoundPlayer?.status === 'finished')));
+      const spectate = frozen && localRoundPlayer?.status === 'eliminated'
         ? round?.players.find(player => player.id !== localPlayerId && player.status === 'racing')?.id ?? null : null;
       session.step(elapsed, input.sample(), frozen, spectate);
+      if (activeRoom?.round?.stage === 'race') {
+        const currentRound = activeRoom.round;
+        if (displayedRaceRoundId !== currentRound.id) {
+          displayedRaceRoundId = currentRound.id;
+          displayedRaceTime = 0;
+        }
+        displayedRaceTime = Math.max(displayedRaceTime, currentRound.elapsedSeconds
+          + Math.min(0.15, Math.max(0, (time - lastRoundReceivedAt) / 1000)));
+        lapLabel.textContent = 'Race time';
+        lapCurrent.value = formatLapTime(displayedRaceTime);
+        lapStatus.textContent = localRoundPlayer?.status === 'finished' ? 'Finished · keep driving'
+          : localRoundPlayer?.status === 'eliminated' ? 'Eliminated'
+            : `Lap ${Math.min(currentRound.options.laps, (localRoundPlayer?.laps ?? 0) + 1)} of ${currentRound.options.laps}`;
+      } else if (activeRoom?.phase === 'lobby' && freeDriveClockStart !== null) {
+        lapLabel.textContent = 'Track time';
+        lapCurrent.value = formatLapTime((time - freeDriveClockStart) / 1000);
+        if (!session.lapTimer.running) lapStatus.textContent = 'Free drive · cross the line to start a lap';
+      } else {
+        lapLabel.textContent = 'Current';
+      }
       roundUi.update();
       tuningPanel.update(session.state);
       const speed = String(Math.round(Math.hypot(session.state.speed, session.state.lateralSpeed) * 3.6));
