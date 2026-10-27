@@ -93,9 +93,9 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const raceSetup = root.querySelector<HTMLElement>('#lobby-race-setup')!;
   document.body.append(raceSetup);
   raceSetup.tabIndex = -1;
-  const lapsInput = root.querySelector<HTMLInputElement>('#lobby-round-laps')!;
-  const fallSelect = root.querySelector<HTMLSelectElement>('#lobby-round-fall')!;
-  const qualifyingInput = root.querySelector<HTMLInputElement>('#lobby-round-qualifying')!;
+  const lapsInput = raceSetup.querySelector<HTMLInputElement>('#lobby-round-laps')!;
+  const fallSelect = raceSetup.querySelector<HTMLSelectElement>('#lobby-round-fall')!;
+  const qualifyingInput = raceSetup.querySelector<HTMLInputElement>('#lobby-round-qualifying')!;
   let spaceDown = false;
   let holdTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -155,8 +155,8 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   window.addEventListener('keyup', onSpaceUp);
   window.addEventListener('blur', cancelHold);
   startButton.addEventListener('click', openRaceSetup);
-  root.querySelector('#lobby-race-setup-close')!.addEventListener('click', closeRaceSetup);
-  root.querySelector('#lobby-round-confirm')!.addEventListener('click', startRace);
+  raceSetup.querySelector('#lobby-race-setup-close')!.addEventListener('click', closeRaceSetup);
+  raceSetup.querySelector('#lobby-round-confirm')!.addEventListener('click', startRace);
   for (const control of [lapsInput, fallSelect, qualifyingInput]) {
     control.addEventListener('change', () => {
       if (control === lapsInput) lapsInput.value = String(roundOptions().laps);
