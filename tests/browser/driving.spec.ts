@@ -314,7 +314,11 @@ test('the finish line starts the timer and records laps, best time, and differen
   const previousAccount = await accountBefore.json() as { lapsCompleted: number; username: string };
   const completedBefore = previousAccount.lapsCompleted;
   await expect(page.locator('#lap-current')).toHaveText('00:00.00');
-  await expect(page.locator('#lap-best')).toHaveText('--:--.--');
+  const previousBestText = (await page.locator('#lap-best').textContent())!;
+  const previousBest = previousBestText === '--:--.--' ? null : (() => {
+    const [minutes, seconds] = previousBestText.split(':');
+    return Number(minutes) * 60 + Number(seconds);
+  })();
   await expect(page.locator('#lap-status')).toHaveText('Cross the line to start');
   await page.keyboard.down('w');
   await expect.poll(async () => (await lapSnapshot(page)).running, { intervals: [25, 50] }).toBe(true);
@@ -341,9 +345,9 @@ test('the finish line starts the timer and records laps, best time, and differen
   expect(first.last).toBeGreaterThan(0);
   expect(first.best).toBe(first.last);
   expect(first.delta).toBeNull();
-  await expect(page.locator('#lap-best')).toHaveText(formatLapTime(first.best));
+  await expect(page.locator('#lap-best')).toHaveText(formatLapTime(previousBest === null ? first.best : Math.min(previousBest, first.best!)));
   await expect(page.locator('#lap-last')).toHaveText(formatLapTime(first.last));
-  await expect(page.locator('#lap-delta')).toHaveText('First lap');
+  await expect(page.locator('#lap-delta')).toHaveText(previousBest === null ? 'First lap' : /[+\u2212\u00b1]\d+\.\d{2} s vs best/);
 
   await page.keyboard.down('w');
   await expect.poll(async () => (await lapSnapshot(page)).completedLaps,
@@ -353,8 +357,17 @@ test('the finish line starts the timer and records laps, best time, and differen
   expect(second.best).toBe(Math.min(first.best!, second.last!));
   expect(second.delta).toBeCloseTo(second.last! - first.best!, 8);
   await expect(page.locator('#lap-last')).toHaveText(formatLapTime(second.last));
-  await expect(page.locator('#lap-best')).toHaveText(formatLapTime(second.best));
+  await expect(page.locator('#lap-best')).toHaveText(formatLapTime(previousBest === null ? second.best : Math.min(previousBest, second.best!)));
   await expect(page.locator('#lap-delta')).toHaveText(/[+\u2212\u00b1]\d+\.\d{2} s vs best/);
   await expect(page.locator('#lap-status')).toHaveText('Lap 3');
   await page.screenshot({ path: 'test-results/prototype-lap-timer.png' });
+  await expect.poll(async () => {
+    const response = await page.request.get('/api/account', { headers: await testAuthHeaders() });
+    return ((await response.json()) as { lapsCompleted: number }).lapsCompleted;
+  }).toBe(completedBefore + 2);
+  const allTimeBest = previousBest === null ? second.best! : Math.min(previousBest, second.best!);
+  await page.getByRole('button', { name: 'Leave game' }).click();
+  await enterRace(page, 'default');
+  expect((await lapSnapshot(page)).best).toBeNull();
+  await expect(page.locator('#lap-best')).toHaveText(formatLapTime(allTimeBest));
 });

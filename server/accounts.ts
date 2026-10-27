@@ -226,8 +226,15 @@ export function createAccounts() {
     return result.rows.map(row => ({ name: row.username, durationMs: row.duration_ms }));
   }
 
+  async function personalBest(userId: string, trackId: string, layoutHash: string): Promise<number | null> {
+    const result = await db.query<{ duration_ms: number | null }>(`select min(duration_ms)::integer as duration_ms
+      from public.lap_results where user_id=$1 and track_id=$2 and layout_hash=$3`,
+      [userId, trackId, layoutHash]);
+    return result.rows[0]?.duration_ms ?? null;
+  }
+
   return { identity, requireAccount, profile, usernameAvailable, claimUsername, updateUsername, updateDisplayName,
     listTracks, listRankedTracks, getTrack, saveTrack, deleteTrack,
-    recordLap, startRace, addActivity, dashboard, leaderboard, close: () => db.end() };
+    recordLap, startRace, addActivity, dashboard, leaderboard, personalBest, close: () => db.end() };
 }
 export type Accounts = ReturnType<typeof createAccounts>;

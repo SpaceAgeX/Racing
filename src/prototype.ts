@@ -11,6 +11,7 @@ import { FixedStepClock, FIXED_TIMESTEP, PAUSE_THRESHOLD } from './simulation/fi
 import { createLapTimer, resetCurrentLap, stepLapTimer } from './simulation/lap-timer.ts';
 import { createMinimap } from './ui/minimap.ts';
 import { createLapDisplay } from './ui/lap-display.ts';
+import { createRaceLeaderboard } from './ui/race-leaderboard.ts';
 import { createPerformanceStats } from './ui/performance-stats.ts';
 import { createDeveloperConsole } from './ui/developer-console.ts';
 import { createTimeTrialSetup } from './ui/time-trial-setup.ts';
@@ -49,7 +50,6 @@ import type {
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from './multiplayer/protocol.ts';
 
 interface MultiplayerPreferences {
-  playerName: string;
   lobbyId: string | null;
 }
 
@@ -86,7 +86,6 @@ interface DrivingSession {
   applySnapshot(snapshot: RaceSnapshot, localPlayerId: string): void;
   applyTransition(transition: RaceTransition): void;
   setClockOffset(offsetMs: number, roundTripMs: number): void;
-  toggleCamera(): void;
   syncRemotePlayers(players: LobbyPlayerSnapshot[], localPlayerId: string): void;
   getDiagnostics(): unknown;
   dispose(): void;
@@ -96,9 +95,6 @@ interface HomeScreenController {
   setStatus(message: string): void;
   setTrackOptions(trackOptions: TrackOption[]): void;
   setLobbies(lobbies: LobbySummary[]): void;
-  setPlayerName(name: string): void;
-  getPlayerName(): string;
-  getLobbyName(): string;
   getSelectedTrackId(): string;
   showLanding(): void;
   showMultiplayer(): void;
@@ -113,25 +109,19 @@ interface LobbyScreenController {
   dispose(): void;
 }
 
-const multiplayerPlayerNameKey = 'racing-multiplayer-player-name-v1';
 const multiplayerLobbyKey = 'racing-multiplayer-lobby-v1';
 
-function loadMultiplayerPreferences(defaultName = 'Player'): MultiplayerPreferences {
+function loadMultiplayerPreferences(): MultiplayerPreferences {
   try {
-    const playerName = localStorage.getItem(multiplayerPlayerNameKey);
     const lobbyId = sessionStorage.getItem(multiplayerLobbyKey);
-    return {
-      playerName: typeof playerName === 'string' && playerName.trim() && playerName !== 'Player' ? playerName.trim() : defaultName,
-      lobbyId: typeof lobbyId === 'string' && lobbyId.trim() ? lobbyId.trim() : null,
-    };
+    return { lobbyId: typeof lobbyId === 'string' && lobbyId.trim() ? lobbyId.trim() : null };
   } catch {
-    return { playerName: defaultName, lobbyId: null };
+    return { lobbyId: null };
   }
 }
 
 function saveMultiplayerPreferences(preferences: MultiplayerPreferences): void {
   try {
-    localStorage.setItem(multiplayerPlayerNameKey, preferences.playerName);
     if (preferences.lobbyId) sessionStorage.setItem(multiplayerLobbyKey, preferences.lobbyId);
     else sessionStorage.removeItem(multiplayerLobbyKey);
   } catch {
@@ -151,7 +141,7 @@ function setScreenVisibility(screen: HTMLElement, visible: boolean): void {
   screen.hidden = !visible;
 }
 
-function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters, playerColor: string, spawnIndex = 0, multiplayer = false): DrivingSession {
+function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters, playerColor: string, spawnIndex = 0, multiplayer = false, historicalBest: number | null = null): DrivingSession {
   document.querySelector('#active-track-name')!.textContent = trackName;
   const lapContainer = document.querySelector<HTMLElement>('#lap-display');
   if (!lapContainer) throw new Error('Lap display is missing.');
@@ -159,7 +149,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
   const finishLine = road.finish;
   const lapTimer = createLapTimer();
   const lapDisplay = createLapDisplay(lapContainer, finishLine !== null);
-  lapDisplay.update(lapTimer);
+  lapDisplay.update(lapTimer, false, historicalBest);
 
   const state = createVehicleState();
   const spawn = road.spawns[spawnIndex] ?? road.spawns[0]!;
@@ -369,7 +359,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     copyVehicleState(state, previous);
     if (newAttempt || kind) {
       car.update(rendered);
-      lapDisplay.update(lapTimer);
+      lapDisplay.update(lapTimer, false, historicalBest);
       updateMinimap();
     }
   }
@@ -483,7 +473,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       ? lapTimer.elapsed + Math.min(0.1, (performance.now() - lastAuthoritativeTimerAt) / 1000)
         * tuning.physics.physicsTime
       : lapTimer.elapsed;
-    lapDisplay.update({ ...lapTimer, elapsed: displayedElapsed }, deathPending);
+    lapDisplay.update({ ...lapTimer, elapsed: displayedElapsed }, deathPending, historicalBest);
     updateMinimap();
   }
 
@@ -530,7 +520,6 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     applySnapshot,
     applyTransition,
     setClockOffset,
-    toggleCamera(): void { followCamera.toggleMode(); },
     syncRemotePlayers,
     getDiagnostics,
     dispose(): void {
@@ -552,7 +541,7 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   onBackToLanding(): void;
   onCreateLobby(payload: CreateLobbyPayload): void;
   onJoinLobby(payload: JoinLobbyPayload): void;
-}, preferredTrackId = ''): HomeScreenController {
+}, username: string, preferredTrackId = ''): HomeScreenController {
   root.innerHTML = `
     <a id="home-account-link" class="home-account-link" href="/account/" aria-label="Your account" title="Your account"><span id="home-account-avatar" aria-hidden="true">R</span></a>
     <div class="home-shell">
@@ -568,7 +557,7 @@ function createHomeScreen(root: HTMLElement, callbacks: {
         <header class="multiplayer-entry-header">
           <button id="home-back" class="back-button" type="button">&#8592; Back</button>
           <span class="menu-eyebrow">MULTIPLAYER</span><h1>Create or join a lobby</h1>
-          <label>Player name<input id="home-player-name" type="text" maxlength="32" /></label>
+          <p class="multiplayer-account-name">Playing as <strong id="home-username"></strong></p>
         </header>
         <div class="multiplayer-entry-tabs" aria-label="Lobby options">
           <button id="home-create-tab" type="button" aria-pressed="false">Create</button>
@@ -576,7 +565,7 @@ function createHomeScreen(root: HTMLElement, callbacks: {
         </div>
         <section id="home-create-panel" hidden>
           <div class="multiplayer-launch">
-            <label>Lobby name<input id="home-lobby-name" type="text" maxlength="32" /></label>
+            <p class="multiplayer-account-name">Your room: <strong id="home-created-lobby-name"></strong></p>
             <button id="home-create-lobby" class="trial-start-button" type="button">Create lobby</button>
           </div>
         </section>
@@ -587,8 +576,8 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   `;
 
   const status = root.querySelector<HTMLElement>('#home-status')!;
-  const playerNameInput = root.querySelector<HTMLInputElement>('#home-player-name')!;
-  const lobbyNameInput = root.querySelector<HTMLInputElement>('#home-lobby-name')!;
+  root.querySelector('#home-username')!.textContent = username;
+  root.querySelector('#home-created-lobby-name')!.textContent = `${username}'s Lobby`;
   const createButton = root.querySelector<HTMLButtonElement>('#home-create-lobby')!;
   const lobbyList = root.querySelector<HTMLElement>('#home-lobby-list')!;
   const homeShell = root.querySelector<HTMLElement>('.home-shell')!;
@@ -608,14 +597,6 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   createTab.addEventListener('click', () => showEntryTab(true));
   joinTab.addEventListener('click', () => showEntryTab(false));
   let trackOptions: TrackOption[] = [];
-
-  function selectedName(): string {
-    return playerNameInput.value.trim() || 'Player';
-  }
-
-  function selectedLobbyName(): string {
-    return lobbyNameInput.value.trim() || `${selectedName()}'s lobby`;
-  }
 
   function selectedTrackId(): string {
     return trackOptions.find(track => track.id === preferredTrackId)?.id ?? trackOptions[0]?.id ?? 'default';
@@ -641,21 +622,15 @@ function createHomeScreen(root: HTMLElement, callbacks: {
       button.type = 'button';
       button.textContent = lobby.playerCount >= maxLobbyPlayers ? 'Lobby full' : 'Join lobby';
       button.disabled = lobby.playerCount >= maxLobbyPlayers;
-      button.addEventListener('click', () => callbacks.onJoinLobby({ lobbyId: lobby.id, playerName: selectedName() }));
+      button.addEventListener('click', () => callbacks.onJoinLobby({ lobbyId: lobby.id }));
       card.append(title, meta, button);
       lobbyList.append(card);
     }
   }
 
   createButton.addEventListener('click', () => {
-    callbacks.onCreateLobby({
-      lobbyName: selectedLobbyName(),
-      playerName: selectedName(),
-      trackId: selectedTrackId(),
-    });
+    callbacks.onCreateLobby({ trackId: selectedTrackId() });
   });
-
-  playerNameInput.addEventListener('change', () => saveMultiplayerPreferences({ playerName: selectedName(), lobbyId: null }));
 
   return {
     setStatus(message: string): void { status.textContent = message; },
@@ -663,9 +638,6 @@ function createHomeScreen(root: HTMLElement, callbacks: {
       trackOptions = options;
     },
     setLobbies(lobbies: LobbySummary[]): void { renderLobbies(lobbies); },
-    setPlayerName(name: string): void { playerNameInput.value = name; },
-    getPlayerName(): string { return selectedName(); },
-    getLobbyName(): string { return selectedLobbyName(); },
     getSelectedTrackId(): string { return selectedTrackId(); },
     showLanding(): void { homeShell.hidden = false; landing.hidden = false; multiplayerMenu.hidden = true; },
     showMultiplayer(): void { showEntryTab(false); homeShell.hidden = false; landing.hidden = true; multiplayerMenu.hidden = false; },
@@ -697,8 +669,9 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const raceRoomStatus = document.querySelector<HTMLElement>('#race-room-status');
   const performanceStatsElement = document.querySelector<HTMLElement>('#performance-stats');
   const raceSpeed = document.querySelector<HTMLOutputElement>('#race-speed-value')!;
+  const raceLeaderboardElement = document.querySelector<HTMLElement>('#race-leaderboard');
 
-  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !raceRoomName || !raceRoomStatus || !performanceStatsElement) {
+  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
     throw new Error('Multiplayer UI is missing.');
   }
 
@@ -711,6 +684,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const raceRoomNameElement = raceRoomName;
   const raceRoomStatusElement = raceRoomStatus;
   const performanceStats = createPerformanceStats(performanceStatsElement);
+  const raceLeaderboard = createRaceLeaderboard(raceLeaderboardElement);
   const menuBackdropCanvas = document.createElement('canvas');
   menuBackdropCanvas.className = 'menu-car-backdrop';
   menuBackdropCanvas.setAttribute('aria-hidden', 'true');
@@ -719,7 +693,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   const tuningPanel = createTuningPanel(tuningPanelElement, tuningToggle);
   const input = createKeyboardInput(window, document);
-  const preferences = loadMultiplayerPreferences(username);
+  const preferences = loadMultiplayerPreferences();
 
   let homeScreen: HomeScreenController;
   let lobbyScreen: LobbyScreenController;
@@ -731,6 +705,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let soloRequestId = 0;
   let pendingSoloRequest = 0;
   let lastSoloHandling = '';
+  let timeTrialBest: number | null = null;
   let localPlayerId = '';
   let bootstrap: MultiplayerBootstrap | null = null;
   let animationFrame = 0;
@@ -772,7 +747,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     const desiredColor = room ? localPlayerColor(room, localPlayerId) : timeTrialColor;
     if (!session || session.trackId !== desiredTrackId || session.playerColor !== desiredColor) {
       disposeSession();
-      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor, Math.max(0, room?.players.findIndex(p => p.id === localPlayerId) ?? 0), room !== null || soloRaceActive);
+      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor, Math.max(0, room?.players.findIndex(p => p.id === localPlayerId) ?? 0), room !== null || soloRaceActive, room ? null : timeTrialBest);
     }
     return session;
   }
@@ -790,9 +765,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     homeScreen.setStatus(message);
     homeScreen.setLobbies(bootstrap?.lobbies ?? []);
     activeRoom = null;
+    raceLeaderboard.setRoom(null, localPlayerId);
     raceRoomNameElement.textContent = 'Race room';
     raceRoomStatusElement.textContent = 'Waiting for a race to start';
-    saveMultiplayerPreferences({ playerName: homeScreen.getPlayerName(), lobbyId: null });
+    saveMultiplayerPreferences({ lobbyId: null });
   }
 
   function enterLobbyScreen(room: LobbySnapshot): void {
@@ -802,7 +778,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     lobbyScreen.setRoom(room, localPlayerId);
     raceRoomNameElement.textContent = room.name;
     raceRoomStatusElement.textContent = room.phase === 'race' ? 'Race started' : 'Lobby open';
-    saveMultiplayerPreferences({ playerName: homeScreen.getPlayerName(), lobbyId: room.id });
+    saveMultiplayerPreferences({ lobbyId: room.id });
   }
 
   function enterRaceScreen(room: LobbySnapshot): void {
@@ -811,15 +787,18 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     raceRoomNameElement.textContent = room.name;
     raceRoomStatusElement.textContent = room.phase === 'race' ? 'Race in progress' : 'Lobby waiting';
     const currentSession = ensureSession(room);
+    raceLeaderboard.setRoom(room, localPlayerId);
     currentSession.syncRemotePlayers(room.players, localPlayerId);
-    saveMultiplayerPreferences({ playerName: homeScreen.getPlayerName(), lobbyId: room.id });
+    saveMultiplayerPreferences({ lobbyId: room.id });
   }
 
   function enterTimeTrial(track: TrackOption, color: string): void {
     tuningPanel.resetDefaults();
     const leavingRoom = activeRoom !== null;
     activeRoom = null;
+    raceLeaderboard.setRoom(null, localPlayerId);
     timeTrialTrack = track;
+    timeTrialBest = null;
     timeTrialColor = color;
     try {
       selectTrackForPlay(localStorage, track.name, track.layout, track.id);
@@ -958,16 +937,16 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       setMode('home');
     },
     onCreateLobby(payload) {
-      saveMultiplayerPreferences({ playerName: payload.playerName, lobbyId: null });
+      saveMultiplayerPreferences({ lobbyId: null });
       socket.emit('multiplayer:create-lobby', payload);
-      homeScreen.setStatus(`Creating ${payload.lobbyName}...`);
+      homeScreen.setStatus(`Creating ${username}'s Lobby...`);
     },
     onJoinLobby(payload) {
-      saveMultiplayerPreferences({ playerName: payload.playerName, lobbyId: payload.lobbyId });
+      saveMultiplayerPreferences({ lobbyId: payload.lobbyId });
       socket.emit('multiplayer:join-lobby', payload);
       homeScreen.setStatus('Joining lobby...');
     },
-  }, fallbackTrackId.replace(/^preset:/, ''));
+  }, username, fallbackTrackId.replace(/^preset:/, ''));
 
   timeTrialSetup = createTimeTrialSetup(homeRoot, {
     onBack() {
@@ -998,13 +977,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     },
   });
 
-  homeScreen.setPlayerName(preferences.playerName);
-
   socket.on('multiplayer:bootstrap', (payload) => {
     networkStats.bootstrapEventsReceived++;
     bootstrap = payload;
     localPlayerId = payload.playerId;
-    homeScreen.setPlayerName(preferences.playerName);
     homeScreen.setTrackOptions(payload.trackOptions);
     homeScreen.setLobbies(payload.lobbies);
     lobbyScreen.setTrackOptions(payload.trackOptions);
@@ -1023,7 +999,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     if (pendingSoloRequest || soloRaceActive || currentMode === 'time-trial-setup') return;
     const lobbyId = payload.activeLobbyId ?? preferences.lobbyId;
     if (lobbyId) {
-      socket.emit('multiplayer:join-lobby', { lobbyId, playerName: preferences.playerName });
+      socket.emit('multiplayer:join-lobby', { lobbyId });
     }
   });
 
@@ -1059,6 +1035,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     }
     networkStats.lastStateReceivedAt = receivedAt;
     session.applySnapshot(snapshot, localPlayerId);
+    raceLeaderboard.updateSnapshot(snapshot);
   });
 
   function showTimeTrialRanking(ranked: boolean): void {
@@ -1072,11 +1049,12 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     }
   }
 
-  socket.on('time-trial:ready', ({ requestId, track, handling, ranked }) => {
+  socket.on('time-trial:ready', ({ requestId, track, handling, ranked, personalBestMs }) => {
     if (requestId !== pendingSoloRequest || currentMode !== 'time-trial-setup') return;
     pendingSoloRequest = 0;
     soloRaceActive = true;
     timeTrialTrack = track;
+    timeTrialBest = personalBestMs === null ? null : personalBestMs / 1000;
     Object.assign(tuningPanel.parameters.driving, handling.driving);
     Object.assign(tuningPanel.parameters.physics, handling.physics);
     lastSoloHandling = JSON.stringify(tuningPanel.parameters);
@@ -1129,7 +1107,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     networkStats.errorsReceived++;
     homeScreen.setStatus(message);
     lobbyScreen.setStatus(message);
-    saveMultiplayerPreferences({ playerName: homeScreen.getPlayerName(), lobbyId: null });
+    saveMultiplayerPreferences({ lobbyId: null });
   });
 
   socket.on('disconnect', () => {
@@ -1182,7 +1160,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     if (elapsed > PAUSE_THRESHOLD) lastFrameTime = time;
 
     if (currentMode === 'race' && session) {
-      if (input.consumeCameraToggle()) session.toggleCamera();
       session.step(elapsed, input.sample());
       tuningPanel.update(session.state);
       const speed = String(Math.round(Math.hypot(session.state.speed, session.state.lateralSpeed) * 3.6));

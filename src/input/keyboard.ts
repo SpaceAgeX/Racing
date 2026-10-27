@@ -1,25 +1,22 @@
 import type { DrivingControls } from '../simulation/types.ts';
 
 const drivingKeys = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD']);
-const cameraKey = 'KeyC';
 
 export function createKeyboardInput(windowTarget: Window, documentTarget: Document) {
   const held = new Set<string>();
   let enabled = false;
-  let cameraToggleRequested = false;
 
   const isTextInput = (target: EventTarget | null): boolean => typeof HTMLElement !== 'undefined' && target instanceof HTMLElement
     && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
     && !(target instanceof HTMLInputElement && target.type === 'range');
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (!enabled || isTextInput(event.target) || (!drivingKeys.has(event.code) && event.code !== cameraKey)) return;
+    if (!enabled || isTextInput(event.target) || !drivingKeys.has(event.code)) return;
     event.preventDefault();
-    if (event.code === cameraKey && !held.has(cameraKey)) cameraToggleRequested = true;
     held.add(event.code);
   };
   const onKeyUp = (event: KeyboardEvent): void => {
-    if (!drivingKeys.has(event.code) && event.code !== cameraKey) return;
+    if (!drivingKeys.has(event.code)) return;
     if (!enabled || isTextInput(event.target)) {
       held.delete(event.code);
       return;
@@ -29,7 +26,6 @@ export function createKeyboardInput(windowTarget: Window, documentTarget: Docume
   };
   const clear = (): void => {
     held.clear();
-    cameraToggleRequested = false;
   };
   const onVisibilityChange = (): void => {
     if (documentTarget.hidden) clear();
@@ -53,11 +49,6 @@ export function createKeyboardInput(windowTarget: Window, documentTarget: Docume
     setEnabled(value: boolean): void {
       enabled = value;
       if (!enabled) clear();
-    },
-    consumeCameraToggle(): boolean {
-      const requested = cameraToggleRequested;
-      cameraToggleRequested = false;
-      return requested;
     },
     clear,
     dispose(): void {

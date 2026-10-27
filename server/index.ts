@@ -187,8 +187,10 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 io.use((socket, next) => {
   void accounts.identity(socket.handshake.auth?.token).then(async account => {
     if (!account) { next(new Error('Sign in to race.')); return; }
-    if (!(await accounts.profile(account.id)).username) { next(new Error('Choose a username before racing.')); return; }
+    const username = (await accounts.profile(account.id)).username;
+    if (!username) { next(new Error('Choose a username before racing.')); return; }
     socket.data.account = account;
+    socket.data.username = username;
     const error = admission.socket(socket.request, socket.id, () => socket.disconnect(true));
     if (error) { next(new Error(error)); return; }
     socket.on('disconnect', () => admission.releaseSocket(socket.request, socket.id));
@@ -351,11 +353,6 @@ function makeLobbyId(): string {
   return `lobby-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function normalizeName(name: string | undefined, fallback: string): string {
-  const trimmed = name?.trim() ?? '';
-  return trimmed.length ? trimmed.slice(0, 32) : fallback;
-}
-
 function colorForIndex(index: number): string {
   return lobbyPalette[index % lobbyPalette.length]!;
 }
@@ -438,7 +435,7 @@ async function broadcastTrackOptions(): Promise<void> {
 async function emitBootstrap(socket: Parameters<typeof io.on>[1] extends (arg: infer T) => void ? T : never): Promise<void> {
   const bootstrap: MultiplayerBootstrap = {
     playerId: socket.id,
-    playerName: 'Player',
+    playerName: socket.data.username,
     activeLobbyId: playerLobby.get(socket.id) ?? null,
     activeLobbyPhase: playerLobby.get(socket.id) ? lobbies.get(playerLobby.get(socket.id)!)?.phase ?? null : null,
     trackOptions: await availableTracks(),
@@ -471,16 +468,18 @@ function leaveLobby(socketId: string): void {
   broadcastLobbyList();
 }
 
-async function createLobby(socketId: string, playerName: string, lobbyName: string, trackId: string, requestedHandling: unknown): Promise<LobbyRecord> {
+async function createLobby(socketId: string, trackId: string, requestedHandling: unknown): Promise<LobbyRecord> {
   const track = await resolveTrack(trackId);
   const handling = normalizeHandling(requestedHandling) ?? { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
   if (handling.physics.physicsTime !== 1) throw new Error('Physics Time is fixed at 1× in multiplayer.');
-  if (!io.sockets.sockets.has(socketId)) throw new Error('The player disconnected.');
+  const socket = io.sockets.sockets.get(socketId);
+  if (!socket) throw new Error('The player disconnected.');
+  const username = socket.data.username as string;
   leaveLobby(socketId);
   timeTrials.delete(socketId);
   const lobby: LobbyRecord = {
     id: makeLobbyId(),
-    name: normalizeName(lobbyName, `${playerName}'s lobby`),
+    name: `${username}'s Lobby`,
     hostId: socketId,
     phase: 'lobby',
     settings: {
@@ -496,7 +495,7 @@ async function createLobby(socketId: string, playerName: string, lobbyName: stri
   };
   lobby.players.set(socketId, {
     id: socketId,
-    name: normalizeName(playerName, 'Player'),
+    name: username,
     color: colorForIndex(0),
     state: null,
   });
@@ -505,9 +504,11 @@ async function createLobby(socketId: string, playerName: string, lobbyName: stri
   return lobby;
 }
 
-function joinLobby(socketId: string, lobbyId: string, playerName: string): LobbyRecord | null {
+function joinLobby(socketId: string, lobbyId: string): LobbyRecord | null {
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.phase !== 'lobby') return null;
+  const username = io.sockets.sockets.get(socketId)?.data.username as string | undefined;
+  if (!username) return null;
   if (lobby.players.has(socketId)) return lobby;
   if (lobby.players.size >= maxLobbyPlayers) return null;
   const color = lobbyPalette.find(color => ![...lobby.players.values()].some(player => player.color === color));
@@ -516,7 +517,7 @@ function joinLobby(socketId: string, lobbyId: string, playerName: string): Lobby
   timeTrials.delete(socketId);
   const player = {
     id: socketId,
-    name: normalizeName(playerName, 'Player'),
+    name: username,
     color,
     state: null,
   } satisfies LobbyPlayerRecord;
@@ -617,8 +618,11 @@ io.on('connection', (socket) => {
       const rulesetHash = handlingHash(handling);
       const rankedEligible = Boolean(known) && known?.visibility !== 'personal'
         && rulesetHash === defaultRulesetHash;
-      timeTrials.set(socket.id, { simulation: race, track, layoutHash: trackLayoutHash(track.layout), rulesetHash, rankedEligible });
-      socket.emit('time-trial:ready', { requestId: payload.requestId, track, handling, ranked: rankedEligible });
+      const layoutHash = trackLayoutHash(track.layout);
+      const personalBestMs = await accounts.personalBest(socket.data.account.id, track.id, layoutHash);
+      if (!socket.connected || generation !== soloGeneration) return;
+      timeTrials.set(socket.id, { simulation: race, track, layoutHash, rulesetHash, rankedEligible });
+      socket.emit('time-trial:ready', { requestId: payload.requestId, track, handling, ranked: rankedEligible, personalBestMs });
     } catch (error) {
       if (generation === soloGeneration) socket.emit('time-trial:error', { requestId: payload.requestId,
         message: error instanceof Error ? error.message : 'Could not start the time trial.' });
@@ -658,8 +662,9 @@ io.on('connection', (socket) => {
 
   socket.on('multiplayer:create-lobby', async (payload) => {
     try {
-      const { lobbyName, playerName, trackId, handling } = payload;
-      const lobby = await createLobby(socket.id, playerName, lobbyName, trackId, handling);
+      if (!payload || typeof payload.trackId !== 'string') return;
+      const { trackId, handling } = payload;
+      const lobby = await createLobby(socket.id, trackId, handling);
       await socket.join(lobby.id);
       broadcastLobbyRoom(lobby);
       broadcastLobbyList();
@@ -667,9 +672,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('multiplayer:join-lobby', (payload) => {
-    if (!payload || typeof payload.lobbyId !== 'string' || typeof payload.playerName !== 'string') return;
-    const { lobbyId, playerName } = payload;
-    const lobby = joinLobby(socket.id, lobbyId, playerName);
+    if (!payload || typeof payload.lobbyId !== 'string') return;
+    const { lobbyId } = payload;
+    const lobby = joinLobby(socket.id, lobbyId);
     if (!lobby) {
       socket.emit('multiplayer:error', { message: 'That lobby is full, already racing, or no longer exists.' });
       return;

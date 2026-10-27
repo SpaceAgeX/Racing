@@ -421,10 +421,10 @@ body.tuning-collapsed { --panel-width: 0px; }
   height: 100%;
 }
 
+.race-left-hud { position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 10px; width: min(320px, calc(100% - 32px)); max-height: calc(100% - 212px); pointer-events: none; }
 .lap-display {
-  position: absolute;
-  top: 16px;
-  left: 16px;
+  position: relative;
+  flex: none;
   width: 190px;
   padding: 12px 14px;
   border: 1px solid #ffffff26;
@@ -433,6 +433,16 @@ body.tuning-collapsed { --panel-width: 0px; }
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }
+.race-leaderboard { min-height: 0; overflow: auto; padding: 10px 12px; border: 1px solid #ffffff26; border-radius: 8px; background: #23313acc; font-variant-numeric: tabular-nums; pointer-events: auto; }
+.race-leaderboard h2 { margin: 0 0 8px; font-size: 13px; }
+.race-leaderboard table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: right; }
+.race-leaderboard th, .race-leaderboard td { padding: 5px 3px; border-bottom: 1px solid #ffffff19; white-space: nowrap; }
+.race-leaderboard thead th { color: #bbcbd3; font-weight: 500; }
+.race-leaderboard th:nth-child(2) { text-align: left; }
+.race-leaderboard tbody th { max-width: 105px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; border-left: 3px solid var(--player-color); padding-left: 6px; }
+.race-leaderboard-you { background: #ffffff18; }
+.multiplayer-account-name { color: #bbcbd3; }
+.multiplayer-account-name strong { color: #eaf0f3; }
 .lap-label { display: block; color: #bbcbd3; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
 .active-track-name { display: block; margin-bottom: 10px; font-size: 11px; color: #bbcbd3; overflow-wrap: anywhere; }
 .map-builder-link { display: inline-block; margin-top: 10px; color: #eaf0f3; font-size: 11px; text-underline-offset: 3px; pointer-events: auto; }
@@ -517,11 +527,15 @@ body.tuning-collapsed { --panel-width: 0px; }
 }
 
 @container (max-width: 720px) {
+  .race-left-hud { left: 12px; width: min(260px, calc(100% - 24px)); max-height: calc(100% - 172px); }
+  .race-leaderboard { padding: 7px; }
+  .race-leaderboard table { font-size: 10px; }
   .minimap { left: 12px; width: 140px; height: 140px; }
   .controls { left: auto; right: 12px; transform: none; flex-direction: column; gap: 4px; padding: 8px 10px; }
 }
 
 @container (max-height: 400px) {
+  .race-left-hud { max-height: calc(100% - 118px); }
   .minimap { width: 96px; height: 96px; }
   .lap-display { width: 160px; padding: 6px 8px; }
   .active-track-name { margin-bottom: 3px; font-size: 9px; }

@@ -54,7 +54,7 @@ npm start
 
 ## Race rooms
 
-The home screen lists open lobbies. Enter a player name, choose a preset or a shared saved track, and **Create lobby**, or join an existing lobby. The host can change the track and **Start race**; other players see the same room settings. The map and cars load when the host starts. A one-player room can be used for solo testing. **Leave lobby** or **Leave game** returns to the home screen. Rooms exist in memory and disappear when everyone leaves or the server restarts.
+The home screen lists open lobbies. Create a lobby or join an existing one. The server uses each signed-in account's username as the player's name and names new rooms **[Username]'s Lobby**. The host can change the track and **Start race**; other players see the same room settings. The map and cars load when the host starts. A one-player room can be used for solo testing. **Leave lobby** or **Leave game** returns to the home screen. Rooms exist in memory and disappear when everyone leaves or the server restarts.
 
 The home menu offers Time Trial, Multiplayer Race, Map Builder, and an account dashboard. Choose a track and color before a time trial; multiplayer hosts choose the track and can expand advanced handling in the lobby. Guests see the chosen track and ranked status but cannot edit the track or handling. Each race keeps its own spline-layout snapshot, so edits to the library do not replace a race in progress.
 
@@ -71,7 +71,7 @@ Releasing both pedals coasts under drag. Held inputs clear when the window loses
 
 The bottom-left minimap shows the road footprint, a white finish line, blue checkpoints, and car arrows in player colors. It stays north-up, fits the occupied area, and tracks falls and respawns. Time-trial and lobby previews use the same 2D map without player arrows.
 
-All driving values are in `src/simulation/parameters.ts`: forward and reverse acceleration, braking, speed caps, drag, wheelbase, steering limits, steering speed, and centering speed. Default forward acceleration is **40 m/s²**, reverse acceleration is **25 m/s²**, top speed is **70.5 m/s (253.8 km/h)**, and reverse speed is **30 m/s (108 km/h)**. Steering limits decrease with speed for stable arcade handling. Press **C** while racing to toggle between the follow camera and the hood-level first-person view. Camera offsets and smoothing rates are in `src/rendering/camera.ts`. Each new time trial starts with source defaults.
+All driving values are in `src/simulation/parameters.ts`: forward and reverse acceleration, braking, speed caps, drag, wheelbase, steering limits, steering speed, and centering speed. Default forward acceleration is **40 m/s²**, reverse acceleration is **25 m/s²**, top speed is **70.5 m/s (253.8 km/h)**, and reverse speed is **30 m/s (108 km/h)**. Steering limits decrease with speed for stable arcade handling. The follow camera's offsets and smoothing rates are in `src/rendering/camera.ts`. Each new time trial starts with source defaults.
 
 The same parameters file contains `physicsParameters`: gravity, the one-second respawn delay, ground contact snap distance, collision bounce, spin damping, crash tire grip, and crash recovery time. The **Crashes** sliders in the Handling panel tune these collision values live.
 
@@ -95,7 +95,7 @@ The car remains stable while at least half of its footprint is supported. Once m
 
 The first crossing of the finish line starts the timer. A subsequent crossing completes a lap only after every checkpoint has been crossed, in any order. Repeated crossings of one checkpoint count once. An incomplete finish crossing keeps the timer and checkpoint progress running; a completed lap clears progress for the next lap. Tracks without checkpoints count each finish crossing as before. Gates follow the road direction and elevation; passing beside or below them does not count.
 
-The display at the upper left shows **Current**, **Best** for this session, and **Last**. After finishing, the last lap's difference from the previous best appears in green when faster, red when slower, or neutral when equal at displayed precision. The first completed lap shows "First lap". Times use minutes, seconds, and hundredths. Session results remain until the page reloads.
+The display at the upper left shows **Current**, **Best**, and **Last**. In time trials, Best includes the signed-in player's server-recorded laps on that track across sessions; in multiplayer, it shows the current race's best. After finishing, the last lap's difference from the previous best appears in green when faster, red when slower, or neutral when equal at displayed precision. Times use minutes, seconds, and hundredths. Multiplayer also shows each room member's best lap and completed-lap count in a live board on the left.
 
 Timing uses the server's fixed simulation steps and interpolates the actual line-crossing instant within a step. Hiding or pausing a browser does not change the server timer. Respawning resets the current attempt and waits for a new start-line crossing, retaining session best and last results. Respawn teleports do not count as line crossings. The timer is plain data in `src/simulation/lap-timer.ts`; its display is separate in `src/ui/lap-display.ts`.
 

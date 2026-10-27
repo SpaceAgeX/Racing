@@ -73,15 +73,12 @@ export interface MultiplayerBootstrap {
 }
 
 export interface CreateLobbyPayload {
-  lobbyName: string;
-  playerName: string;
   trackId: string;
   handling?: HandlingParameters;
 }
 
 export interface JoinLobbyPayload {
   lobbyId: string;
-  playerName: string;
 }
 
 export interface UpdateLobbySettingsPayload {
@@ -134,6 +131,7 @@ export interface TimeTrialReady {
   track: TrackOption;
   handling: HandlingParameters;
   ranked: boolean;
+  personalBestMs: number | null;
 }
 
 export interface ServerDiagnosticsSnapshot {

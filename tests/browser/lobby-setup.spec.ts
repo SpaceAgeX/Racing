@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { io, type Socket } from 'socket.io-client';
 import { testAccessToken } from './race-helpers.ts';
-import type { ClientToServerEvents, ServerToClientEvents, LobbySnapshot } from '../../src/multiplayer/protocol.ts';
+import type { ClientToServerEvents, ServerToClientEvents, LobbySnapshot, CreateLobbyPayload, JoinLobbyPayload } from '../../src/multiplayer/protocol.ts';
 
 test('lobby previews, colors and host settings update live for guests', async ({ page, browser }) => {
   test.setTimeout(60_000);
@@ -14,14 +14,13 @@ test('lobby previews, colors and host settings update live for guests', async ({
       await expect(client.locator('#home-status')).toContainText('Connected');
       await expect(client.locator('#home-multiplayer-menu select')).toHaveCount(0);
     }
-    await page.locator('#home-player-name').fill('Host');
     await page.getByRole('button', { name: 'Create', exact: true }).click();
-    await page.locator('#home-lobby-name').fill('Live settings test');
     await page.getByRole('button', { name: 'Create lobby', exact: true }).click();
     await expect(page.locator('#lobby-screen')).toBeVisible();
-    await guest.locator('#home-player-name').fill('Guest');
+    const lobbyName = await page.locator('#lobby-room-name').textContent();
+    expect(lobbyName).toMatch(/'s Lobby$/);
     await guest.getByRole('button', { name: 'Join', exact: true }).click();
-    await guest.locator('#home-lobby-list article').filter({ hasText: 'Live settings test' }).getByRole('button', { name: 'Join lobby' }).click();
+    await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
     await expect(guest.locator('#lobby-player-count')).toHaveText('2 / 10');
     await expect(guest.locator('#lobby-preview')).toBeVisible();
     await expect(page.locator('#lobby-colors button')).toHaveCount(15);
@@ -73,6 +72,7 @@ function nextError(client: Client): Promise<string> {
 
 test('server rejects taken colors and an eleventh player, then reuses released slots safely', async () => {
   const clients: Client[] = [];
+  const usernames: string[] = [];
   try {
     for (let index = 0; index < 11; index++) {
       const client: Client = io('http://127.0.0.1:3100', { autoConnect: false, forceNew: true,
@@ -80,25 +80,28 @@ test('server rejects taken colors and an eleventh player, then reuses released s
       clients.push(client);
       const ready = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Bootstrap timed out')), 5000);
-        client.once('multiplayer:bootstrap', () => { clearTimeout(timeout); resolve(); });
+        client.once('multiplayer:bootstrap', ({ playerName }) => { usernames.push(playerName); clearTimeout(timeout); resolve(); });
       });
       client.connect();
       await ready;
     }
     const host = clients[0]!;
     const created = nextRoom(host);
-    host.emit('multiplayer:create-lobby', { playerName: 'Host', lobbyName: 'Capacity test', trackId: 'default' });
+    host.emit('multiplayer:create-lobby', { trackId: 'default', lobbyName: 'Forged', playerName: 'Forged' } as CreateLobbyPayload);
     let room = await created;
+    expect(room.name).toBe(`${usernames[0]}'s Lobby`);
+    expect(room.players[0]!.name).toBe(usernames[0]);
     const lobbyId = room.id;
     for (let index = 1; index < 10; index++) {
       const joined = nextRoom(clients[index]!);
-      clients[index]!.emit('multiplayer:join-lobby', { lobbyId, playerName: 'Player ' + index });
+      clients[index]!.emit('multiplayer:join-lobby', { lobbyId, playerName: 'Forged' } as JoinLobbyPayload);
       room = await joined;
+      expect(room.players[index]!.name).toBe(usernames[index]);
     }
     expect(room.players).toHaveLength(10);
     expect(new Set(room.players.map(player => player.color)).size).toBe(10);
     const rejected = nextError(clients[10]!);
-    clients[10]!.emit('multiplayer:join-lobby', { lobbyId, playerName: 'Overflow' });
+    clients[10]!.emit('multiplayer:join-lobby', { lobbyId });
     expect(await rejected).toContain('full');
     const colorError = nextError(clients[1]!);
     clients[1]!.emit('multiplayer:set-color', { color: room.players[0]!.color });
@@ -110,7 +113,7 @@ test('server rejects taken colors and an eleventh player, then reuses released s
     clients[3]!.disconnect();
     expect((await left).players).toHaveLength(9);
     const joined = nextRoom(clients[10]!);
-    clients[10]!.emit('multiplayer:join-lobby', { lobbyId, playerName: 'Replacement' });
+    clients[10]!.emit('multiplayer:join-lobby', { lobbyId });
     room = await joined;
     expect(room.players).toHaveLength(10);
     expect(new Set(room.players.map(player => player.color)).size).toBe(10);

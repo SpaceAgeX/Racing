@@ -11,10 +11,10 @@ test('room chat survives race start, displays text safely and releases driving c
       await expect(p.locator('#home-status')).toContainText('Connected');
     }
     await page.getByRole('button', { name: 'Create', exact: true }).click();
-    await page.locator('#home-lobby-name').fill('Chat test');
     await page.getByRole('button', { name: 'Create lobby', exact: true }).click();
     await expect(page.locator('#lobby-screen')).toBeVisible();
-    await guest.locator('#home-lobby-list article').filter({ hasText: 'Chat test' }).getByRole('button', { name: 'Join lobby' }).click();
+    const lobbyName = await page.locator('#lobby-room-name').textContent();
+    await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
     await expect(guest.locator('#lobby-screen')).toBeVisible();
     await page.keyboard.press('t');
     await expect(page.getByRole('textbox', { name: 'Chat message' })).toBeFocused();
