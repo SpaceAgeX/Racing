@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { startMultiplayerRace } from './race-helpers.ts';
 
 test('room chat survives race start, displays text safely and releases driving controls', async ({ page, browser }) => {
   test.setTimeout(60000);
@@ -25,8 +26,7 @@ test('room chat survives race start, displays text safely and releases driving c
     await expect(guest.locator('.chat-messages img')).toHaveCount(0);
     await page.bringToFront();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Start race', exact: true }).click();
-    await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
+    await startMultiplayerRace(page);
     await page.bringToFront();
     await page.keyboard.down('w');
     await expect.poll(()=>page.evaluate(async()=>{

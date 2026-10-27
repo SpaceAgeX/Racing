@@ -12,6 +12,7 @@ import { createLapTimer, resetCurrentLap, stepLapTimer } from './simulation/lap-
 import { createMinimap } from './ui/minimap.ts';
 import { createLapDisplay } from './ui/lap-display.ts';
 import { createRaceLeaderboard } from './ui/race-leaderboard.ts';
+import { createMultiplayerRoundUi } from './ui/multiplayer-round.ts';
 import { createPerformanceStats } from './ui/performance-stats.ts';
 import { createDeveloperConsole } from './ui/developer-console.ts';
 import { createTimeTrialSetup } from './ui/time-trial-setup.ts';
@@ -56,7 +57,7 @@ interface MultiplayerPreferences {
 interface RemoteCarEntry {
   visual: ReturnType<typeof createCarVisual>;
   state: VehicleState;
-  snapshots: { state: VehicleState; receivedAt: number; tick: number; serverTimeMs: number }[];
+  snapshots: { state: VehicleState; receivedAt: number; tick: number; serverTimeMs: number; lifeId: number }[];
   arrivalIntervalsMs: number[];
   lastSnapshotAt: number | null;
   snapshotsReceived: number;
@@ -76,12 +77,13 @@ interface DrivingSession {
   view: ReturnType<typeof createScene>;
   car: ReturnType<typeof createCarVisual>;
   lapTimer: ReturnType<typeof createLapTimer>;
-  step(elapsed: number, controls: Readonly<DrivingControls>): void;
+  step(elapsed: number, controls: Readonly<DrivingControls>, frozen?: boolean, spectatePlayerId?: string | null): void;
   drainInputs(): RaceInput[];
   pollDeathNotice(now: number): RaceDeathNotice | null;
   applyDeathAck(ack: RaceDeathAcknowledgement): void;
   applySnapshot(snapshot: RaceSnapshot, localPlayerId: string): void;
   applyTransition(transition: RaceTransition): void;
+  setVerifiedBest(bestSeconds: number): void;
   setClockOffset(offsetMs: number, roundTripMs: number): void;
   syncRemotePlayers(players: LobbyPlayerSnapshot[], localPlayerId: string): void;
   getDiagnostics(): unknown;
@@ -138,15 +140,16 @@ function setScreenVisibility(screen: HTMLElement, visible: boolean): void {
   screen.hidden = !visible;
 }
 
-function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters, playerColor: string, spawnIndex = 0, multiplayer = false, historicalBest: number | null = null): DrivingSession {
+function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, trackName: string, trackId: string, tuning: TuningParameters, playerColor: string, spawnIndex = 0, multiplayer = false, historicalBest: number | null = null, showVerifiedBest = false): DrivingSession {
   document.querySelector('#active-track-name')!.textContent = trackName;
   const lapContainer = document.querySelector<HTMLElement>('#lap-display');
   if (!lapContainer) throw new Error('Lap display is missing.');
   const road = buildRoadGeometry(layout);
   const finishLine = road.finish;
   const lapTimer = createLapTimer();
+  let verifiedBest = historicalBest;
   const lapDisplay = createLapDisplay(lapContainer, finishLine !== null);
-  lapDisplay.update(lapTimer, false, historicalBest);
+  lapDisplay.update(lapTimer, false, showVerifiedBest ? verifiedBest : undefined);
 
   const state = createVehicleState();
   const spawn = road.spawns[spawnIndex] ?? road.spawns[0]!;
@@ -240,7 +243,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     updateMinimap();
   }
 
-  function updateRemotePlayer(playerId: string, snapshot: VehicleState, tick: number, serverTimeMs: number): void {
+  function updateRemotePlayer(playerId: string, snapshot: VehicleState, lifeId: number, tick: number, serverTimeMs: number): void {
     let remote = remoteCars.get(playerId);
     if (!remote) {
       const visual = createCarVisual(0x8ca0ab);
@@ -251,17 +254,17 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       };
       remoteCars.set(playerId, remote);
     }
-    pushRemoteSnapshot(remote, snapshot, tick, serverTimeMs);
+    pushRemoteSnapshot(remote, snapshot, lifeId, tick, serverTimeMs);
   }
 
-  function pushRemoteSnapshot(remote: RemoteCarEntry, snapshot: Readonly<VehicleState>, tick: number, serverTimeMs: number): void {
+  function pushRemoteSnapshot(remote: RemoteCarEntry, snapshot: Readonly<VehicleState>, lifeId: number, tick: number, serverTimeMs: number): void {
     const state = createVehicleState();
     copyVehicleState(snapshot, state);
     const receivedAt = performance.now();
     const latest = remote.snapshots.at(-1);
     if (latest && tick <= latest.tick) return;
-    const teleported = latest !== undefined
-      && Math.hypot(state.position.x - latest.state.position.x, state.position.z - latest.state.position.z) > 24;
+    const teleported = latest !== undefined && (latest.lifeId !== lifeId
+      || Math.hypot(state.position.x - latest.state.position.x, state.position.z - latest.state.position.z) > 24);
     if (teleported) {
       remote.snapshots.length = 0;
       remote.arrivalIntervalsMs.length = 0;
@@ -274,7 +277,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     }
     remote.lastSnapshotAt = receivedAt;
     remote.snapshotsReceived++;
-    remote.snapshots.push({ state, receivedAt, tick, serverTimeMs });
+    remote.snapshots.push({ state, receivedAt, tick, serverTimeMs, lifeId });
     if (remote.snapshots.length > 12) remote.snapshots.splice(0, remote.snapshots.length - 12);
     remote.visible = true;
     remote.visual.object.visible = true;
@@ -351,7 +354,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     copyVehicleState(state, previous);
     if (newAttempt || kind) {
       car.update(rendered);
-      lapDisplay.update(lapTimer, false, historicalBest);
+      lapDisplay.update(lapTimer, false, showVerifiedBest ? verifiedBest : undefined);
       updateMinimap();
     }
   }
@@ -365,7 +368,7 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     else if (!Number.isFinite(bestClockRoundTripMs)) serverClockOffsetMs = Math.min(serverClockOffsetMs + 0.25, measuredOffset);
     for (const player of snapshot.players) {
       if (player.id !== localPlayerId) {
-        updateRemotePlayer(player.id, player.state, snapshot.tick, snapshot.serverTimeMs);
+        updateRemotePlayer(player.id, player.state, player.lifeId, snapshot.tick, snapshot.serverTimeMs);
       } else {
         applyAuthoritativePlayer(player, snapshot.tick);
       }
@@ -407,7 +410,27 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     }
   }
 
-  function step(elapsed: number, controls: Readonly<DrivingControls>): void {
+  function step(elapsed: number, controls: Readonly<DrivingControls>, frozen = false, spectatePlayerId: string | null = null): void {
+    if (multiplayer && frozen) {
+      clock.reset();
+      pendingInputs.length = 0;
+      unsentInputs.length = 0;
+      lastFrameSteps = 0;
+      lastFramePhysicsMs = 0;
+      lastFrameElapsedMs = elapsed * 1000;
+      copyVehicleState(state, rendered);
+      renderRemotePlayers(performance.now());
+      car.object.visible = spectatePlayerId === null;
+      car.update(rendered);
+      const cameraTarget = spectatePlayerId ? remoteCars.get(spectatePlayerId)?.state ?? rendered : rendered;
+      followCamera.update(cameraTarget, elapsed);
+      view.followSun(cameraTarget.position);
+      view.renderer.render(view.scene, view.camera);
+      lapDisplay.update(lapTimer, false, showVerifiedBest ? verifiedBest : undefined);
+      updateMinimap();
+      return;
+    }
+    car.object.visible = true;
     if (elapsed > PAUSE_THRESHOLD) copyVehicleState(state, previous);
     let respawned = false;
     lastFrameSteps = 0;
@@ -465,7 +488,8 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       ? lapTimer.elapsed + Math.min(0.1, (performance.now() - lastAuthoritativeTimerAt) / 1000)
         * tuning.physics.physicsTime
       : lapTimer.elapsed;
-    lapDisplay.update({ ...lapTimer, elapsed: displayedElapsed }, deathPending, historicalBest);
+    lapDisplay.update({ ...lapTimer, elapsed: displayedElapsed }, deathPending,
+      showVerifiedBest ? verifiedBest : undefined);
     updateMinimap();
   }
 
@@ -511,6 +535,11 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
     applyDeathAck,
     applySnapshot,
     applyTransition,
+    setVerifiedBest(bestSeconds: number): void {
+      if (!showVerifiedBest || !Number.isFinite(bestSeconds) || bestSeconds <= 0) return;
+      verifiedBest = verifiedBest === null ? bestSeconds : Math.min(verifiedBest, bestSeconds);
+      lapDisplay.update(lapTimer, deathPending, verifiedBest);
+    },
     setClockOffset,
     syncRemotePlayers,
     getDiagnostics,
@@ -677,6 +706,8 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const raceRoomStatusElement = raceRoomStatus;
   const performanceStats = createPerformanceStats(performanceStatsElement);
   const raceLeaderboard = createRaceLeaderboard(raceLeaderboardElement);
+  const raceViewport = raceScreenRoot.querySelector<HTMLElement>('.game-viewport')!;
+  const roundUi = createMultiplayerRoundUi(raceViewport);
   const menuBackdropCanvas = document.createElement('canvas');
   menuBackdropCanvas.className = 'menu-car-backdrop';
   menuBackdropCanvas.setAttribute('aria-hidden', 'true');
@@ -700,6 +731,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let timeTrialBest: number | null = null;
   let localPlayerId = '';
   let bootstrap: MultiplayerBootstrap | null = null;
+  let lastReadyRoundId = '';
   let animationFrame = 0;
   let lastFrameTime: number | null = null;
   const chat = createChat(text => { if (socket.connected) socket.emit('multiplayer:chat', text); },
@@ -739,7 +771,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     const desiredColor = room ? localPlayerColor(room, localPlayerId) : timeTrialColor;
     if (!session || session.trackId !== desiredTrackId || session.playerColor !== desiredColor) {
       disposeSession();
-      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor, Math.max(0, room?.players.findIndex(p => p.id === localPlayerId) ?? 0), room !== null || soloRaceActive, room ? null : timeTrialBest);
+      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor, Math.max(0, room?.players.findIndex(p => p.id === localPlayerId) ?? 0), room !== null || soloRaceActive, room ? null : timeTrialBest, room === null && soloRaceActive);
     }
     return session;
   }
@@ -758,6 +790,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     homeScreen.setLobbies(bootstrap?.lobbies ?? []);
     activeRoom = null;
     raceLeaderboard.setRoom(null, localPlayerId);
+    roundUi.setRound(null, localPlayerId);
     raceRoomNameElement.textContent = 'Race room';
     raceRoomStatusElement.textContent = 'Waiting for a race to start';
     saveMultiplayerPreferences({ lobbyId: null });
@@ -768,19 +801,28 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     activeRoom = room;
     setMode('lobby');
     lobbyScreen.setRoom(room, localPlayerId);
+    roundUi.setRound(null, localPlayerId);
     raceRoomNameElement.textContent = room.name;
     raceRoomStatusElement.textContent = room.phase === 'race' ? 'Race started' : 'Lobby open';
     saveMultiplayerPreferences({ lobbyId: room.id });
   }
 
   function enterRaceScreen(room: LobbySnapshot): void {
+    if (room.phase === 'loading') roundUi.hideResults();
     activeRoom = room;
     setMode('race');
     raceRoomNameElement.textContent = room.name;
-    raceRoomStatusElement.textContent = room.phase === 'race' ? 'Race in progress' : 'Lobby waiting';
+    raceRoomStatusElement.textContent = room.phase === 'qualifying' ? 'Qualifying lap'
+      : room.phase === 'countdown' ? 'Starting countdown'
+        : room.phase === 'loading' ? 'Waiting for drivers to load' : 'Race in progress';
     const currentSession = ensureSession(room);
     raceLeaderboard.setRoom(room, localPlayerId);
+    roundUi.setRound(room.round, localPlayerId);
     currentSession.syncRemotePlayers(room.players, localPlayerId);
+    if (room.phase === 'loading' && room.round && room.round.id !== lastReadyRoundId && socket.connected) {
+      lastReadyRoundId = room.round.id;
+      socket.emit('multiplayer:ready', { roundId: room.round.id });
+    }
     saveMultiplayerPreferences({ lobbyId: room.id });
   }
 
@@ -854,7 +896,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       return;
     }
 
-    if (room.phase === 'race') {
+    if (room.phase !== 'lobby') {
       enterRaceScreen(room);
       return;
     }
@@ -963,6 +1005,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       enterHomeScreen('Leaving lobby...');
     },
     onColor(color) { socket.emit('multiplayer:set-color', { color }); },
+    onConfigureRound(options) { socket.emit('multiplayer:configure-round', options); },
     onUpdateSettings(payload) {
       socket.emit('multiplayer:update-settings', payload);
       lobbyScreen.setStatus('Updating lobby settings...');
@@ -985,7 +1028,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     // Keep that room and refresh its host controls now that our socket ID is known.
     if (activeRoom) {
       if (currentMode === 'lobby') lobbyScreen.setRoom(activeRoom, localPlayerId);
-      else if (currentMode === 'race') session?.syncRemotePlayers(activeRoom.players, localPlayerId);
+      else if (currentMode === 'race') enterRaceScreen(activeRoom);
       return;
     }
     if (pendingSoloRequest || soloRaceActive || currentMode === 'time-trial-setup') return;
@@ -1027,7 +1070,16 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     }
     networkStats.lastStateReceivedAt = receivedAt;
     session.applySnapshot(snapshot, localPlayerId);
+    if (snapshot.round) {
+      activeRoom.round = snapshot.round;
+      roundUi.setRound(snapshot.round, localPlayerId);
+    }
     raceLeaderboard.updateSnapshot(snapshot);
+  });
+
+  socket.on('multiplayer:results', ({ roomId, results }) => {
+    if (activeRoom?.id !== roomId) return;
+    roundUi.showResults(results);
   });
 
   function showTimeTrialRanking(ranked: boolean): void {
@@ -1060,6 +1112,12 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   socket.on('time-trial:ranking', ({ ranked }) => {
     if (!soloRaceActive) return;
     showTimeTrialRanking(ranked);
+  });
+
+  socket.on('time-trial:verified-best', ({ bestMs }) => {
+    if (!soloRaceActive || activeRoom || !Number.isFinite(bestMs) || bestMs <= 0) return;
+    timeTrialBest = timeTrialBest === null ? bestMs / 1000 : Math.min(timeTrialBest, bestMs / 1000);
+    session?.setVerifiedBest(timeTrialBest);
   });
 
   socket.on('time-trial:error', ({ requestId, message }) => {
@@ -1117,7 +1175,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     raceRoomStatusElement.textContent = 'Disconnected. Reconnecting...';
   });
 
-  socket.on('connect', () => { networkStats.connects++; startPendingTimeTrial(); });
+  socket.on('connect', () => { networkStats.connects++; lastReadyRoundId = ''; startPendingTimeTrial(); });
   socket.on('recording:probe', reply => {
     const stats = performanceStats.diagnostics;
     const sessionStats = session?.getDiagnostics() as { remotePlayers: RecordingClientReport['remotePlayers'] } | undefined;
@@ -1152,7 +1210,14 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     if (elapsed > PAUSE_THRESHOLD) lastFrameTime = time;
 
     if (currentMode === 'race' && session) {
-      session.step(elapsed, input.sample());
+      const round = activeRoom?.round;
+      const localRoundPlayer = round?.players.find(player => player.id === localPlayerId);
+      const frozen = Boolean(activeRoom && (round?.stage === 'loading' || round?.stage === 'countdown'
+        || localRoundPlayer?.status !== 'racing'));
+      const spectate = frozen && (localRoundPlayer?.status === 'eliminated' || localRoundPlayer?.status === 'finished')
+        ? round?.players.find(player => player.id !== localPlayerId && player.status === 'racing')?.id ?? null : null;
+      session.step(elapsed, input.sample(), frozen, spectate);
+      roundUi.update();
       tuningPanel.update(session.state);
       const speed = String(Math.round(Math.hypot(session.state.speed, session.state.lateralSpeed) * 3.6));
       if (raceSpeed.value !== speed) raceSpeed.value = speed;
@@ -1170,7 +1235,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
         networkStats.stateMessagesSent++;
         networkStats.approximateJsonBytesSent += new TextEncoder().encode(JSON.stringify(input)).byteLength;
       }
-      const deathNotice = session.pollDeathNotice(time);
+      const deathNotice = frozen ? null : session.pollDeathNotice(time);
       if (deathNotice && socket.connected && (activeRoom || soloRaceActive)) {
         socket.emit('race:death-notice', deathNotice);
       }

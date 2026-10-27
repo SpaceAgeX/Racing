@@ -183,6 +183,10 @@ export function createAccounts() {
       'update public.account_stats set races_started=races_started+1 where user_id=any($1::uuid[])', [userIds]);
   }
 
+  async function recordMultiplayerWin(userId: string): Promise<void> {
+    await db.query('update public.account_stats set multiplayer_wins=multiplayer_wins+1 where user_id=$1', [userId]);
+  }
+
   async function addActivity(userId: string, seconds: number, distanceMeters: number): Promise<void> {
     if (seconds <= 0 && distanceMeters <= 0) return;
     await db.query(`update public.account_stats set time_played_seconds=time_played_seconds+$2,
@@ -192,8 +196,9 @@ export function createAccounts() {
   async function dashboard(userId: string) {
     const [account, stats, totals, tracks, recent, personalBests] = await Promise.all([
       profile(userId),
-      db.query<{ races_started: string; time_played_seconds: number; distance_meters: number }>(
-        'select races_started,time_played_seconds,distance_meters from public.account_stats where user_id=$1', [userId]),
+      db.query<{ races_started: string; multiplayer_wins: string; time_played_seconds: number; distance_meters: number }>(
+        `select races_started, coalesce((to_jsonb(account_stats)->>'multiplayer_wins')::bigint,0)::text as multiplayer_wins,
+          time_played_seconds,distance_meters from public.account_stats where user_id=$1`, [userId]),
       db.query<{ laps: string; ranked_laps: string }>(`select count(*)::text as laps,
         count(*) filter (where ranked)::text as ranked_laps from public.lap_results where user_id=$1`, [userId]),
       db.query<{ count: string }>('select count(*)::text as count from public.tracks where owner_id=$1', [userId]),
@@ -206,6 +211,7 @@ export function createAccounts() {
     return {
       ...account,
       racesStarted: Number(stats.rows[0]?.races_started ?? 0),
+      multiplayerWins: Number(stats.rows[0]?.multiplayer_wins ?? 0),
       timePlayedSeconds: Math.round(stats.rows[0]?.time_played_seconds ?? 0),
       distanceMeters: Math.round(stats.rows[0]?.distance_meters ?? 0),
       lapsCompleted: Number(totals.rows[0]?.laps ?? 0),
@@ -226,15 +232,16 @@ export function createAccounts() {
     return result.rows.map(row => ({ name: row.username, durationMs: row.duration_ms }));
   }
 
-  async function personalBest(userId: string, trackId: string, layoutHash: string): Promise<number | null> {
+  async function personalBest(userId: string, trackId: string, layoutHash: string, rulesetHash: string): Promise<number | null> {
     const result = await db.query<{ duration_ms: number | null }>(`select min(duration_ms)::integer as duration_ms
-      from public.lap_results where user_id=$1 and track_id=$2 and layout_hash=$3`,
-      [userId, trackId, layoutHash]);
+      from public.lap_results where user_id=$1 and track_id=$2 and layout_hash=$3
+      and ruleset_hash=$4 and ranked`,
+      [userId, trackId, layoutHash, rulesetHash]);
     return result.rows[0]?.duration_ms ?? null;
   }
 
   return { identity, requireAccount, profile, usernameAvailable, claimUsername, updateUsername, updateDisplayName,
     listTracks, listRankedTracks, getTrack, saveTrack, deleteTrack,
-    recordLap, startRace, addActivity, dashboard, leaderboard, personalBest, close: () => db.end() };
+    recordLap, startRace, recordMultiplayerWin, addActivity, dashboard, leaderboard, personalBest, close: () => db.end() };
 }
 export type Accounts = ReturnType<typeof createAccounts>;

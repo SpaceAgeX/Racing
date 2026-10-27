@@ -22,6 +22,7 @@ export interface RacePlayer {
 }
 export interface RaceStepResult {
   laps: { playerId: string; durationSeconds: number }[];
+  falls: { playerId: string }[];
   activity: { playerId: string; seconds: number; distanceMeters: number }[];
   transitions: { kind: 'respawn' | 'start' | 'lap'; tick: number; player: RacePlayer }[];
 }
@@ -32,6 +33,7 @@ interface InternalPlayer extends RacePlayer {
   lastReceivedInput: number;
   controls: DrivingControls;
   lastInputAt: number;
+  frozen: boolean;
 }
 
 export function validRaceInput(value: unknown): value is CompatibleRaceInput {
@@ -52,17 +54,52 @@ export function createRaceSimulation(
   const world = createRoadWorld(road);
   const players = new Map<string, InternalPlayer>();
   let currentHandling: Readonly<HandlingParameters> = handling;
+  let respawnEnabled = true;
   let tick = 0;
+
+  function publicPlayer(player: InternalPlayer): RacePlayer {
+    return { id: player.id, state: structuredClone(player.state), lapTimer: structuredClone(player.lapTimer),
+      acknowledgedInput: player.acknowledgedInput, lifeId: player.lifeId,
+      attemptId: player.attemptId, lastTransition: player.lastTransition };
+  }
 
   return {
     get tick() { return tick; },
     setHandling(value: Readonly<HandlingParameters>): void { currentHandling = value; },
+    setRespawnEnabled(value: boolean): void { respawnEnabled = value; },
+    setFrozen(id: string, frozen: boolean): void {
+      const player = players.get(id);
+      if (!player) return;
+      player.frozen = frozen;
+      if (frozen) {
+        player.pending.length = 0;
+        player.controls = { ...neutralControls };
+        player.acknowledgedInput = player.lastReceivedInput;
+      }
+    },
+    resetPlayer(id: string, spawnIndex: number, frozen: boolean): RacePlayer | null {
+      const player = players.get(id);
+      if (!player) return null;
+      player.spawnIndex = spawnIndex;
+      respawnVehicle(player.state, road.spawns[spawnIndex] ?? road.spawns[0]!);
+      player.lapTimer = createLapTimer();
+      player.pending.length = 0;
+      player.controls = { ...neutralControls };
+      player.acknowledgedInput = player.lastReceivedInput;
+      player.lastInputAt = 0;
+      player.lifeId++;
+      player.attemptId++;
+      player.lastTransition = 'respawn';
+      player.frozen = frozen;
+      return publicPlayer(player);
+    },
     addPlayer(id: string, spawnIndex: number): RacePlayer {
       const state = createVehicleState();
       respawnVehicle(state, road.spawns[spawnIndex] ?? road.spawns[0]!);
       const player: InternalPlayer = { id, spawnIndex, state, lapTimer: createLapTimer(),
         lifeId: 0, attemptId: 0, lastTransition: null,
-        acknowledgedInput: 0, lastReceivedInput: 0, pending: [], controls: { ...neutralControls }, lastInputAt: 0 };
+        acknowledgedInput: 0, lastReceivedInput: 0, pending: [], controls: { ...neutralControls }, lastInputAt: 0,
+        frozen: false };
       players.set(id, player);
       return player;
     },
@@ -75,7 +112,7 @@ export function createRaceSimulation(
     },
     input(id: string, value: unknown, now: number): boolean {
       const player = players.get(id);
-      if (!player || !validRaceInput(value) || (value.lifeId !== undefined && value.lifeId !== player.lifeId)
+      if (!player || player.frozen || !validRaceInput(value) || (value.lifeId !== undefined && value.lifeId !== player.lifeId)
         || value.sequence <= player.lastReceivedInput) return false;
       // Tabs left open across a deployment may still send the previous input format.
       // Explicit life IDs retain respawn fencing; legacy inputs use the current life.
@@ -89,10 +126,15 @@ export function createRaceSimulation(
     },
     step(now: number): RaceStepResult {
       tick++;
-      const result: RaceStepResult = { laps: [], activity: [], transitions: [] };
+      const result: RaceStepResult = { laps: [], falls: [], activity: [], transitions: [] };
       const simulatedTimestep = RACE_TIMESTEP * currentHandling.physics.physicsTime;
       for (const player of players.values()) {
+        if (player.frozen) {
+          result.activity.push({ playerId: player.id, seconds: 0, distanceMeters: 0 });
+          continue;
+        }
         const previousPosition = { ...player.state.position };
+        const previousAirborneTime = player.state.airborneTime;
         const previousLaps = player.lapTimer.completedLaps;
         const wasRunning = player.lapTimer.running;
         const input = player.pending.shift();
@@ -102,7 +144,12 @@ export function createRaceSimulation(
         }
         const controls = now - player.lastInputAt > 250 ? neutralControls : player.controls;
         const spawn = road.spawns[player.spawnIndex] ?? road.spawns[0]!;
-        const respawned = stepSplineVehicle(player.state, controls, simulatedTimestep, world, spawn, currentHandling.physics, currentHandling.driving);
+        const respawned = stepSplineVehicle(player.state, controls, simulatedTimestep, world, spawn,
+          currentHandling.physics, currentHandling.driving, respawnEnabled);
+        if (!respawnEnabled && previousAirborneTime < currentHandling.physics.respawnDelay
+          && player.state.airborneTime >= currentHandling.physics.respawnDelay) {
+          result.falls.push({ playerId: player.id });
+        }
         if (respawned) {
           resetCurrentLap(player.lapTimer);
           player.lifeId++;
@@ -130,19 +177,13 @@ export function createRaceSimulation(
         if (kind) {
           player.attemptId++;
           player.lastTransition = kind;
-          result.transitions.push({ kind, tick, player: {
-          id: player.id, state: structuredClone(player.state), lapTimer: structuredClone(player.lapTimer),
-          acknowledgedInput: player.acknowledgedInput, lifeId: player.lifeId,
-          attemptId: player.attemptId, lastTransition: player.lastTransition,
-        } });
+          result.transitions.push({ kind, tick, player: publicPlayer(player) });
         }
       }
       return result;
     },
     snapshot(): { tick: number; players: RacePlayer[] } {
-      return { tick, players: [...players.values()].map(p => ({ id: p.id,
-        state: structuredClone(p.state), lapTimer: structuredClone(p.lapTimer), acknowledgedInput: p.acknowledgedInput,
-        lifeId: p.lifeId, attemptId: p.attemptId, lastTransition: p.lastTransition })) };
+      return { tick, players: [...players.values()].map(publicPlayer) };
     },
   };
 }

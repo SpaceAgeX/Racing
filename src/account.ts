@@ -6,6 +6,7 @@ interface Dashboard {
   username: string;
   canPublishRankedTracks: boolean;
   racesStarted: number;
+  multiplayerWins: number;
   lapsCompleted: number;
   rankedLaps: number;
   timePlayedSeconds: number;
@@ -92,6 +93,7 @@ const metrics: [string, string][] = [
   ['Laps completed', String(data.lapsCompleted)],
   ['Ranked laps', String(data.rankedLaps)],
   ['Races started', String(data.racesStarted)],
+  ['Multiplayer wins', String(data.multiplayerWins)],
   ['Time on track', `${Math.floor(data.timePlayedSeconds / 3600)}h ${Math.floor((data.timePlayedSeconds % 3600) / 60)}m`],
   ['Distance driven', `${(data.distanceMeters / 1000).toFixed(1)} km`],
   ['Tracks created', String(data.tracksCreated)],

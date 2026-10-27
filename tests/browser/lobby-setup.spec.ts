@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { io, type Socket } from 'socket.io-client';
-import { testAccessToken } from './race-helpers.ts';
+import { startMultiplayerRace, testAccessToken } from './race-helpers.ts';
 import type { ClientToServerEvents, ServerToClientEvents, LobbySnapshot, CreateLobbyPayload, JoinLobbyPayload } from '../../src/multiplayer/protocol.ts';
 
 test('lobby previews, colors and host settings update live for guests', async ({ page, browser }) => {
@@ -47,8 +47,7 @@ test('lobby previews, colors and host settings update live for guests', async ({
     await guest.getByRole('button', { name: 'Leave lobby' }).click();
     await expect(page.locator('#lobby-player-count')).toHaveText('1 / 10');
     await expect(page.locator('#lobby-colors').getByRole('button', { name: 'Pink', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Start race', exact: true }).click();
-    await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
+    await startMultiplayerRace(page);
   } finally { await guestContext.close(); }
 });
 

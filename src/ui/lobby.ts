@@ -1,4 +1,4 @@
-import type { LobbySnapshot, TrackOption, UpdateLobbySettingsPayload, StartLobbyPayload } from '../multiplayer/protocol.ts';
+import type { LobbySnapshot, TrackOption, UpdateLobbySettingsPayload, StartLobbyPayload, RoundOptions } from '../multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette } from '../multiplayer/protocol.ts';
 
 import { createMinimap } from './minimap.ts';
@@ -10,6 +10,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   onLeaveLobby(): void;
   onUpdateSettings(payload: UpdateLobbySettingsPayload): void;
   onColor(color: string): void;
+  onConfigureRound(options: RoundOptions): void;
 }) {
   root.innerHTML = `
     <section class="time-trial-setup lobby-setup">
@@ -44,8 +45,22 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         </section>
         <footer class="lobby-setup-footer">
           <div id="lobby-status" class="lobby-status" role="status"></div>
-          <button id="lobby-start" class="trial-start-button" type="button">Start race</button>
+          <button id="lobby-start" class="trial-start-button" type="button">Set up race <span class="lobby-space-hint">(hold Space)</span></button>
         </footer>
+      </div>
+    </section>
+    <section id="lobby-race-setup" class="race-setup-overlay" hidden aria-label="Race setup">
+      <div class="race-setup-card">
+        <button id="lobby-race-setup-close" class="race-setup-close" type="button" aria-label="Close race setup">&times;</button>
+        <span class="menu-eyebrow">HOST CONTROLS</span><h2>Set up the race</h2>
+        <p>Choose the rules, then hold Space or select Start race.</p>
+        <label for="lobby-round-laps">Number of laps</label>
+        <input id="lobby-round-laps" type="number" min="1" max="20" step="1" value="3">
+        <label for="lobby-round-fall">When a car falls off</label>
+        <select id="lobby-round-fall"><option value="respawn">Respawn and keep racing</option><option value="elimination">Eliminate the player</option></select>
+        <label class="race-setup-checkbox"><input id="lobby-round-qualifying" type="checkbox"> Qualifying lap before the race</label>
+        <div class="race-setup-actions"><button id="lobby-round-confirm" class="trial-start-button" type="button">Start race</button>
+          <span class="race-setup-hold">Hold Space to start<span></span></span></div>
       </div>
     </section>`;
   const roomName = root.querySelector<HTMLElement>('#lobby-room-name')!;
@@ -72,6 +87,78 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   let localPlayerId = '';
   let minimap: ReturnType<typeof createMinimap> | null = null;
   let previewKey = '';
+  const raceSetup = root.querySelector<HTMLElement>('#lobby-race-setup')!;
+  raceSetup.tabIndex = -1;
+  const lapsInput = root.querySelector<HTMLInputElement>('#lobby-round-laps')!;
+  const fallSelect = root.querySelector<HTMLSelectElement>('#lobby-round-fall')!;
+  const qualifyingInput = root.querySelector<HTMLInputElement>('#lobby-round-qualifying')!;
+  let spaceDown = false;
+  let holdTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function roundOptions(): RoundOptions {
+    return { laps: Math.max(1, Math.min(20, Math.round(Number(lapsInput.value) || 3))),
+      fallMode: fallSelect.value === 'elimination' ? 'elimination' : 'respawn',
+      qualifying: qualifyingInput.checked };
+  }
+  function closeRaceSetup(): void {
+    raceSetup.hidden = true;
+    raceSetup.classList.remove('is-holding');
+    if (holdTimer !== null) clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+  function openRaceSetup(): void {
+    if (!currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
+    raceSetup.hidden = false;
+    raceSetup.focus();
+  }
+  function startRace(): void {
+    if (!currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
+    const options = roundOptions();
+    lapsInput.value = String(options.laps);
+    callbacks.onConfigureRound(options);
+    callbacks.onStartLobby({ options });
+    closeRaceSetup();
+    status.textContent = 'Preparing the race...';
+  }
+  function onSpaceDown(event: KeyboardEvent): void {
+    if (event.code === 'Escape' && !raceSetup.hidden) { closeRaceSetup(); return; }
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const editing = target && (target.isContentEditable || target.tagName === 'TEXTAREA'
+      || target.tagName === 'SELECT' || target.tagName === 'BUTTON' || target.tagName === 'INPUT');
+    if (event.code !== 'Space' || root.hidden || spaceDown || !currentRoom
+      || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby'
+      || editing) return;
+    event.preventDefault();
+    spaceDown = true;
+    if (raceSetup.hidden) openRaceSetup();
+    raceSetup.classList.add('is-holding');
+    holdTimer = setTimeout(startRace, 900);
+  }
+  function onSpaceUp(event: KeyboardEvent): void {
+    if (event.code !== 'Space') return;
+    cancelHold();
+  }
+  function cancelHold(): void {
+    spaceDown = false;
+    if (holdTimer !== null) clearTimeout(holdTimer);
+    holdTimer = null;
+    raceSetup.classList.remove('is-holding');
+  }
+  window.addEventListener('keydown', onSpaceDown);
+  window.addEventListener('keyup', onSpaceUp);
+  window.addEventListener('blur', cancelHold);
+  startButton.addEventListener('click', openRaceSetup);
+  root.querySelector('#lobby-race-setup-close')!.addEventListener('click', closeRaceSetup);
+  root.querySelector('#lobby-round-confirm')!.addEventListener('click', startRace);
+  for (const control of [lapsInput, fallSelect, qualifyingInput]) {
+    control.addEventListener('change', () => {
+      if (control === lapsInput) lapsInput.value = String(roundOptions().laps);
+      if (currentRoom?.hostId === localPlayerId) callbacks.onConfigureRound(roundOptions());
+    });
+  }
+  lapsInput.addEventListener('input', () => {
+    if (currentRoom?.hostId === localPlayerId && lapsInput.value) callbacks.onConfigureRound(roundOptions());
+  });
 
   const colorButtons = playerColorPalette.map(color => {
     const button = document.createElement('button');
@@ -134,7 +221,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     root.querySelector<HTMLOutputElement>('#lobby-color-name')!.value = carColorNames.get(localPlayer?.color ?? '') ?? '';
   }
 
-  startButton.addEventListener('click', () => callbacks.onStartLobby({ start: true }));
   root.querySelector('#lobby-leave')!.addEventListener('click', callbacks.onLeaveLobby);
   trackSelect.addEventListener('change', () => {
     if (currentRoom?.hostId === localPlayerId && currentRoom.phase === 'lobby') {
@@ -147,15 +233,24 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       currentRoom = room;
       localPlayerId = playerId;
       if (!room) {
+        closeRaceSetup();
         minimap?.dispose();
         minimap = null;
         previewKey = '';
         return;
       }
       const isHost = room.hostId === playerId;
+      if (!isHost || room.phase !== 'lobby') closeRaceSetup();
+      if (raceSetup.hidden) {
+        lapsInput.value = String(room.nextRoundOptions.laps);
+        fallSelect.value = room.nextRoundOptions.fallMode;
+        qualifyingInput.checked = room.nextRoundOptions.qualifying;
+      }
       roomName.textContent = room.name;
       roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · ${room.ranked ? 'Ranked laps' : 'Unranked · custom handling'}`;
-      status.textContent = isHost ? 'Choose your settings, then start the race.' : 'Waiting for the host to start the race.';
+      status.textContent = isHost ? 'Choose your settings. Hold Space or select Set up race.'
+        : `Waiting for the host · ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
+          · ${room.nextRoundOptions.qualifying ? 'Qualifying on' : 'No qualifying'}`;
       renderPlayers(room);
       renderTrackOptions();
       root.querySelector('#lobby-track-name')!.textContent = room.settings.trackName;
@@ -179,6 +274,11 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     },
     setTrackOptions(options: TrackOption[]): void { trackOptions = options; renderTrackOptions(); },
     setStatus(message: string): void { status.textContent = message; },
-    dispose(): void { minimap?.dispose(); handlingEditor.dispose(); root.replaceChildren(); },
+    dispose(): void {
+      window.removeEventListener('keydown', onSpaceDown);
+      window.removeEventListener('keyup', onSpaceUp);
+      window.removeEventListener('blur', cancelHold);
+      minimap?.dispose(); handlingEditor.dispose(); root.replaceChildren();
+    },
   };
 }

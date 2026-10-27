@@ -20,20 +20,16 @@ export function createLapDisplay(container: HTMLElement, hasFinishLine: boolean)
   }
 
   return {
-    update(timer: Readonly<LapTimerState>, waitingForRespawn = false, historicalBest: number | null = null): void {
+    update(timer: Readonly<LapTimerState>, waitingForRespawn = false, verifiedBest?: number | null): void {
       text(current, formatLapTime(timer.elapsed));
-      const personalBest = historicalBest === null ? timer.best : timer.best === null
-        ? historicalBest : Math.min(historicalBest, timer.best);
-      text(best, formatLapTime(personalBest));
+      text(best, formatLapTime(verifiedBest === undefined ? timer.best : verifiedBest));
       text(last, formatLapTime(timer.last));
       delta.hidden = timer.last === null;
-      const previousSessionBest = timer.last === null || timer.delta === null ? null : timer.last - timer.delta;
-      const previousBest = historicalBest === null ? previousSessionBest : previousSessionBest === null
-        ? historicalBest : Math.min(historicalBest, previousSessionBest);
-      const roundedDelta = timer.last === null || previousBest === null ? null : Math.round((timer.last - previousBest) * 100);
+      const roundedDelta = timer.delta === null ? null : Math.round(timer.delta * 100);
       delta.classList.toggle('is-faster', roundedDelta !== null && roundedDelta < 0);
       delta.classList.toggle('is-slower', roundedDelta !== null && roundedDelta > 0);
-      text(delta, roundedDelta === null ? 'First lap' : `${roundedDelta < 0 ? '−' : roundedDelta > 0 ? '+' : '±'}${(Math.abs(roundedDelta) / 100).toFixed(2)} s vs best`);
+      text(delta, roundedDelta === null ? verifiedBest === undefined ? 'First lap' : 'First lap this session'
+        : `${roundedDelta < 0 ? '−' : roundedDelta > 0 ? '+' : '±'}${(Math.abs(roundedDelta) / 100).toFixed(2)} s vs ${verifiedBest === undefined ? 'best' : 'session best'}`);
       text(status, waitingForRespawn ? 'Respawning…' : !hasFinishLine ? 'Place a finish line to time laps'
         : timer.running ? `Lap ${timer.completedLaps + 1}${timer.checkpointCount ? ` | Checkpoints ${timer.checkpointsVisited.length}/${timer.checkpointCount}` : ""}${timer.missedCheckpoints ? " | Cross remaining checkpoints, then finish" : ""}` : 'Cross the line to start');
     },

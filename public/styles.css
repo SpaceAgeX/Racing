@@ -434,6 +434,7 @@ body.tuning-collapsed { --panel-width: 0px; }
   pointer-events: none;
 }
 .race-leaderboard { min-height: 0; overflow: auto; padding: 10px 12px; border: 1px solid #ffffff26; border-radius: 8px; background: #23313acc; font-variant-numeric: tabular-nums; pointer-events: auto; }
+.multiplayer-race #lap-display { display: none; }
 .race-leaderboard h2 { margin: 0 0 8px; font-size: 13px; }
 .race-leaderboard table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: right; }
 .race-leaderboard th, .race-leaderboard td { padding: 5px 3px; border-bottom: 1px solid #ffffff19; white-space: nowrap; }
@@ -720,6 +721,69 @@ kbd {
 #lobby-track-select:disabled {
   appearance: none; opacity: .5; background: #20282d; color: #b0b9bf;
   border-color: #ffffff16; cursor: not-allowed;
+}
+
+.lobby-space-hint { font-size: .7em; font-weight: 500; opacity: .8; }
+.race-setup-overlay, .round-results-overlay {
+  position: fixed; inset: 0; z-index: 220; display: grid; place-items: center;
+  padding: 20px; background: #061016d9; backdrop-filter: blur(8px);
+}
+.race-setup-overlay[hidden], .round-results-overlay[hidden], .round-banner[hidden] { display: none; }
+.race-setup-card, .round-results-card {
+  position: relative; width: min(520px, 100%); max-height: min(850px, 94vh);
+  overflow: auto; padding: 28px; border: 1px solid #ffffff3d; border-radius: 20px;
+  background: #132129; color: #edf4f7; box-shadow: 0 24px 80px #0008;
+}
+.race-setup-card h2, .round-results-card h2 { margin: 8px 0 8px; font-size: clamp(26px, 4vw, 40px); }
+.race-setup-card p, .round-results-card p { color: #b9c8cf; }
+.race-setup-card > label:not(.race-setup-checkbox) { display: block; margin: 22px 0 8px; font-size: 13px; font-weight: 700; }
+.race-setup-card input[type="number"], .race-setup-card select {
+  width: 100%; padding: 12px 14px; border: 1px solid #ffffff55; border-radius: 9px;
+  background: #1d313c; color: #fff; font: inherit; color-scheme: dark;
+}
+.race-setup-checkbox { display: flex; align-items: center; gap: 10px; margin: 24px 0; font-size: 14px; }
+.race-setup-checkbox input { width: 19px; height: 19px; accent-color: #ee7136; }
+.race-setup-close, #round-results-close {
+  position: absolute; top: 14px; right: 16px; width: 34px; height: 34px;
+  border: 1px solid #ffffff3b; border-radius: 8px; background: #ffffff12;
+  color: #fff; font-size: 23px; cursor: pointer;
+}
+.race-setup-actions { display: grid; gap: 12px; }
+.race-setup-actions .trial-start-button { width: 100%; }
+.race-setup-hold { display: block; position: relative; padding: 8px 0 12px; text-align: center; color: #b9c8cf; font-size: 12px; }
+.race-setup-hold > span { position: absolute; left: 0; bottom: 0; width: 0; height: 4px; border-radius: 2px; background: #ee7136; }
+.race-setup-overlay.is-holding .race-setup-hold > span { width: 100%; transition: width .9s linear; }
+.round-banner {
+  position: absolute; z-index: 12; top: 20px; left: 50%; transform: translateX(-50%);
+  display: grid; gap: 2px; min-width: 230px; max-width: min(480px, 90%);
+  padding: 12px 22px; border: 1px solid #ffffff4b; border-radius: 12px;
+  background: #12232de8; color: #fff; text-align: center; pointer-events: none;
+}
+.round-banner strong { font-size: 25px; line-height: 1.1; }
+.round-banner span { font-size: 12px; color: #d4e1e7; }
+.round-results-card { width: min(1000px, 100%); display: flex; flex-direction: column; }
+.round-results-card header { display: flex; justify-content: space-between; padding-right: 40px; }
+.round-results-card header p { margin: 0 0 18px; }
+.round-results-content { min-height: 0; overflow: auto; }
+.round-results-card table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.round-results-card th, .round-results-card td { padding: 11px 8px; border-bottom: 1px solid #ffffff24; text-align: left; }
+.round-results-card th { color: #b9c8cf; font-size: 12px; }
+.round-results-card td:nth-child(2) { border-left: 4px solid var(--player-color, transparent); padding-left: 10px; font-weight: 700; }
+.round-results-you { background: #6bc5ff1c; }
+.round-results-card h3 { margin: 24px 0 10px; }
+.round-results-chart { padding: 12px; border: 1px solid #ffffff24; border-radius: 10px; background: #0e1a20; }
+.round-results-chart svg { display: block; width: 100%; border-left: 1px solid #ffffff4d; border-bottom: 1px solid #ffffff4d; }
+.round-chart-legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 10px; font-size: 12px; }
+.round-chart-legend span::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; background: var(--player-color); }
+#round-results-details details { padding: 10px 0; border-bottom: 1px solid #ffffff24; }
+#round-results-details summary { cursor: pointer; font-weight: 700; }
+#round-results-details p { margin: 8px 0; line-height: 1.5; }
+.round-results-card footer { display: flex; justify-content: flex-end; padding-top: 16px; }
+.round-results-card footer button { padding: 11px 18px; border: 0; border-radius: 8px; background: #ee7136; color: #fff; font: 700 14px system-ui, sans-serif; cursor: pointer; }
+@media (max-width: 600px) {
+  .race-setup-card, .round-results-card { padding: 20px; }
+  .round-results-card th, .round-results-card td { padding: 8px 4px; font-size: 11px; }
+  .round-banner { top: 12px; }
 }
 
 .room-chat { position: fixed; right: 20px; bottom: 20px; z-index: 150; width: min(380px, calc(100vw - 40px)); color: #edf4f7; }

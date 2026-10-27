@@ -27,8 +27,59 @@ export interface LobbySettings {
   handling: HandlingParameters;
 }
 
-export type LobbyPhase = 'lobby' | 'race';
+export type LobbyPhase = 'lobby' | 'loading' | 'qualifying' | 'countdown' | 'race';
 export const maxLobbyPlayers = 10;
+
+export interface RoundOptions {
+  laps: number;
+  fallMode: 'respawn' | 'elimination';
+  qualifying: boolean;
+}
+
+export type RoundStage = Exclude<LobbyPhase, 'lobby'>;
+export type RoundPlayerStatus = 'waiting' | 'racing' | 'qualified' | 'qualifying-fall'
+  | 'qualifying-timeout' | 'finished' | 'eliminated' | 'timed-out' | 'disconnected';
+
+export interface RoundPlayerSnapshot {
+  id: string;
+  name: string;
+  color: string;
+  status: RoundPlayerStatus;
+  gridPosition: number;
+  laps: number;
+  bestSeconds: number | null;
+  lastSeconds: number | null;
+  qualifyingSeconds: number | null;
+  qualifyingSurvivalSeconds: number | null;
+  finishSeconds: number | null;
+  falls: number;
+  distanceMeters: number;
+}
+
+export interface RoundSnapshot {
+  id: string;
+  stage: RoundStage;
+  options: RoundOptions;
+  countdownTarget: 'qualifying' | 'race' | null;
+  countdownEndsAtMs: number | null;
+  serverNowMs: number;
+  elapsedSeconds: number;
+  players: RoundPlayerSnapshot[];
+}
+
+export interface RoundResultPlayer extends RoundPlayerSnapshot {
+  place: number;
+  lapTimes: number[];
+  samples: { seconds: number; distanceMeters: number; speedMps: number; laps: number }[];
+}
+
+export interface RoundResults {
+  id: string;
+  trackName: string;
+  options: RoundOptions;
+  durationSeconds: number;
+  players: RoundResultPlayer[];
+}
 
 export const playerColorPalette = [
   '#6bc5ff', '#ee7136', '#8ce5ad', '#f5d76e', '#c38fff',
@@ -53,6 +104,8 @@ export interface LobbySnapshot {
   ranked: boolean;
   settings: LobbySettings;
   players: LobbyPlayerSnapshot[];
+  round: RoundSnapshot | null;
+  nextRoundOptions: RoundOptions;
 }
 
 export interface LobbySummary {
@@ -87,7 +140,7 @@ export interface UpdateLobbySettingsPayload {
 }
 
 export interface StartLobbyPayload {
-  start: true;
+  options: RoundOptions;
 }
 
 export interface RaceSnapshot {
@@ -95,6 +148,7 @@ export interface RaceSnapshot {
   tick: number;
   serverTimeMs: number;
   players: RacePlayer[];
+  round?: RoundSnapshot;
 }
 
 export interface RaceTransition {
@@ -131,6 +185,7 @@ export interface TimeTrialReady {
   track: TrackOption;
   handling: HandlingParameters;
   ranked: boolean;
+  /** Best persisted ranked lap on this layout with the default handling ruleset. */
   personalBestMs: number | null;
 }
 
@@ -184,6 +239,8 @@ export interface ClientToServerEvents {
   'multiplayer:update-settings': (payload: UpdateLobbySettingsPayload) => void;
   'multiplayer:set-color': (payload: { color: string }) => void;
   'multiplayer:start-lobby': (payload: StartLobbyPayload) => void;
+  'multiplayer:configure-round': (payload: RoundOptions) => void;
+  'multiplayer:ready': (payload: { roundId: string }) => void;
   'multiplayer:input': (payload: RaceInput) => void;
   'race:death-notice': (payload: RaceDeathNotice) => void;
   'multiplayer:clock': (reply: (serverTimeMs: number) => void) => void;
@@ -202,10 +259,12 @@ export interface ServerToClientEvents {
   'multiplayer:lobbies': (payload: { lobbies: LobbySummary[] }) => void;
   'multiplayer:room': (payload: { lobby: LobbySnapshot | null }) => void;
   'multiplayer:snapshot': (payload: RaceSnapshot) => void;
+  'multiplayer:results': (payload: { roomId: string; results: RoundResults }) => void;
   'race:transition': (payload: RaceTransition) => void;
   'race:death-ack': (payload: RaceDeathAcknowledgement) => void;
   'time-trial:ready': (payload: TimeTrialReady) => void;
   'time-trial:ranking': (payload: { ranked: boolean }) => void;
+  'time-trial:verified-best': (payload: { bestMs: number }) => void;
   'time-trial:snapshot': (payload: RaceSnapshot) => void;
   'time-trial:error': (payload: { requestId: number; message: string }) => void;
   'multiplayer:error': (payload: { message: string }) => void;

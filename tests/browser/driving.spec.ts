@@ -347,7 +347,7 @@ test('the finish line starts the timer and records laps, best time, and differen
   expect(first.delta).toBeNull();
   await expect(page.locator('#lap-best')).toHaveText(formatLapTime(previousBest === null ? first.best : Math.min(previousBest, first.best!)));
   await expect(page.locator('#lap-last')).toHaveText(formatLapTime(first.last));
-  await expect(page.locator('#lap-delta')).toHaveText(previousBest === null ? 'First lap' : /[+\u2212\u00b1]\d+\.\d{2} s vs best/);
+  await expect(page.locator('#lap-delta')).toHaveText('First lap this session');
 
   await page.keyboard.down('w');
   await expect.poll(async () => (await lapSnapshot(page)).completedLaps,
@@ -358,7 +358,7 @@ test('the finish line starts the timer and records laps, best time, and differen
   expect(second.delta).toBeCloseTo(second.last! - first.best!, 8);
   await expect(page.locator('#lap-last')).toHaveText(formatLapTime(second.last));
   await expect(page.locator('#lap-best')).toHaveText(formatLapTime(previousBest === null ? second.best : Math.min(previousBest, second.best!)));
-  await expect(page.locator('#lap-delta')).toHaveText(/[+\u2212\u00b1]\d+\.\d{2} s vs best/);
+  await expect(page.locator('#lap-delta')).toHaveText(/[+\u2212\u00b1]\d+\.\d{2} s vs session best/);
   await expect(page.locator('#lap-status')).toHaveText('Lap 3');
   await page.screenshot({ path: 'test-results/prototype-lap-timer.png' });
   await expect.poll(async () => {
@@ -370,4 +370,23 @@ test('the finish line starts the timer and records laps, best time, and differen
   await enterRace(page, 'default');
   expect((await lapSnapshot(page)).best).toBeNull();
   await expect(page.locator('#lap-best')).toHaveText(formatLapTime(allTimeBest));
+});
+
+test('an unranked time-trial lap cannot replace the displayed verified best', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto('/');
+  await enterRace(page, 'default');
+  const verifiedBest = await page.locator('#lap-best').textContent();
+  await page.getByRole('button', { name: 'Tuning', exact: true }).click();
+  await setSlider(page, 'Acceleration', 20);
+  await expect(page.locator('#race-room-status')).toContainText('unranked');
+  await page.keyboard.down('w');
+  await expect.poll(async () => (await lapSnapshot(page)).running, { timeout: 30_000 }).toBe(true);
+  await page.keyboard.up('w');
+  await page.keyboard.down('s');
+  await expect.poll(async () => (await lapSnapshot(page)).completedLaps,
+    { intervals: [100, 200], timeout: 45_000 }).toBe(1);
+  await page.keyboard.up('s');
+  expect((await lapSnapshot(page)).best).toBeGreaterThan(0);
+  await expect(page.locator('#lap-best')).toHaveText(verifiedBest!);
 });

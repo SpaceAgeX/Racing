@@ -22,10 +22,12 @@ import type {
   TrackOption,
   TimeTrialStart,
   ServerDiagnosticsSnapshot,
+  StartLobbyPayload,
   UpdateLobbySettingsPayload,
 } from '../src/multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
 import { prepareRaceRoad, type PreparedRaceRoad } from './road-preparation.ts';
+import { createMultiplayerRound, validRoundOptions, type RoundUpdate } from './multiplayer-round.ts';
 import { splineTrackError } from '../src/track/spline-records.ts';
 
 import type { VehicleState } from '../src/simulation/types.ts';
@@ -136,6 +138,8 @@ interface LobbyRecord {
   settings: LobbySettings;
   players: Map<string, LobbyPlayerRecord>;
   race: ReturnType<typeof createRaceSimulation> | null;
+  round: ReturnType<typeof createMultiplayerRound> | null;
+  nextRoundOptions: StartLobbyPayload['options'];
   layoutHash: string;
   starting: boolean;
 }
@@ -206,6 +210,7 @@ interface SoloRace {
   layoutHash: string;
   rulesetHash: string;
   rankedEligible: boolean;
+  verifiedBestMs: number | null;
 }
 const timeTrials = new Map<string, SoloRace>();
 const activity = new Map<string, { seconds: number; distanceMeters: number }>();
@@ -387,6 +392,8 @@ function createLobbySnapshot(lobby: LobbyRecord): LobbySnapshot {
       color: player.color,
       state: player.state,
     })) as LobbyPlayerSnapshot[],
+    round: lobby.round?.snapshot(performance.now()) ?? null,
+    nextRoundOptions: lobby.nextRoundOptions,
   };
 }
 
@@ -458,6 +465,7 @@ function leaveLobby(socketId: string): void {
 
   playerLobby.delete(socketId);
   lobby.players.delete(socketId);
+  if (lobby.round) applyRoundUpdate(lobby, lobby.round.disconnect(socketId, performance.now()));
   lobby.race?.removePlayer(socketId);
   if (lobby.players.size === 0) {
     lobbies.delete(lobbyId);
@@ -490,6 +498,8 @@ async function createLobby(socketId: string, trackId: string, requestedHandling:
     },
     players: new Map(),
     race: null,
+    round: null,
+    nextRoundOptions: { laps: 3, fallMode: 'respawn', qualifying: false },
     layoutHash: trackLayoutHash(track.layout),
     starting: false,
   };
@@ -546,7 +556,7 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
   return lobby;
 }
 
-function startLobby(socketId: string, road: PreparedRaceRoad, settings: LobbySettings): LobbyRecord | null {
+function startLobby(socketId: string, road: PreparedRaceRoad, settings: LobbySettings, options: StartLobbyPayload['options']): LobbyRecord | null {
   const lobbyId = playerLobby.get(socketId);
   if (!lobbyId) return null;
   const lobby = lobbies.get(lobbyId);
@@ -559,8 +569,44 @@ function startLobby(socketId: string, road: PreparedRaceRoad, settings: LobbySet
     player.state = race.addPlayer(player.id, index).state;
   }
   lobby.race = race;
-  lobby.phase = 'race';
+  lobby.round = createMultiplayerRound(race, players, settings.trackName, options);
+  lobby.phase = 'loading';
   return lobby;
+}
+
+function applyRoundUpdate(lobby: LobbyRecord, update: RoundUpdate): void {
+  if (!lobby.round || !lobby.race) return;
+  for (const player of update.resets) {
+    io.to(player.id).emit('race:transition', { roomId: lobby.id,
+      serverTimeMs: performance.now(), tick: lobby.race.tick, kind: 'respawn', player });
+  }
+  if (update.results) {
+    io.to(lobby.id).emit('multiplayer:results', { roomId: lobby.id, results: update.results });
+    const winner = update.results.players[0];
+    if (winner && update.results.players.length >= 2
+      && (winner.status === 'finished' || update.results.options.fallMode === 'elimination'
+        && winner.status === 'eliminated')) {
+      const winnerId = accountId(winner.id);
+      if (winnerId) queueWrite(accounts.recordMultiplayerWin(winnerId));
+    }
+    lobby.phase = 'lobby';
+    lobby.round = null;
+    lobby.race = null;
+    for (const player of lobby.players.values()) player.state = null;
+    lobby.starting = false;
+    broadcastLobbyRoom(lobby);
+    broadcastLobbyList();
+    return;
+  }
+  if (update.changed) {
+    lobby.phase = lobby.round.stage;
+    if (lobby.phase === 'race') {
+      queueWrite(accounts.startRace([...lobby.players.keys()].map(accountId)
+        .filter((id): id is string => id !== null)));
+    }
+    broadcastLobbyRoom(lobby);
+    broadcastLobbyList();
+  }
 }
 
 io.on('connection', (socket) => {
@@ -619,9 +665,10 @@ io.on('connection', (socket) => {
       const rankedEligible = Boolean(known) && known?.visibility !== 'personal'
         && rulesetHash === defaultRulesetHash;
       const layoutHash = trackLayoutHash(track.layout);
-      const personalBestMs = await accounts.personalBest(socket.data.account.id, track.id, layoutHash);
+      const personalBestMs = await accounts.personalBest(socket.data.account.id, track.id, layoutHash, defaultRulesetHash);
       if (!socket.connected || generation !== soloGeneration) return;
-      timeTrials.set(socket.id, { simulation: race, track, layoutHash, rulesetHash, rankedEligible });
+      timeTrials.set(socket.id, { simulation: race, track, layoutHash, rulesetHash, rankedEligible,
+        verifiedBestMs: personalBestMs });
       socket.emit('time-trial:ready', { requestId: payload.requestId, track, handling, ranked: rankedEligible, personalBestMs });
     } catch (error) {
       if (generation === soloGeneration) socket.emit('time-trial:error', { requestId: payload.requestId,
@@ -719,8 +766,19 @@ io.on('connection', (socket) => {
     broadcastLobbyRoom(lobby);
   });
 
-  socket.on('multiplayer:start-lobby', async () => {
+  socket.on('multiplayer:configure-round', options => {
+    const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
+    if (!lobby || lobby.hostId !== socket.id || lobby.phase !== 'lobby' || !validRoundOptions(options)) return;
+    lobby.nextRoundOptions = { ...options };
+    broadcastLobbyRoom(lobby);
+  });
+
+  socket.on('multiplayer:start-lobby', async (payload) => {
     try {
+    if (!validRoundOptions(payload?.options)) {
+      socket.emit('multiplayer:error', { message: 'Choose 1–20 laps, a fall rule, and whether to qualify.' });
+      return;
+    }
     await pendingSettings;
     const pendingLobby = lobbies.get(playerLobby.get(socket.id) ?? '');
     if (!pendingLobby || pendingLobby.hostId !== socket.id || pendingLobby.phase !== 'lobby' || pendingLobby.starting) {
@@ -728,14 +786,14 @@ io.on('connection', (socket) => {
       return;
     }
     pendingLobby.starting = true;
+    pendingLobby.nextRoundOptions = { ...payload.options };
     try {
       const settings = pendingLobby.settings;
       const road = await prepareRaceRoad(settings.layout);
       if (!socket.connected || lobbies.get(pendingLobby.id) !== pendingLobby
         || pendingLobby.hostId !== socket.id || pendingLobby.phase !== 'lobby'
         || pendingLobby.settings !== settings) return;
-      await accounts.startRace([...pendingLobby.players.keys()].map(accountId).filter((id): id is string => id !== null));
-      const lobby = startLobby(socket.id, road, settings);
+      const lobby = startLobby(socket.id, road, settings, payload.options);
       if (!lobby) {
         socket.emit('multiplayer:error', { message: 'Only the host can start the lobby.' });
         return;
@@ -750,9 +808,16 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('multiplayer:ready', ({ roundId }) => {
+    const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
+    if (!lobby?.round || lobby.round.id !== roundId || lobby.phase !== 'loading') return;
+    applyRoundUpdate(lobby, lobby.round.ready(socket.id, performance.now()));
+  });
+
   socket.on('multiplayer:input', (input) => {
     const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
-    if (lobby?.phase !== 'race' || !lobby.race?.input(socket.id, input, performance.now())) return;
+    if ((lobby?.phase !== 'race' && lobby?.phase !== 'qualifying')
+      || !lobby.race?.input(socket.id, input, performance.now())) return;
     const incomingBytes = Buffer.byteLength(JSON.stringify(input));
     recorder.received(socket.id, incomingBytes);
     stateMessagesReceivedTotal++;
@@ -768,9 +833,11 @@ io.on('connection', (socket) => {
     if (!Number.isSafeInteger(notice?.noticeId) || notice.noticeId < 0
       || !Number.isSafeInteger(notice.lifeId) || notice.lifeId < 0) return;
     const lobby = lobbies.get(playerLobby.get(socket.id) ?? '');
-    const race = lobby?.phase === 'race' ? lobby.race : timeTrials.get(socket.id)?.simulation;
+    const race = lobby?.phase === 'race' || lobby?.phase === 'qualifying'
+      ? lobby.race : timeTrials.get(socket.id)?.simulation;
     if (!race) return;
-    const roomId = lobby?.phase === 'race' ? lobby.id : `solo:${socket.id}`;
+    const roomId = lobby?.phase === 'race' || lobby?.phase === 'qualifying'
+      ? lobby.id : `solo:${socket.id}`;
     // The notification never creates a death; the simulation independently decides.
     const status = race.deathStatus(socket.id, notice.lifeId);
     if (!status) return;
@@ -808,7 +875,9 @@ const raceClock = setInterval(() => {
       raceTickWindowStartedAt = now;
     }
     for (const lobby of lobbies.values()) {
-      if (lobby.phase !== 'race' || !lobby.race) continue;
+      if (!lobby.race || !lobby.round) continue;
+      applyRoundUpdate(lobby, lobby.round.advance(now));
+      if (!lobby.race || !lobby.round) continue;
       const result = lobby.race.step(now);
       for (const transition of result.transitions) {
         io.to(transition.player.id).emit('race:transition', {
@@ -816,7 +885,7 @@ const raceClock = setInterval(() => {
         });
       }
       for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
-      for (const lap of result.laps) {
+      for (const lap of lobby.round.stage === 'race' ? result.laps : []) {
         const userId = accountId(lap.playerId);
         const rulesetHash = handlingHash(lobby.settings.handling);
         if (userId) queueWrite(accounts.recordLap({ userId, trackId: lobby.settings.trackId,
@@ -824,8 +893,11 @@ const raceClock = setInterval(() => {
           rulesetHash, durationSeconds: lap.durationSeconds,
           ranked: rulesetHash === defaultRulesetHash, mode: 'multiplayer' }));
       }
+      applyRoundUpdate(lobby, lobby.round.step(result, now));
+      if (!lobby.race || !lobby.round) continue;
       if (lobby.race.tick % RACE_SNAPSHOT_TICKS !== 0) continue;
-      const payload = { roomId: lobby.id, serverTimeMs: performance.now(), ...lobby.race.snapshot() };
+      const payload = { roomId: lobby.id, serverTimeMs: performance.now(),
+        ...lobby.race.snapshot(), round: lobby.round.snapshot(performance.now()) };
       const bytes = Buffer.byteLength(JSON.stringify(payload));
       io.to(lobby.id).volatile.emit('multiplayer:snapshot', payload);
       for (const playerId of lobby.players.keys()) {
@@ -848,10 +920,21 @@ const raceClock = setInterval(() => {
       for (const player of result.activity) accrue(accountId(player.playerId), player.seconds, player.distanceMeters);
       for (const lap of result.laps) {
         const userId = accountId(lap.playerId);
-        if (userId) queueWrite(accounts.recordLap({ userId, trackId: solo.track.id,
+        if (!userId) continue;
+        const ranked = solo.rankedEligible;
+        const write = accounts.recordLap({ userId, trackId: solo.track.id,
           trackName: solo.track.name, layoutHash: solo.layoutHash,
           rulesetHash: solo.rulesetHash, durationSeconds: lap.durationSeconds,
-          ranked: solo.rankedEligible, mode: 'time_trial' }));
+          ranked, mode: 'time_trial' });
+        queueWrite(write);
+        const durationMs = Math.round(lap.durationSeconds * 1000);
+        if (ranked && Number.isSafeInteger(durationMs) && durationMs > 0) {
+          void write.then(() => {
+            if (timeTrials.get(playerId) !== solo) return;
+            solo.verifiedBestMs = solo.verifiedBestMs === null ? durationMs : Math.min(solo.verifiedBestMs, durationMs);
+            io.to(playerId).emit('time-trial:verified-best', { bestMs: solo.verifiedBestMs });
+          }).catch(() => { /* queueWrite reports the failed save; the verified best stays unchanged. */ });
+        }
       }
       if (race.tick % RACE_SNAPSHOT_TICKS !== 0) continue;
       const payload = { roomId: `solo:${playerId}`, serverTimeMs: performance.now(), ...race.snapshot() };
