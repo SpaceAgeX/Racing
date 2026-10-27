@@ -1,27 +1,48 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Create account | Racing</title><link rel="stylesheet" href="/auth-pages.css">
-</head><body>
-  <main class="auth-layout">
-    <section class="auth-story"><a class="brand" href="/">RACING<span class="brand-mark"></span></a>
-      <div class="story-content"><p class="eyebrow">JOIN THE GRID</p><h1>Make your mark.</h1>
-        <p>Claim your racer name, chase cleaner laps, and build a history on every circuit.</p>
-        <div class="story-line"><span>00</span><div></div><span>THE STARTING LINE</span></div></div>
-      <p class="story-footer">YOUR NAME. YOUR TIME.</p></section>
-    <section class="auth-side"><div class="auth-form-wrap"><p class="eyebrow">NEW ACCOUNT</p>
-      <h2 id="signup-title">Create your account</h2><p id="signup-intro" class="intro">Pick a unique username to show on leaderboards.</p>
-      <div id="signup-methods"><button id="google-sign-up" class="google-button" type="button" disabled><span class="google-mark">G</span>Continue with Google</button>
-        <p id="google-note" class="provider-note">Google sign-in is not configured yet.</p>
-        <div class="divider"><span>OR USE AN EMAIL ADDRESS</span></div></div>
-      <form id="signup-form"><label>Username<input id="signup-username" type="text" minlength="3" maxlength="20"
-        autocomplete="username" spellcheck="false" autocapitalize="off" required></label>
-        <p class="field-hint">3–20 characters. Start with a letter; use letters, numbers, and underscores.</p>
-        <p id="username-status" class="username-status" role="status"></p>
-        <div id="email-fields"><label>Email address<input id="signup-email" type="email" autocomplete="email" required></label>
-          <label>Password<input id="signup-password" type="password" autocomplete="new-password" minlength="6" required></label></div>
-        <button id="signup-submit" class="primary-button" type="submit">Create account</button></form>
-      <p id="signup-status" class="form-status" role="status"></p>
-      <p id="login-link-row" class="switch-page">Already racing? <a id="login-link" href="/login/">Sign in</a></p>
-    </div></section>
-  </main><script type="module" src="/assets/signup.js"></script>
-</body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b171d">
+    <title>Create account | Beggar's Grande Prix</title>
+    <link rel="stylesheet" href="/auth-pages.css">
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="auth-showcase" aria-label="Beggar's Grande Prix">
+        <div class="auth-brand-wrap">
+          <h1 class="auth-brand">Beggar's <span>Grande <em>Prix</em></span></h1>
+        </div>
+        <div class="auth-visual"><canvas id="auth-car-scene" aria-hidden="true"></canvas></div>
+      </section>
+      <section class="auth-side">
+        <div class="auth-form-wrap">
+          <h2 id="signup-title">Create your account</h2>
+          <p id="signup-intro" class="intro">Choose a unique username for leaderboards.</p>
+          <div id="signup-methods">
+            <button id="google-sign-up" class="google-button" type="button" disabled>
+              <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.35 12.24c0-.73-.06-1.27-.2-1.83H12v3.36h5.37a4.58 4.58 0 0 1-1.99 3.01v2.5h3.22c1.88-1.73 2.75-4.28 2.75-7.04Z"/><path fill="#34A853" d="M12 21.5c2.7 0 4.96-.9 6.6-2.22l-3.22-2.5c-.9.6-2.04.97-3.38.97-2.6 0-4.8-1.75-5.59-4.1H3.1v2.57A9.98 9.98 0 0 0 12 21.5Z"/><path fill="#FBBC05" d="M6.41 13.65a6.03 6.03 0 0 1 0-3.3V7.78H3.1a10 10 0 0 0 0 8.44l3.31-2.57Z"/><path fill="#EA4335" d="M12 6.25c1.43 0 2.72.49 3.74 1.47l2.8-2.8A9.56 9.56 0 0 0 12 2.5a9.98 9.98 0 0 0-8.9 5.28l3.31 2.57c.79-2.35 2.99-4.1 5.59-4.1Z"/></svg>
+              Continue with Google
+            </button>
+            <p id="google-note" class="provider-note">Google sign-in is not configured yet.</p>
+            <div class="divider"><span>or</span></div>
+          </div>
+          <form id="signup-form">
+            <label>Username<input id="signup-username" type="text" minlength="3" maxlength="20" autocomplete="username" spellcheck="false" autocapitalize="off" required></label>
+            <p class="field-hint">3–20 characters. Start with a letter; use letters, numbers, and underscores.</p>
+            <p id="username-status" class="username-status" role="status"></p>
+            <div id="email-fields">
+              <label>Email<input id="signup-email" type="email" autocomplete="email" required></label>
+              <label>Password<input id="signup-password" type="password" autocomplete="new-password" minlength="6" required></label>
+            </div>
+            <button id="signup-submit" class="primary-button" type="submit">Create account</button>
+          </form>
+          <p id="signup-status" class="form-status" role="status"></p>
+          <p id="login-link-row" class="switch-page">Already have an account? <a id="login-link" href="/login/">Sign in</a></p>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/assets/auth-scene.js"></script>
+    <script type="module" src="/assets/signup.js"></script>
+  </body>
+</html>

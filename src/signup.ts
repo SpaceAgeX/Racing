@@ -48,7 +48,7 @@ try {
     else {
       claiming = true;
       document.querySelector<HTMLElement>('#signup-title')!.textContent = 'Choose your username';
-      document.querySelector<HTMLElement>('#signup-intro')!.textContent = 'One last step before you join the grid.';
+      document.querySelector<HTMLElement>('#signup-intro')!.textContent = 'Choose a unique username to finish setup.';
       document.querySelector<HTMLElement>('#signup-methods')!.hidden = true;
       document.querySelector<HTMLElement>('#email-fields')!.hidden = true;
       email.required = password.required = false;

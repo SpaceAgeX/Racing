@@ -8,6 +8,7 @@ export const browserBuildOptions: BuildOptions = {
     account: fileURLToPath(new URL('../src/account.ts', import.meta.url)),
     login: fileURLToPath(new URL('../src/login.ts', import.meta.url)),
     signup: fileURLToPath(new URL('../src/signup.ts', import.meta.url)),
+    'auth-scene': fileURLToPath(new URL('../src/auth-scene.ts', import.meta.url)),
   },
   outdir: fileURLToPath(new URL('../dist/', import.meta.url)),
   bundle: true,

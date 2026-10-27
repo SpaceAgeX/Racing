@@ -1,23 +1,40 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in | Racing</title><link rel="stylesheet" href="/auth-pages.css">
-</head><body>
-  <main class="auth-layout">
-    <section class="auth-story"><a class="brand" href="/">RACING<span class="brand-mark"></span></a>
-      <div class="story-content"><p class="eyebrow">YOUR NEXT LAP STARTS HERE</p>
-        <h1>Every second counts.</h1><p>Sign in to race, track your best laps, and return to the road where you left off.</p>
-        <div class="story-line"><span>01</span><div></div><span>GO FASTER</span></div></div>
-      <p class="story-footer">BUILT FOR THE NEXT CORNER</p></section>
-    <section class="auth-side"><div class="auth-form-wrap"><p class="eyebrow">WELCOME BACK</p>
-      <h2>Sign in to race</h2><p class="intro">Your garage and lap times are waiting.</p>
-      <button id="google-sign-in" class="google-button" type="button" disabled><span class="google-mark">G</span>Continue with Google</button>
-      <p id="google-note" class="provider-note">Google sign-in is not configured yet.</p>
-      <div class="divider"><span>OR CONTINUE WITH EMAIL</span></div>
-      <form id="login-form"><label>Email address<input id="login-email" type="email" autocomplete="email" required></label>
-        <label>Password<input id="login-password" type="password" autocomplete="current-password" required></label>
-        <button class="primary-button" type="submit">Sign in</button></form>
-      <p id="login-status" class="form-status" role="status"></p>
-      <p class="switch-page">New to Racing? <a id="create-link" href="/signup/">Create an account</a></p>
-    </div></section>
-  </main><script type="module" src="/assets/login.js"></script>
-</body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b171d">
+    <title>Sign in | Beggar's Grande Prix</title>
+    <link rel="stylesheet" href="/auth-pages.css">
+  </head>
+  <body>
+    <main class="auth-layout">
+      <section class="auth-showcase" aria-label="Beggar's Grande Prix">
+        <div class="auth-brand-wrap">
+          <h1 class="auth-brand">Beggar's <span>Grande <em>Prix</em></span></h1>
+        </div>
+        <div class="auth-visual"><canvas id="auth-car-scene" aria-hidden="true"></canvas></div>
+      </section>
+      <section class="auth-side">
+        <div class="auth-form-wrap">
+          <h2>Welcome back</h2>
+          <button id="google-sign-in" class="google-button" type="button" disabled>
+            <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.35 12.24c0-.73-.06-1.27-.2-1.83H12v3.36h5.37a4.58 4.58 0 0 1-1.99 3.01v2.5h3.22c1.88-1.73 2.75-4.28 2.75-7.04Z"/><path fill="#34A853" d="M12 21.5c2.7 0 4.96-.9 6.6-2.22l-3.22-2.5c-.9.6-2.04.97-3.38.97-2.6 0-4.8-1.75-5.59-4.1H3.1v2.57A9.98 9.98 0 0 0 12 21.5Z"/><path fill="#FBBC05" d="M6.41 13.65a6.03 6.03 0 0 1 0-3.3V7.78H3.1a10 10 0 0 0 0 8.44l3.31-2.57Z"/><path fill="#EA4335" d="M12 6.25c1.43 0 2.72.49 3.74 1.47l2.8-2.8A9.56 9.56 0 0 0 12 2.5a9.98 9.98 0 0 0-8.9 5.28l3.31 2.57c.79-2.35 2.99-4.1 5.59-4.1Z"/></svg>
+            Continue with Google
+          </button>
+          <p id="google-note" class="provider-note">Google sign-in is not configured yet.</p>
+          <div class="divider"><span>or</span></div>
+          <form id="login-form">
+            <label>Email<input id="login-email" type="email" autocomplete="email" required></label>
+            <label>Password<input id="login-password" type="password" autocomplete="current-password" required></label>
+            <button class="primary-button" type="submit">Sign in</button>
+          </form>
+          <p id="login-status" class="form-status" role="status"></p>
+          <p class="switch-page">Don't have an account? <a id="create-link" href="/signup/">Sign up</a></p>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/assets/auth-scene.js"></script>
+    <script type="module" src="/assets/login.js"></script>
+  </body>
+</html>
