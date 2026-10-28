@@ -1,5 +1,6 @@
 import { drivingParameters, physicsParameters } from '../simulation/parameters.ts';
 import type { DrivingParameters, HandlingParameters, PhysicsParameters, VehicleState } from '../simulation/types.ts';
+import { formatSpeedFromMetersPerSecond, onUnitPreferenceChange } from './units.ts';
 
 export type TuningParameters = HandlingParameters;
 
@@ -86,7 +87,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     <header class="tuning-header">
       <h1>Handling</h1>
       <p>Physics Time can be changed without affecting ranking. Other tuning makes this run unranked.</p>
-      <div class="tuning-telemetry"><output id="current-speed">0.0 km/h</output><span id="ground-status">On track</span></div>
+      <div class="tuning-telemetry"><output id="current-speed">${formatSpeedFromMetersPerSecond(0)}</output><span id="ground-status">On track</span></div>
     </header>
     <div class="tuning-fields"></div>
     <footer class="tuning-footer">
@@ -105,7 +106,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
       input.max = String(definition.key === 'highSpeedSteeringAngle' ? parameters.driving.maxSteeringAngle : definition.max);
       input.value = String(value);
       const decimals = definition.step.toString().split('.')[1]?.length ?? 0;
-      const additional = definition.unit === 'm/s' ? ` · ${(value * 3.6).toFixed(1)} km/h`
+      const additional = definition.unit === 'm/s' ? ` · ${formatSpeedFromMetersPerSecond(value)}`
         : definition.unit === 'rad' ? ` · ${(value * 180 / Math.PI).toFixed(0)}°` : '';
       output.value = `${value.toFixed(decimals)} ${definition.unit}${additional}`;
     }
@@ -151,6 +152,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     fields.append(group);
   }
   sync();
+  cleanup.push(onUnitPreferenceChange(sync));
 
   const reset = panel.querySelector<HTMLButtonElement>('#reset-tuning')!;
   const onReset = (): void => {
@@ -201,7 +203,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
       message.textContent = 'Default handling is active.';
     },
     update(state: Readonly<VehicleState>): void {
-      const text = `${(Math.hypot(state.speed, state.lateralSpeed) * 3.6).toFixed(1)} km/h`;
+      const text = formatSpeedFromMetersPerSecond(Math.hypot(state.speed, state.lateralSpeed));
       if (speed.value !== text) speed.value = text;
       const ground = state.grounded ? (state.crashTime > 0 ? 'Recovering from crash' : 'On track') : `${state.tipping ? 'Tipping' : 'Falling'} · ${state.airborneTime.toFixed(1)} s`;
       if (status.textContent !== ground) status.textContent = ground;
@@ -237,7 +239,7 @@ export function createLobbyHandlingEditor(root: HTMLElement, onCommit: (paramete
       input.max = String(definition.key === 'highSpeedSteeringAngle' ? parameters.driving.maxSteeringAngle : definition.max);
       input.value = String(value);
       const decimals = definition.step.toString().split('.')[1]?.length ?? 0;
-      const additional = definition.unit === 'm/s' ? ` · ${(value * 3.6).toFixed(1)} km/h`
+      const additional = definition.unit === 'm/s' ? ` · ${formatSpeedFromMetersPerSecond(value)}`
         : definition.unit === 'rad' ? ` · ${(value * 180 / Math.PI).toFixed(0)}°` : '';
       output.value = `${value.toFixed(decimals)} ${definition.unit}${additional}`;
     }
@@ -287,6 +289,7 @@ export function createLobbyHandlingEditor(root: HTMLElement, onCommit: (paramete
   }
   reset.addEventListener('click', commitDefaults);
   sync();
+  const unsubscribeUnits = onUnitPreferenceChange(sync);
 
   return {
     setRoomHandling(value: Readonly<TuningParameters>, canEdit: boolean): void {
@@ -300,6 +303,6 @@ export function createLobbyHandlingEditor(root: HTMLElement, onCommit: (paramete
         : 'The host controls handling. These settings apply to everyone when the race starts.';
       sync();
     },
-    dispose(): void { reset.removeEventListener('click', commitDefaults); },
+    dispose(): void { reset.removeEventListener('click', commitDefaults); unsubscribeUnits(); },
   };
 }

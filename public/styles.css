@@ -921,3 +921,61 @@ kbd {
 .chat-panel form { display: flex; gap: 8px; }
 .chat-panel input { min-width: 0; flex: 1; padding: 10px; color: white; background: #17252d; border: 1px solid #647881; border-radius: 8px; }
 .chat-panel small { display: block; margin-top: 8px; color: #acbec7; }
+
+/* Main menu navigation and display preferences. */
+.home-choice {
+  position: relative; border: 0; border-radius: 4px; background: transparent; box-shadow: none;
+  transition: background 170ms ease;
+}
+.home-choice::before {
+  content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
+  background: var(--auth-accent); opacity: 0; transition: opacity 170ms ease;
+}
+.home-choice::after { content: '\2192'; transition: color 170ms ease, transform 170ms ease; }
+.home-choice:hover, .home-choice:focus-visible { transform: none; background: #1b2328b8; border-color: transparent; color: #f5f7f8; }
+.home-choice:hover::before, .home-choice:focus-visible::before { opacity: 1; }
+.home-choice:hover::after, .home-choice:focus-visible::after { color: var(--auth-text-accent); transform: translateX(5px); }
+.home-profile { display: flex; align-items: center; gap: 9px; }
+.home-account-link {
+  min-height: 44px; padding: 5px 14px 5px 5px; gap: 9px;
+  border-radius: 9999px; background: #1c2327e8; text-decoration: none; overflow: hidden;
+}
+.home-account-link #home-account-avatar { width: 32px; height: 32px; font-size: 14px; }
+.home-account-link .home-profile-name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-settings-toggle {
+  display: grid; place-items: center; flex: none; width: 44px; height: 44px;
+  border: 1px solid #ffffff28; border-radius: 50%; background: #1c2327e8;
+  color: #f5f7f8; cursor: pointer;
+}
+.home-settings-toggle:hover, .home-settings-toggle[aria-expanded="true"] { background: #283136; border-color: #ffffff55; }
+.home-settings-toggle svg { width: 19px; height: 19px; }
+.home-settings-toggle:focus-visible, .home-settings-panel :focus-visible { outline: 2px solid var(--auth-focus, #ee7136); outline-offset: 3px; }
+.home-settings-panel {
+  position: absolute; top: calc(100% + 12px); right: 0; width: min(310px, calc(100vw - 28px));
+  padding: 20px; border: 1px solid #ffffff30; border-radius: 14px;
+  background: #1c2327f5; box-shadow: 0 20px 48px #0009; color: #f5f7f8;
+}
+.home-settings-panel[hidden] { display: none; }
+.home-settings-panel h2 { margin: 0 0 18px; font: 700 25px/1 'Barlow Condensed', Impact, sans-serif; text-transform: uppercase; }
+.settings-section + .settings-section { margin-top: 22px; }
+.settings-section h3 { margin: 0 0 11px; color: #bdc8cd; font: 700 11px/1 'DM Sans', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+.settings-accent-grid { display: grid; grid-template-columns: repeat(6, 34px); gap: 9px; }
+.settings-accent-swatch {
+  display: grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  border: 2px solid #ffffff55; border-radius: 50%; background: var(--swatch, #293238);
+  color: #eaf1f3; cursor: pointer;
+}
+.settings-accent-swatch[aria-pressed="true"] { outline: 2px solid #f5f7f8; outline-offset: 3px; }
+.settings-accent-swatch:hover { transform: scale(1.08); }
+.settings-selected { margin: 12px 0 0; color: #c7d0d5; font-size: 12px; }
+.settings-unit-control { display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border: 1px solid #ffffff24; border-radius: 9px; background: #11191d; }
+.settings-unit-control button { padding: 8px 5px; border: 0; border-radius: 6px; background: transparent; color: #aebbc2; font: 600 12px 'DM Sans', sans-serif; cursor: pointer; }
+.settings-unit-control button[aria-pressed="true"] { background: #344047; color: #fff; }
+.settings-unit-control button span { opacity: .7; }
+@media (max-width: 600px) {
+  .home-account-link { min-height: 39px; padding: 3px 9px 3px 3px; gap: 5px; }
+  .home-account-link #home-account-avatar { width: 31px; height: 31px; }
+  .home-account-link .home-profile-name { display: block; max-width: 80px; font-size: 11px; }
+  .home-settings-toggle { width: 39px; height: 39px; }
+  .home-profile { gap: 6px; }
+}

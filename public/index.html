@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#111417" />
     <title>Beggar's Grand Prix</title>
-    <link rel="stylesheet" href="/styles.css?v=menu-refinements-1" />
+    <link rel="stylesheet" href="/styles.css?v=menu-settings-1" />
     <link rel="stylesheet" href="/auth.css" />
   </head>
   <body data-auth-state="pending">
@@ -47,7 +47,7 @@
           <canvas id="minimap" class="minimap" role="img" aria-label="Track minimap. The orange arrow shows your car's position and direction; blue marks checkpoints and white marks the finish line."></canvas>
           <div class="race-speed" aria-label="Vehicle speed">
             <span>Speed</span>
-            <div><output id="race-speed-value" aria-live="off">0</output> <span>km/h</span></div>
+            <div><output id="race-speed-value" aria-live="off">0</output> <span id="race-speed-unit">km/h</span></div>
           </div>
           <p class="controls" aria-label="Driving controls">
             <span><kbd>W</kbd> Accelerate</span>

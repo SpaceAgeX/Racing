@@ -1,8 +1,11 @@
 import { carColorNames } from './car-colors.ts';
 
 const storageKey = 'beggars-grand-prix-accent';
+const preferenceKey = 'beggars-grand-prix-accent-preference';
 const previousKey = 'auth-scene-last-car-color';
 const availableColors = [...carColorNames.keys()].filter(color => !['Pearl', 'Charcoal'].includes(carColorNames.get(color)!));
+export type AccentPreference = 'random' | string;
+export const accentChoices = availableColors.map(color => ({ color, name: carColorNames.get(color)! }));
 const listeners = new Set<(color: string) => void>();
 let activeColor: string | null = null;
 
@@ -30,13 +33,15 @@ function applyColor(color: string): void {
 /** One palette color per browser session, shared by login, signup, and the menu. */
 export function getActiveAccentColor(): string {
   if (!activeColor) {
+    const preference = getAccentPreference();
     let stored: string | null = null;
     let previous: string | null = null;
     try {
       stored = sessionStorage.getItem(storageKey);
       previous = sessionStorage.getItem(previousKey);
     } catch { /* Continue without storage. */ }
-    if (stored && availableColors.includes(stored)) activeColor = stored;
+    if (preference !== 'random') activeColor = preference;
+    else if (stored && availableColors.includes(stored)) activeColor = stored;
     else {
       const choices = availableColors.filter(color => color !== previous);
       activeColor = choices[Math.floor(Math.random() * choices.length)]!;
@@ -50,7 +55,21 @@ export function getActiveAccentColor(): string {
   return activeColor;
 }
 
-/** Ready for a future account preference, without introducing a settings UI yet. */
+export function getAccentPreference(): AccentPreference {
+  try {
+    const value = localStorage.getItem(preferenceKey);
+    if (value && availableColors.includes(value)) return value;
+  } catch { /* Browser storage may be unavailable. */ }
+  return 'random';
+}
+
+export function setAccentPreference(preference: AccentPreference): void {
+  if (preference !== 'random' && !availableColors.includes(preference)) return;
+  try { localStorage.setItem(preferenceKey, preference); } catch { /* Current page still responds. */ }
+  // Random mode keeps the current session color until the next browser session.
+  if (preference !== 'random') setActiveAccentColor(preference);
+}
+
 export function setActiveAccentColor(color: string): void {
   if (!availableColors.includes(color)) return;
   activeColor = color;

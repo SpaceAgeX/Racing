@@ -1,6 +1,7 @@
 import { accountFetch, requireAccount } from './auth/session.ts';
 import { startAdmissionHeartbeat } from './admission.ts';
 import { usernameError } from './auth/username.ts';
+import { formatDistanceFromMeters } from './ui/units.ts';
 
 interface Dashboard {
   username: string;
@@ -95,7 +96,7 @@ const metrics: [string, string][] = [
   ['Races started', String(data.racesStarted)],
   ['Multiplayer wins', String(data.multiplayerWins)],
   ['Time on track', `${Math.floor(data.timePlayedSeconds / 3600)}h ${Math.floor((data.timePlayedSeconds % 3600) / 60)}m`],
-  ['Distance driven', `${(data.distanceMeters / 1000).toFixed(1)} km`],
+  ['Distance driven', formatDistanceFromMeters(data.distanceMeters)],
   ['Tracks created', String(data.tracksCreated)],
 ];
 const grid = document.querySelector<HTMLElement>('#account-metrics')!;

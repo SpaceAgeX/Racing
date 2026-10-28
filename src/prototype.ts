@@ -18,6 +18,7 @@ import { createPerformanceStats } from './ui/performance-stats.ts';
 import { createDeveloperConsole } from './ui/developer-console.ts';
 import { createTimeTrialSetup } from './ui/time-trial-setup.ts';
 import { copyTuningParameters, createTuningPanel } from './ui/tuning.ts';
+import { speedUnit, speedValueFromMetersPerSecond } from './ui/units.ts';
 import type { TuningParameters } from './ui/tuning.ts';
 import { listBrowserTracks, loadActiveTrack, selectTrackForPlay } from './track/storage.ts';
 import { listSharedTracks } from './track/api.ts';
@@ -568,11 +569,9 @@ function createHomeScreen(root: HTMLElement, callbacks: {
 }, username: string, preferredTrackId = ''): HomeScreenController {
   root.innerHTML = `
     <div class="home-profile">
-      <button id="home-account-link" class="home-account-link" type="button" aria-label="Account menu" aria-expanded="false" aria-controls="home-profile-menu"><span id="home-account-avatar" aria-hidden="true">R</span><span id="home-profile-name" class="home-profile-name"></span></button>
-      <div id="home-profile-menu" class="home-profile-menu" hidden>
-        <a href="/account/">Profile / Dashboard</a>
-        <button id="home-sign-out" type="button">Sign out</button>
-      </div>
+      <a id="home-account-link" class="home-account-link" href="/account/" aria-label="Your dashboard"><span id="home-account-avatar" aria-hidden="true">R</span><span id="home-profile-name" class="home-profile-name"></span></a>
+      <button id="home-settings-toggle" class="home-settings-toggle" type="button" aria-label="Settings" aria-expanded="false" aria-controls="home-settings-panel"><svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/><path d="M19.4 13.5a7.5 7.5 0 0 0 0-3l2-1.5-2-3.5-2.3.9a7.8 7.8 0 0 0-2.6-1.5L14 2h-4l-.5 2.9a7.8 7.8 0 0 0-2.6 1.5l-2.3-.9-2 3.5 2 1.5a7.5 7.5 0 0 0 0 3l-2 1.5 2 3.5 2.3-.9a7.8 7.8 0 0 0 2.6 1.5L10 22h4l.5-2.9a7.8 7.8 0 0 0 2.6-1.5l2.3.9 2-3.5-2-1.5Z"/></svg></button>
+      <section id="home-settings-panel" class="home-settings-panel" aria-label="Settings" hidden></section>
     </div>
     <div class="home-shell">
       <section id="home-landing" class="home-landing">
@@ -702,6 +701,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const raceRoomStatus = document.querySelector<HTMLElement>('#race-room-status');
   const performanceStatsElement = document.querySelector<HTMLElement>('#performance-stats');
   const raceSpeed = document.querySelector<HTMLOutputElement>('#race-speed-value')!;
+  const raceSpeedUnit = document.querySelector<HTMLElement>('#race-speed-unit')!;
   const lapCurrent = document.querySelector<HTMLOutputElement>('#lap-current')!;
   const lapBest = document.querySelector<HTMLOutputElement>('#lap-best')!;
   const lapLast = document.querySelector<HTMLOutputElement>('#lap-last')!;
@@ -773,6 +773,11 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   function setMode(mode: 'home' | 'multiplayer' | 'time-trial-setup' | 'lobby' | 'race'): void {
     currentMode = mode;
+    if (mode !== 'home') {
+      const settingsPanel = document.querySelector<HTMLElement>('#home-settings-panel');
+      if (settingsPanel) settingsPanel.hidden = true;
+      document.querySelector('#home-settings-toggle')?.setAttribute('aria-expanded', 'false');
+    }
     menuBackdrop.setActive(mode === 'home');
     setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer' || mode === 'time-trial-setup');
     setScreenVisibility(lobbyScreenRoot, mode === 'lobby' || mode === 'race' && lobbyPanelOpen);
@@ -1320,8 +1325,9 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       }
       roundUi.update();
       tuningPanel.update(session.state);
-      const speed = String(Math.round(Math.hypot(session.state.speed, session.state.lateralSpeed) * 3.6));
+      const speed = String(Math.round(speedValueFromMetersPerSecond(Math.hypot(session.state.speed, session.state.lateralSpeed))));
       if (raceSpeed.value !== speed) raceSpeed.value = speed;
+      if (raceSpeedUnit.textContent !== speedUnit()) raceSpeedUnit.textContent = speedUnit();
       if (soloRaceActive && socket.connected) {
         const handling = JSON.stringify(tuningPanel.parameters);
         if (handling !== lastSoloHandling) {

@@ -10,9 +10,9 @@ import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts
 // Local car forward is -Z. The finish stripe is at Z = 0.
 const finishSeconds = 2.5;
 const placements = [
-  { x: -1.9, startZ: 18, finishZ: 1.25 },
-  { x: 1.15, startZ: 21, finishZ: 4.6 },
-  { x: 3.7, startZ: 25, finishZ: 7.0 },
+  { x: -1.9, startZ: 18, finishZ: 3.1, heading: -0.02 },
+  { x: 1.35, startZ: 22, finishZ: 6.5, heading: 0.075 },
+  { x: 3.55, startZ: 27, finishZ: 9.3, heading: -0.11 },
 ] as const;
 
 function companionColors(accent: string): number[] {
@@ -39,7 +39,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   renderer.shadowMap.enabled = true;
   const scene = new Scene();
   scene.background = new Color(0x111417);
-  scene.fog = new Fog(0x111417, 32, 75);
+  // The road ends deep in full fog, so no distant geometry edge is visible.
+  scene.fog = new Fog(0x111417, 24, 48);
   const camera = new PerspectiveCamera(42, 1, 0.1, 100);
   const resources: Mesh[] = [];
   const environment = new Group();
@@ -62,9 +63,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   resources.push(road);
 
   for (let side = -1; side <= 1; side += 2) {
-    addBox(0.12, 0.02, 70, 0xa5adb1, side * 5.67, -0.034, 11);
-    addBox(0.28, 0.7, 70, 0x414b50, side * 6.2, 0.24, 11);
-    addBox(0.055, 0.045, 70, 0x839097, side * 6.2, 0.62, 11);
+    addBox(0.09, 0.012, 90, 0x747f83, side * 5.7, -0.05, 11);
   }
 
   // Individual tiles keep the finish line crisp from a low camera angle.
@@ -79,8 +78,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     }
   }
 
-  scene.add(new AmbientLight(0xb8cad1, 0.9));
-  const key = new DirectionalLight(0xfff2e3, 3.6);
+  scene.add(new AmbientLight(0xb8cad1, 1.05));
+  const key = new DirectionalLight(0xfff2e3, 3.8);
   key.position.set(-5, 11, -4);
   key.target.position.set(0, 0, 3);
   key.castShadow = true;
@@ -93,10 +92,10 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   key.shadow.camera.far = 35;
   key.shadow.normalBias = 0.025;
   scene.add(key, key.target);
-  const fill = new DirectionalLight(0x9dc6e2, 1.4);
+  const fill = new DirectionalLight(0x9dc6e2, 1.7);
   fill.position.set(5, 5, 12);
   scene.add(fill);
-  const rim = new DirectionalLight(0xd7e7f0, 0.75);
+  const rim = new DirectionalLight(0xd7e7f0, 1.0);
   rim.position.set(7, 7, -8);
   scene.add(rim);
 
@@ -106,6 +105,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     const state = createVehicleState();
     state.position.x = placement.x;
     state.position.z = placement.startZ;
+    state.heading = placement.heading;
     visual.update(state);
     scene.add(visual.object);
     return { visual, state };
@@ -150,8 +150,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     const hold = Math.max(0, elapsed - finishSeconds);
     const drift = motion.matches ? 0 : Math.sin(hold * 0.24) * 0.28;
     const arrival = motion.matches ? 1 : eased;
-    camera.position.set(-7.8 + drift, 3.55, -9.8 - (1 - arrival) * 1.6);
-    camera.lookAt(0.25 + drift * 0.2, 0.55, 3.2);
+    camera.position.set(-7.25 + drift, 3.1, -8.8 - (1 - arrival) * 1.6);
+    camera.lookAt(0.1 + drift * 0.2, 0.55, 4.0);
     renderer.render(scene, camera);
   }
 
