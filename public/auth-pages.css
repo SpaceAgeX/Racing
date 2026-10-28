@@ -3,7 +3,7 @@
 :root { color-scheme: dark; font-family: 'DM Sans', system-ui, sans-serif; color: #f5f7f8; background: #111417; --auth-accent: #ee7136; --auth-text-accent: var(--auth-accent); --auth-focus: var(--auth-accent); }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 0; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
 [hidden] { display: none !important; }
@@ -40,12 +40,16 @@ a { color: inherit; }
 .divider { display: flex; align-items: center; gap: 13px; margin: 19px 0 23px; color: #a3b5be; font-size: 12px; }
 .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #30383d; }
 .auth-form-wrap label { display: block; margin-top: 15px; color: #d8e1e5; font-size: 13px; font-weight: 600; }
-.auth-form-wrap input {
+.auth-form-wrap input, .auth-form-wrap select {
   display: block; width: 100%; min-height: 49px; margin-top: 7px; padding: 11px 14px;
   border: 1px solid #384248; border-radius: 9px; outline: 0;
   background: #22282c; color: #f5f7f8;
 }
-.auth-form-wrap input:focus { border-color: var(--auth-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-focus) 22%, transparent); }
+.auth-form-wrap input:focus, .auth-form-wrap select:focus { border-color: var(--auth-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-focus) 22%, transparent); }
+.auth-form-wrap select { cursor: pointer; }
+.country-select-row { display: flex; align-items: center; gap: 12px; }
+.country-select-row select { flex: 1; min-width: 0; }
+.country-select-row img { flex: none; width: 32px; height: 24px; object-fit: cover; border-radius: 2px; }
 .primary-button { width: 100%; min-height: 50px; margin-top: 24px; padding: 10px 16px; border: 1px solid var(--auth-accent); border-radius: 9px; background: var(--auth-accent); color: var(--auth-button-text, #111417); font-weight: 700; }
 .primary-button:hover:not(:disabled) { filter: brightness(1.08); }
 .primary-button:disabled { opacity: .6; cursor: wait; }

@@ -2,7 +2,7 @@ import { accountFetch, requireAccount } from './auth/session.ts';
 import { startAdmissionHeartbeat } from './admission.ts';
 import { usernameError } from './auth/username.ts';
 import { formatDistanceFromMeters } from './ui/units.ts';
-import { countryFlag, countryOptions } from './ui/countries.ts';
+import { countryFlagImageUrl, countryOptions } from './ui/countries.ts';
 
 interface Dashboard {
   username: string;
@@ -43,9 +43,14 @@ const countryFeedback = document.querySelector<HTMLElement>('#country-feedback')
 const countries = document.querySelector<HTMLDataListElement>('#country-options')!;
 for (const country of countryList) countries.append(new Option(`${country.name} (${country.code})`, country.name));
 function showCountry(code: string | null): void {
-  const country = countryList.find(item => item.code === code);
+  const country = countryList.find(item => item.code === (code ?? 'US'));
   countryInput.value = country?.name ?? '';
-  countryFlagElement.textContent = countryFlag(code);
+  countryFlagElement.replaceChildren();
+  if (country) {
+    const image = document.createElement('img');
+    image.src = countryFlagImageUrl(country.code); image.alt = `${country.name} flag`;
+    image.width = 32; image.height = 24; countryFlagElement.append(image);
+  }
   countryFlagElement.hidden = !country;
 }
 showCountry(data.countryCode);
@@ -55,18 +60,18 @@ document.querySelector<HTMLFormElement>('#country-form')!.addEventListener('subm
     const text = countryInput.value.trim();
     const country = countryList.find(item => item.name.toLowerCase() === text.toLowerCase()
       || item.code.toLowerCase() === text.toLowerCase());
-    if (text && !country) { countryFeedback.textContent = 'Choose a country from the list.'; return; }
+    if (!country) { countryFeedback.textContent = 'Choose a country from the list.'; return; }
     try {
       const response = await accountFetch('/api/account/country', { method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ countryCode: country?.code ?? null }) });
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ countryCode: country.code }) });
       if (!response.ok) throw new Error('Could not save country.');
-      showCountry(country?.code ?? null);
+      showCountry(country.code);
       countryFeedback.textContent = 'Country saved.';
     } catch (error) { countryFeedback.textContent = (error as Error).message; }
   })();
 });
 document.querySelector<HTMLButtonElement>('#clear-country')!.addEventListener('click', () => {
-  countryInput.value = '';
+  countryInput.value = countryList.find(item => item.code === 'US')!.name;
   document.querySelector<HTMLFormElement>('#country-form')!.requestSubmit();
 });
 document.querySelector<HTMLElement>('#account-email')!.textContent = session.user.email ?? 'Google account';
@@ -122,7 +127,7 @@ usernameForm.addEventListener('submit', event => {
 
 function formatLap(milliseconds: number): string {
   const minutes = Math.floor(milliseconds / 60_000);
-  const seconds = ((milliseconds % 60_000) / 1000).toFixed(2).padStart(5, '0');
+  const seconds = ((milliseconds % 60_000) / 1000).toFixed(3).padStart(6, '0');
   return `${minutes}:${seconds}`;
 }
 const metrics: [string, string][] = [

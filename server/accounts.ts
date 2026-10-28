@@ -57,13 +57,11 @@ export function createAccounts() {
       'select username, display_name, can_publish_ranked_tracks, country_code from public.profiles where user_id = $1', [userId]);
     if (!result.rows[0]) throw new AccountError('Account profile is missing.', 500);
     return { username: result.rows[0].username, displayName: result.rows[0].display_name,
-      canPublishRankedTracks: result.rows[0].can_publish_ranked_tracks, countryCode: result.rows[0].country_code };
+      canPublishRankedTracks: result.rows[0].can_publish_ranked_tracks, countryCode: result.rows[0].country_code ?? 'US' };
   }
 
-  async function updateCountry(userId: string, value: unknown): Promise<string | null> {
-    if (value !== null && (typeof value !== 'string' || !countryCodes.has(value))) {
-      throw new AccountError('Choose a valid country or clear the selection.');
-    }
+  async function updateCountry(userId: string, value: unknown): Promise<string> {
+    if (typeof value !== 'string' || !countryCodes.has(value)) throw new AccountError('Choose a valid country.');
     await db.query('update public.profiles set country_code=$2 where user_id=$1', [userId, value]);
     return value;
   }
@@ -75,13 +73,14 @@ export function createAccounts() {
     return !found.rows.length;
   }
 
-  async function claimUsername(userId: string, value: unknown): Promise<string> {
+  async function claimUsername(userId: string, value: unknown, countryCode: unknown = 'US'): Promise<string> {
     const invalid = usernameError(value);
     if (invalid) throw new AccountError(invalid);
+    if (typeof countryCode !== 'string' || !countryCodes.has(countryCode)) throw new AccountError('Choose a valid country.');
     const username = (value as string).trim();
     try {
-      const updated = await db.query('update public.profiles set username=$2 where user_id=$1 and username is null',
-        [userId, username]);
+      const updated = await db.query('update public.profiles set username=$2, country_code=$3 where user_id=$1 and username is null',
+        [userId, username, countryCode]);
       if (!updated.rowCount) throw new AccountError('This account already has a username.', 409);
       return username;
     } catch (error) {
@@ -253,7 +252,7 @@ export function createAccounts() {
 
   async function leaderboard(trackId: string, layoutHash: string, rulesetHash: string) {
     const result = await db.query<{ username: string; country_code: string | null; duration_ms: number }>(`select coalesce(p.username,p.display_name) as username,
-      p.country_code,
+      coalesce(p.country_code, 'US') as country_code,
       min(l.duration_ms)::integer as duration_ms from public.lap_results l
       join public.profiles p on p.user_id=l.user_id
       where l.track_id=$1 and l.layout_hash=$2 and l.ruleset_hash=$3 and l.ranked

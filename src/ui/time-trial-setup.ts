@@ -1,6 +1,6 @@
 import { carColorNames } from './car-colors.ts';
 import { preferredCarColor } from './car-color-preference.ts';
-import { countryFlag } from './countries.ts';
+import { countryFlagImageUrl } from './countries.ts';
 import { trackThumbnail } from './track-thumbnail.ts';
 import { createCarShowroom } from '../rendering/car-showroom.ts';
 import type { TrackOption } from '../multiplayer/protocol.ts';
@@ -10,7 +10,7 @@ import { accountFetch } from '../auth/session.ts';
 export interface TimeTrialTrackOption extends TrackOption {}
 
 function formatLap(ms: number): string {
-  return `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(2).padStart(5, '0')}`;
+  return `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`;
 }
 function formatPopularity(ms: number): string {
   if (!ms) return 'No completed laps yet';
@@ -162,17 +162,24 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
       }).then(entries => {
         if (requestId !== leaderboardRequest) return;
         leaderboardStatus.textContent = entries.length ? '' : 'No lap times recorded yet.';
-        entries.forEach((entry, index) => {
+        for (let index = 0; index < 10; index++) {
+          const entry = entries[index];
           const row = document.createElement('li');
-          if (entry.name.toLowerCase() === username.toLowerCase()) row.className = 'is-you';
+          if (entry?.name.toLowerCase() === username.toLowerCase()) row.className = 'is-you';
+          if (!entry) row.className = 'is-empty';
           const place = document.createElement('span'); place.textContent = String(index + 1);
           const driver = document.createElement('span'); driver.className = 'trial-board-driver';
-          const flag = countryFlag(entry.countryCode);
-          if (flag) { const icon = document.createElement('span'); icon.textContent = flag; icon.setAttribute('aria-label', entry.countryCode!); driver.append(icon); }
-          const name = document.createElement('span'); name.textContent = entry.name; driver.append(name);
-          const time = document.createElement('strong'); time.textContent = formatLap(entry.durationMs);
+          const countryCode = entry?.countryCode ?? 'US';
+          const flagUrl = entry ? countryFlagImageUrl(countryCode) : '';
+          if (flagUrl) {
+            const icon = document.createElement('img'); icon.className = 'trial-board-flag';
+            icon.src = flagUrl; icon.alt = `${countryCode} flag`; icon.width = 20; icon.height = 15;
+            driver.append(icon);
+          }
+          const name = document.createElement('span'); name.textContent = entry?.name ?? 'No time yet'; driver.append(name);
+          const time = document.createElement('strong'); time.textContent = entry ? formatLap(entry.durationMs) : '—';
           row.append(place, driver, time); leaderboard.append(row);
-        });
+        }
       }).catch(() => { if (requestId === leaderboardRequest) leaderboardStatus.textContent = 'Leaderboard unavailable.'; });
   }
 

@@ -58,8 +58,10 @@
 .trial-board-rows { list-style: none; min-height: 0; overflow-y: auto; margin: 0; padding: 0; scrollbar-width: thin; }
 .trial-board-rows li { min-height: 30px; padding: 6px 8px; border-bottom: 1px solid #ffffff13; color: #c8d1d5; font-size: 12px; }
 .trial-board-rows li.is-you { background: color-mix(in srgb, var(--auth-accent) 13%, transparent); color: #fff; }
+.trial-board-rows li.is-empty, .trial-board-rows li.is-empty > strong { color: #76848a; }
 .trial-board-rows li > strong { color: #f5f7f8; font-variant-numeric: tabular-nums; text-align: right; }
 .trial-board-driver { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.trial-board-flag { flex: none; width: 20px; height: 15px; object-fit: cover; border-radius: 2px; }
 .trial-board-driver > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trial-board-status { min-height: 15px; margin: 8px 0 0; color: #9faeb5; font-size: 12px; flex: none; }
 .trial-car-panel { display: none; }
@@ -146,8 +148,12 @@
   .is-car-stage .trial-actions { order: 3; justify-items: stretch; }
   .is-car-stage .trial-actions .trial-start-button { width: 100%; }
   .trial-track-dialog { width: 100vw; height: 100svh; padding: 12px; }
-  .trial-dialog-shell { gap: 12px; padding: 8px; }
-  .trial-dialog-layout { grid-template-columns: 1fr; grid-template-rows: minmax(0, .8fr) minmax(0, 1.2fr); gap: 14px; }
+  .trial-track-dialog { overflow-y: auto; }
+  .trial-dialog-shell { height: auto; min-height: 100%; grid-template-rows: auto auto; gap: 12px; padding: 8px; }
+  .trial-dialog-layout { grid-template-columns: 1fr; grid-template-rows: auto auto; gap: 14px; }
+  .trial-dialog-side [data-dialog-board-slot] { flex: none; }
+  .trial-dialog-side .trial-board-panel { height: auto; overflow: visible; }
+  .trial-dialog-side .trial-board-rows { overflow: visible; }
   .trial-dialog-side > p { margin-bottom: 8px; }
   .trial-dialog-side .trial-board-panel h2 { margin-bottom: 5px; }
   .trial-dialog-side .trial-start-button { margin-top: 8px; min-height: 44px; }

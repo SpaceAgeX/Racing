@@ -12,3 +12,7 @@ export function countryFlag(code: string | null | undefined): string {
   if (!code || !countryCodes.has(code)) return '';
   return String.fromCodePoint(...[...code].map(char => 0x1f1e6 + char.charCodeAt(0) - 65));
 }
+
+export function countryFlagImageUrl(code: string | null | undefined): string {
+  return code && countryCodes.has(code) ? `https://flagcdn.com/w40/${code.toLowerCase()}.png` : '';
+}

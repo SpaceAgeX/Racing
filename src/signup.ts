@@ -1,10 +1,24 @@
 import { accountFetch, authClient, currentUser, nextDestination } from './auth/session.ts';
 import { usernameError } from './auth/username.ts';
+import { countryFlagImageUrl, countryOptions } from './ui/countries.ts';
 
 const next = nextDestination(new URLSearchParams(location.search).get('next'));
 const status = document.querySelector<HTMLElement>('#signup-status')!;
 const availability = document.querySelector<HTMLElement>('#username-status')!;
 const username = document.querySelector<HTMLInputElement>('#signup-username')!;
+const country = document.querySelector<HTMLSelectElement>('#signup-country')!;
+const countryList = countryOptions();
+for (const option of countryList) country.add(new Option(option.name, option.code));
+const pendingCountryKey = 'racing-pending-signup-country';
+const pendingCountry = sessionStorage.getItem(pendingCountryKey);
+country.value = countryList.some(option => option.code === pendingCountry) ? pendingCountry! : 'US';
+const countryImage = document.querySelector<HTMLImageElement>('#signup-country-flag')!;
+function showCountryFlag(): void {
+  countryImage.src = countryFlagImageUrl(country.value);
+  countryImage.alt = `${countryList.find(option => option.code === country.value)?.name ?? 'Country'} flag`;
+}
+country.addEventListener('change', () => { sessionStorage.setItem(pendingCountryKey, country.value); showCountryFlag(); });
+showCountryFlag();
 const email = document.querySelector<HTMLInputElement>('#signup-email')!;
 const password = document.querySelector<HTMLInputElement>('#signup-password')!;
 const form = document.querySelector<HTMLFormElement>('#signup-form')!;
@@ -57,6 +71,7 @@ try {
     }
   }
   google.addEventListener('click', async () => {
+    sessionStorage.setItem(pendingCountryKey, country.value);
     status.textContent = 'Opening Google sign-in...';
     const { error } = await client.auth.signInWithOAuth({ provider: 'google', options: {
       redirectTo: `${location.origin}/signup/?complete=1&next=${encodeURIComponent(next)}`,
@@ -72,22 +87,23 @@ try {
         if (!(await checkAvailability(chosen))) { submit.disabled = false; return; }
         if (claiming) {
           const response = await accountFetch('/api/account/username', { method: 'POST',
-            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: chosen }) });
+            headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: chosen, countryCode: country.value }) });
           if (!response.ok) {
             const result = await response.json() as { error?: string };
             throw new Error(result.error ?? 'Could not save that username.');
           }
+          sessionStorage.removeItem(pendingCountryKey);
           location.replace(next);
           return;
         }
         const result = await client.auth.signUp({ email: email.value, password: password.value,
-          options: { data: { username: chosen },
+          options: { data: { username: chosen, country_code: country.value },
             emailRedirectTo: `${location.origin}/login/?next=${encodeURIComponent(next)}` } });
         if (result.error) {
           if (!(await checkAvailability(chosen))) throw new Error('Username already taken.');
           throw result.error;
         }
-        if (result.data.session) location.replace(next);
+        if (result.data.session) { sessionStorage.removeItem(pendingCountryKey); location.replace(next); }
         else status.textContent = 'Check your email to confirm your account. Local mail appears in Mailpit.';
       } catch (error) { status.textContent = error instanceof Error ? error.message : 'Could not create your account.'; }
       finally { submit.disabled = false; }

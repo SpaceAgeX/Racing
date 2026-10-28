@@ -88,7 +88,7 @@ app.get('/api/ping', (_request, response) => {
 });
 app.use('/api', accounts.requireAccount);
 app.post('/api/account/username', express.json({ limit: '4kb' }), async (request, response) => {
-  response.json({ username: await accounts.claimUsername(response.locals.account.id, request.body?.username) });
+  response.json({ username: await accounts.claimUsername(response.locals.account.id, request.body?.username, request.body?.countryCode) });
 });
 app.patch('/api/account/username', express.json({ limit: '4kb' }), async (request, response) => {
   response.json({ username: await accounts.updateUsername(response.locals.account.id, request.body?.username) });

@@ -31,6 +31,10 @@
             <label>Username<input id="signup-username" type="text" minlength="3" maxlength="20" autocomplete="username" spellcheck="false" autocapitalize="off" required></label>
             <p class="field-hint">3–20 characters. Start with a letter; use letters, numbers, and underscores.</p>
             <p id="username-status" class="username-status" role="status"></p>
+            <label for="signup-country">Nationality
+              <span class="country-select-row"><select id="signup-country" name="country" autocomplete="country" required></select>
+                <img id="signup-country-flag" alt="United States flag" width="32" height="24"></span>
+            </label>
             <div id="email-fields">
               <label>Email<input id="signup-email" type="email" autocomplete="email" required></label>
               <label>Password<input id="signup-password" type="password" autocomplete="new-password" minlength="6" required></label>
