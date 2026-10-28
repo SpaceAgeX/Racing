@@ -30,20 +30,22 @@ function applyColor(color: string): void {
   root.style.setProperty('--auth-button-text', contrast(color, '#111417') >= contrast(color, '#f5f7f8') ? '#111417' : '#f5f7f8');
 }
 
-/** One palette color per browser session, shared by login, signup, and the menu. */
+/** Share the random color across page navigation, but reroll it on refresh. */
 export function getActiveAccentColor(): string {
   if (!activeColor) {
     const preference = getAccentPreference();
     let stored: string | null = null;
     let previous: string | null = null;
+    const isReload = performance.getEntriesByType('navigation')
+      .some(entry => (entry as PerformanceNavigationTiming).type === 'reload');
     try {
       stored = sessionStorage.getItem(storageKey);
       previous = sessionStorage.getItem(previousKey);
     } catch { /* Continue without storage. */ }
     if (preference !== 'random') activeColor = preference;
-    else if (stored && availableColors.includes(stored)) activeColor = stored;
+    else if (!isReload && stored && availableColors.includes(stored)) activeColor = stored;
     else {
-      const choices = availableColors.filter(color => color !== previous);
+      const choices = availableColors.filter(color => color !== (stored ?? previous));
       activeColor = choices[Math.floor(Math.random() * choices.length)]!;
       try {
         sessionStorage.setItem(storageKey, activeColor);

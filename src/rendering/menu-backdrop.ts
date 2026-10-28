@@ -4,25 +4,15 @@ import {
 } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
-import { carColorNames } from '../ui/car-colors.ts';
 import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts';
 
 // Local car forward is -Z. The finish stripe is at Z = 0.
 const finishSeconds = 2.5;
 const placements = [
-  { x: -1.9, startZ: 18, finishZ: 3.1, heading: -0.02 },
-  { x: 1.35, startZ: 22, finishZ: 6.5, heading: 0.075 },
-  { x: 3.55, startZ: 27, finishZ: 9.3, heading: -0.11 },
+  { x: -0.8, startZ: 18, finishZ: 3.1, heading: -0.02 },
+  { x: -4.0, startZ: 23, finishZ: 7.0, heading: 0.075 },
+  { x: 2.65, startZ: 27, finishZ: 9.1, heading: -0.11 },
 ] as const;
-
-function companionColors(accent: string): number[] {
-  const palette = [...carColorNames].filter(([color, name]) => color !== accent && name !== 'Charcoal' && name !== 'Slate').map(([color]) => color);
-  for (let index = palette.length - 1; index > 0; index--) {
-    const other = Math.floor(Math.random() * (index + 1));
-    [palette[index], palette[other]] = [palette[other]!, palette[index]!];
-  }
-  return palette.slice(0, 2).map(color => Number.parseInt(color.slice(1), 16));
-}
 
 /** Decorative scene only: no gameplay simulation or network connection. */
 export function createMenuBackdrop(canvas: HTMLCanvasElement) {
@@ -99,9 +89,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   rim.position.set(7, 7, -8);
   scene.add(rim);
 
-  const palette = companionColors(accent);
   const visuals = placements.map((placement, index) => {
-    const visual = createCarVisual(index === 0 ? Number.parseInt(accent.slice(1), 16) : palette[index - 1]!);
+    const visual = createCarVisual(index === 0 ? Number.parseInt(accent.slice(1), 16) : 0x101010);
     const state = createVehicleState();
     state.position.x = placement.x;
     state.position.z = placement.startZ;
@@ -114,17 +103,6 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   const unsubscribeAccent = onActiveAccentColorChange(color => {
     const nextColor = Number.parseInt(color.slice(1), 16);
     visuals[0]!.visual.setColor(nextColor);
-    for (let index = 0; index < palette.length; index++) {
-      if (palette[index] !== nextColor) continue;
-      const unavailable = new Set([nextColor, ...palette]);
-      const replacement = [...carColorNames.keys()]
-        .map(value => Number.parseInt(value.slice(1), 16))
-        .find(value => !unavailable.has(value));
-      if (replacement !== undefined) {
-        palette[index] = replacement;
-        visuals[index + 1]!.visual.setColor(replacement);
-      }
-    }
     if (active) render();
   });
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');

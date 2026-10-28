@@ -979,3 +979,15 @@ kbd {
   .home-settings-toggle { width: 39px; height: 39px; }
   .home-profile { gap: 6px; }
 }
+
+/* Bring the choices toward the logo and give their labels a readable surface. */
+.home-choice-grid { top: 35%; gap: 10px; transform: translateY(-20%); }
+.home-choice {
+  background: #1b2327c9;
+  border: 1px solid #ffffff27;
+  box-shadow: 0 8px 22px #0003;
+}
+.home-choice:hover, .home-choice:focus-visible { background: #273137e8; border-color: #ffffff38; }
+@media (max-width: 600px) {
+  .home-choice-grid { top: clamp(190px, 30svh, 280px); bottom: auto; transform: none; }
+}
