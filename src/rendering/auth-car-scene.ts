@@ -16,7 +16,9 @@ function chooseCarColor(): number {
   const choices = colors.filter((color) => color !== previous);
   const selected = choices[Math.floor(Math.random() * choices.length)]!;
   try { sessionStorage.setItem(lastColorKey, selected); } catch { /* The color still works without storage. */ }
-  document.documentElement.style.setProperty('--auth-accent', selected);
+  const pearl = selected === '#e8edf2';
+  document.documentElement.toggleAttribute('data-auth-pearl', pearl);
+  document.documentElement.style.setProperty('--auth-accent', pearl ? '#000000' : selected);
   return Number.parseInt(selected.slice(1), 16);
 }
 
