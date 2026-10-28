@@ -86,6 +86,8 @@ test('time trial setup previews shared maps, selects car color, and starts solo 
   await page.goto('/');
   await expect(page.getByRole('link', { name: /Map Builder/ })).toBeVisible();
   await page.getByRole('button', { name: /Time Trial/ }).click();
+  await expect(page.getByRole('heading', { name: 'Time Trial' })).toBeVisible();
+  await page.getByRole('button', { name: 'Choose track' }).click();
   await expect(page.getByRole('heading', { name: 'Choose your track' })).toBeVisible();
   await expect(page.locator('.trial-track-card[data-track-id="default"]')).toHaveCount(0);
   await expect(page.locator('.trial-track-card[data-track-id="simple-loop"]')).toHaveCount(0);
@@ -94,15 +96,14 @@ test('time trial setup previews shared maps, selects car color, and starts solo 
   await expect(page.locator(`.trial-track-card[data-track-id="${saved.id}"] canvas`)).toBeVisible();
   await page.locator('[data-search]').fill(saved.name);
   await page.locator('[data-sort]').selectOption('name');
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByRole('heading', { name: 'Choose your car' })).toBeVisible();
+  await page.getByRole('button', { name: 'Use this track' }).click();
   await expect(page.locator('#home-screen .trial-compact-swatch[aria-pressed="true"]')).toHaveCount(1);
   await expect(page.locator('#home-screen .trial-compact-swatch')).toHaveCount(16);
   await page.getByRole('button', { name: 'Pink', exact: true }).click();
-  await page.getByRole('button', { name: 'Back to Tracks' }).click();
+  await page.getByRole('button', { name: 'Choose track' }).click();
   await expect(page.locator('[data-search]')).toHaveValue(saved.name);
   await expect(page.locator('[data-sort]')).toHaveValue('name');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Close track selection' }).click();
   await expect(page.getByRole('button', { name: 'Pink', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Start Time Trial' }).click();
   await expect(page.locator('#race-screen')).toBeVisible();

@@ -45,9 +45,10 @@ test('finished spline saves, reloads, previews in 2D, races, and deletes from sh
   await page.keyboard.press('Backspace');
   await page.locator('#track-name').fill('Playable spline');
   await page.locator('#play-track').click();
+  await page.getByRole('button', { name: 'Choose track' }).click();
   await expect(page.locator(`.trial-track-card[data-track-id="${id}"]`)).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator(`.trial-track-card[data-track-id="${id}"] canvas`)).toBeVisible();
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Use this track' }).click();
   await page.getByRole('button', { name: 'Start Time Trial' }).click();
   await expect(page.locator('#race-screen')).toBeVisible();
   await page.keyboard.down('w');
