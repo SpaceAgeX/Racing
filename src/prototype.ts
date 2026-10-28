@@ -567,14 +567,21 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   onJoinLobby(payload: JoinLobbyPayload): void;
 }, username: string, preferredTrackId = ''): HomeScreenController {
   root.innerHTML = `
-    <a id="home-account-link" class="home-account-link" href="/account/" aria-label="Your account" title="Your account"><span id="home-account-avatar" aria-hidden="true">R</span></a>
+    <div class="home-profile">
+      <a id="home-account-link" class="home-account-link" href="/account/" aria-label="Your account" title="Your account"><span id="home-account-avatar" aria-hidden="true">R</span><span id="home-profile-name" class="home-profile-name"></span></a>
+      <button id="home-profile-toggle" class="home-profile-toggle" type="button" aria-label="Account menu" aria-expanded="false" aria-controls="home-profile-menu">⌄</button>
+      <div id="home-profile-menu" class="home-profile-menu" hidden>
+        <a href="/account/">Dashboard &amp; settings</a>
+        <button id="home-sign-out" type="button">Sign out</button>
+      </div>
+    </div>
     <div class="home-shell">
       <section id="home-landing" class="home-landing">
-        <div class="home-title"><span class="menu-eyebrow">BEGGAR'S GRAND PRIX</span><h1>Select an Option</h1></div>
+        <h1 class="home-brand"><span>BEGGAR'S</span><span>GRAND <em>PRIX</em></span></h1>
         <nav class="home-choice-grid" aria-label="Main options">
-          <button id="home-time-trial" class="home-choice" type="button"><strong>Time Trial</strong><span>Race solo on a track.</span></button>
-          <button id="home-multiplayer" class="home-choice" type="button"><strong>Multiplayer Race</strong><span>Create a room or join an open lobby.</span></button>
-          <a class="home-choice home-choice-link" href="/map-builder/"><strong>Map Builder</strong><span>Design your own track.</span></a>
+          <button id="home-time-trial" class="home-choice" type="button"><strong>Time Trial</strong></button>
+          <button id="home-multiplayer" class="home-choice" type="button"><strong>Multiplayer</strong></button>
+          <a class="home-choice home-choice-link" href="/map-builder/"><strong>Track Builder</strong></a>
         </nav>
       </section>
       <section id="home-multiplayer-menu" class="home-multiplayer" hidden>
@@ -767,7 +774,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   function setMode(mode: 'home' | 'multiplayer' | 'time-trial-setup' | 'lobby' | 'race'): void {
     currentMode = mode;
-    menuBackdrop.setActive(mode !== 'race');
+    menuBackdrop.setActive(mode === 'home');
     setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer' || mode === 'time-trial-setup');
     setScreenVisibility(lobbyScreenRoot, mode === 'lobby' || mode === 'race' && lobbyPanelOpen);
     lobbyScreenRoot.classList.toggle('is-overlay', mode === 'race' && lobbyPanelOpen);

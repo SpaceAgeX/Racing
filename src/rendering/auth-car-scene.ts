@@ -4,41 +4,11 @@ import {
 } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
-import { carColorNames } from '../ui/car-colors.ts';
-
-const lastColorKey = 'auth-scene-last-car-color';
-const excludedAuthColors = new Set(['Pearl', 'Charcoal']);
-
-function luminance(hex: string): number {
-  const channels = [1, 3, 5].map((offset) => {
-    const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722;
-}
-
-function contrast(a: string, b: string): number {
-  const first = luminance(a);
-  const second = luminance(b);
-  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
-}
-
-function chooseCarColor(): number {
-  const colors = [...carColorNames].filter(([, name]) => !excludedAuthColors.has(name)).map(([color]) => color);
-  let previous: string | null = null;
-  try { previous = sessionStorage.getItem(lastColorKey); } catch { /* Storage may be unavailable. */ }
-  const choices = colors.filter((color) => color !== previous);
-  const selected = choices[Math.floor(Math.random() * choices.length)]!;
-  try { sessionStorage.setItem(lastColorKey, selected); } catch { /* The color still works without storage. */ }
-  document.documentElement.toggleAttribute('data-auth-dark-accent', contrast(selected, '#111417') < 4.5);
-  document.documentElement.style.setProperty('--auth-accent', selected);
-  document.documentElement.style.setProperty('--auth-button-text',
-    contrast(selected, '#111417') >= contrast(selected, '#f5f7f8') ? '#111417' : '#f5f7f8');
-  return Number.parseInt(selected.slice(1), 16);
-}
+import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts';
 
 /** A lightweight, reusable studio view of the same car used in races. */
 export function createAuthCarScene(canvas: HTMLCanvasElement) {
+  const color = getActiveAccentColor();
   let renderer: WebGLRenderer;
   try {
     renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
@@ -75,7 +45,8 @@ export function createAuthCarScene(canvas: HTMLCanvasElement) {
   scene.add(key.target);
   scene.add(key);
 
-  const car = createCarVisual(chooseCarColor());
+  const car = createCarVisual(Number.parseInt(color.slice(1), 16));
+  const unsubscribeAccent = onActiveAccentColorChange(next => car.setColor(Number.parseInt(next.slice(1), 16)));
   car.update(createVehicleState());
   scene.add(car.object);
 
@@ -138,6 +109,7 @@ export function createAuthCarScene(canvas: HTMLCanvasElement) {
       window.removeEventListener('resize', resize);
       document.removeEventListener('visibilitychange', schedule);
       motion.removeEventListener('change', schedule);
+      unsubscribeAccent();
       car.dispose();
       floor.geometry.dispose();
       (floor.material as ShadowMaterial).dispose();

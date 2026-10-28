@@ -12,6 +12,24 @@ const accountLink = document.querySelector<HTMLAnchorElement>('#home-account-lin
 const avatar = document.querySelector<HTMLElement>('#home-account-avatar')!;
 accountLink.setAttribute('aria-label', `Your account: ${account.profile.username}`);
 avatar.textContent = account.profile.username![0]!.toUpperCase();
+document.querySelector<HTMLElement>('#home-profile-name')!.textContent = account.profile.username!;
+const profileToggle = document.querySelector<HTMLButtonElement>('#home-profile-toggle')!;
+const profileMenu = document.querySelector<HTMLElement>('#home-profile-menu')!;
+profileToggle.addEventListener('click', () => {
+  profileMenu.hidden = !profileMenu.hidden;
+  profileToggle.setAttribute('aria-expanded', String(!profileMenu.hidden));
+});
+document.addEventListener('pointerdown', event => {
+  if (!(event.target instanceof Node) || document.querySelector('.home-profile')?.contains(event.target)) return;
+  profileMenu.hidden = true;
+  profileToggle.setAttribute('aria-expanded', 'false');
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  profileMenu.hidden = true;
+  profileToggle.setAttribute('aria-expanded', 'false');
+});
+document.querySelector<HTMLButtonElement>('#home-sign-out')!.addEventListener('click', () => { void account.signOut(); });
 const picture = account.user.user_metadata.avatar_url ?? account.user.user_metadata.picture;
 if (typeof picture === 'string') {
   try {

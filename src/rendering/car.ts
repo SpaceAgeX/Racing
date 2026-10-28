@@ -153,6 +153,7 @@ function createWheelRig(model: Group, name: string, steering: boolean): WheelRig
 
 /** FBX model adapter: local forward is rotated from FBX +Z to game -Z. */
 export function createCarVisual(color = 0xee7136) {
+  let paintColor = color;
   const object = new Group();
   object.rotation.order = 'YXZ';
 
@@ -175,6 +176,7 @@ export function createCarVisual(color = 0xee7136) {
   let lastPosition: { x: number; z: number } | null = null;
   const wheels: WheelRig[] = [];
   const ownedMaterials: MeshStandardMaterial[] = [];
+  const paintMaterials: { material: MeshStandardMaterial; sourceMap: Texture | null }[] = [];
 
   function updateModelPose(state: Readonly<VehicleState>): void {
     if (lastPosition) {
@@ -199,12 +201,13 @@ export function createCarVisual(color = 0xee7136) {
       if (node.name !== 'body') return;
       const recolorMaterial = (source: MeshStandardMaterial): MeshStandardMaterial => {
         const material = source.clone() as MeshStandardMaterial;
-        const teamMap = source.map ? createTeamColorMap(source.map, color) : null;
+        const teamMap = source.map ? createTeamColorMap(source.map, paintColor) : null;
         if (teamMap) {
           material.map = teamMap;
           material.needsUpdate = true;
         }
         ownedMaterials.push(material);
+        paintMaterials.push({ material, sourceMap: source.map });
         return material;
       };
       node.material = Array.isArray(node.material)
@@ -230,6 +233,14 @@ export function createCarVisual(color = 0xee7136) {
   return {
     object,
     ready,
+    setColor(nextColor: number): void {
+      paintColor = nextColor;
+      fallbackMaterial.color.setHex(nextColor);
+      for (const { material, sourceMap } of paintMaterials) {
+        if (sourceMap) material.map = createTeamColorMap(sourceMap, nextColor) ?? sourceMap;
+        material.needsUpdate = true;
+      }
+    },
     update(state: Readonly<VehicleState>): void {
       latestState = state;
       object.position.set(state.position.x, state.position.y, state.position.z);
