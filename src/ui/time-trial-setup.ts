@@ -22,36 +22,47 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
   onBack(): void; onStart(track: TimeTrialTrackOption, color: string): void;
 }, username = '') {
   const section = document.createElement('section');
-  section.className = 'time-trial-setup trial-browser';
+  section.className = 'time-trial-setup trial-browser is-track-stage';
   section.hidden = true;
   section.innerHTML = `<div class="trial-browser-shell">
     <header class="trial-browser-header"><button class="back-button" data-back type="button">← Back</button>
-      <div><span class="menu-eyebrow">TIME TRIAL</span><h1>Choose your track</h1></div></header>
+      <div><span class="menu-eyebrow">TIME TRIAL</span><h1 data-stage-title>Choose your track</h1></div></header>
     <div class="trial-browser-layout">
       <section class="trial-browser-main" aria-label="Track browser">
         <div class="trial-browser-controls"><label><span class="sr-only">Search tracks</span><input data-search type="search" placeholder="Search tracks" autocomplete="off"></label>
           <label>Sort <select data-sort aria-label="Sort tracks"><option value="popular">Popular</option><option value="newest">Newest</option>
             <option value="played">Most Played</option><option value="name">Name</option></select></label></div>
-        <div class="trial-track-grid" data-tracks role="group" aria-label="Available tracks"></div>
+        <div class="trial-track-scroll" data-track-scroll><div class="trial-track-grid" data-tracks role="group" aria-label="Available tracks"></div></div>
         <p class="trial-browser-status" data-status role="status"></p>
       </section>
-      <aside class="trial-browser-side">
-        <section class="trial-selected-info"><span class="setup-label">SELECTED TRACK</span><h2 data-track-name>Choose a track</h2><p data-track-popularity></p></section>
+      <div class="trial-browser-side">
+        <section class="trial-selected-info"><span class="setup-label">SELECTED TRACK</span>
+          <canvas class="trial-selected-thumbnail" data-selected-thumbnail width="256" height="256" aria-hidden="true"></canvas>
+          <h2 data-track-name>Choose a track</h2><p data-track-popularity></p>
+          <button class="trial-change-track" data-change-track type="button">← Change Track</button></section>
         <section class="trial-board-panel"><span class="setup-label">FASTEST DRIVERS</span><h2>Leaderboard</h2>
           <div class="trial-board-head" aria-hidden="true"><span>#</span><span>Driver</span><span>Best lap</span></div>
           <ol class="trial-board-rows" data-leaderboard aria-label="Track leaderboard"></ol>
           <p class="trial-board-status" data-leaderboard-status role="status"></p></section>
-        <section class="trial-car-panel"><span class="setup-label">YOUR CAR</span><h2>Pick a color</h2>
+        <section class="trial-car-panel"><span class="setup-label">YOUR CAR</span>
           <canvas class="trial-car-canvas" data-car aria-label="Three-dimensional preview of your car"></canvas>
+          <h2>Choose a color</h2>
           <div class="trial-compact-swatches" data-colors role="group" aria-label="Car colors"></div>
           <output class="trial-color-name" data-color-name></output></section>
-        <button class="trial-start-button" data-start type="button" disabled>Start Time Trial <span aria-hidden="true">→</span></button>
-      </aside>
+        <div class="trial-actions">
+          <button class="trial-start-button" data-continue type="button" disabled>Continue <span aria-hidden="true">→</span></button>
+          <button class="trial-start-button" data-start type="button" disabled>Start Time Trial <span aria-hidden="true">→</span></button>
+        </div>
+      </div>
     </div></div>`;
   root.append(section);
   const search = section.querySelector<HTMLInputElement>('[data-search]')!;
   const sort = section.querySelector<HTMLSelectElement>('[data-sort]')!;
   const grid = section.querySelector<HTMLElement>('[data-tracks]')!;
+  const scroll = section.querySelector<HTMLElement>('[data-track-scroll]')!;
+  const stageTitle = section.querySelector<HTMLElement>('[data-stage-title]')!;
+  const backButton = section.querySelector<HTMLButtonElement>('[data-back]')!;
+  const selectedThumbnail = section.querySelector<HTMLCanvasElement>('[data-selected-thumbnail]')!;
   const trackName = section.querySelector<HTMLElement>('[data-track-name]')!;
   const trackPopularity = section.querySelector<HTMLElement>('[data-track-popularity]')!;
   const status = section.querySelector<HTMLElement>('[data-status]')!;
@@ -60,6 +71,7 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
   const swatches = section.querySelector<HTMLElement>('[data-colors]')!;
   const colorName = section.querySelector<HTMLOutputElement>('[data-color-name]')!;
   const startButton = section.querySelector<HTMLButtonElement>('[data-start]')!;
+  const continueButton = section.querySelector<HTMLButtonElement>('[data-continue]')!;
   const canvas = section.querySelector<HTMLCanvasElement>('[data-car]')!;
   let showroom: ReturnType<typeof createCarShowroom> | null = null;
   let tracks: TimeTrialTrackOption[] = [];
@@ -68,6 +80,10 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
   let leaderboardRequest = 0;
   let renderGeneration = 0;
   let userSelected = false;
+  let stage: 'track' | 'car' = 'track';
+  let savedScrollTop = 0;
+  let preparing = false;
+  let transitioning = false;
   const selectedTrack = () => tracks.find(track => track.id === selectedId) ?? null;
 
   function orderedTracks(): TimeTrialTrackOption[] {
@@ -146,7 +162,10 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
     trackName.textContent = track?.name ?? 'Choose a track';
     trackPopularity.textContent = track ? track.visibility === 'personal' ? 'Personal track · unranked'
       : `${formatPopularity(track.popularityMs ?? 0)} · ${track.completedLaps ?? 0} completed laps` : '';
-    startButton.disabled = !track;
+    selectedThumbnail.getContext('2d')?.clearRect(0, 0, 256, 256);
+    if (track) selectedThumbnail.getContext('2d')?.drawImage(trackThumbnail(track.layout), 0, 0);
+    continueButton.disabled = !track || preparing;
+    startButton.disabled = !track || preparing;
     for (const card of grid.querySelectorAll<HTMLButtonElement>('.trial-track-card'))
       card.setAttribute('aria-pressed', String(card.dataset.trackId === id));
     renderLeaderboard(track);
@@ -172,20 +191,57 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
     colorName.value = carColorNames.get(selectedColor) ?? selectedColor;
   }
   function setColor(color: string): void { selectedColor = color; renderColors(); showroom?.setColor(color); }
+  function setStage(next: 'track' | 'car'): void {
+    if (next === stage || transitioning) return;
+    if (stage === 'track') savedScrollTop = scroll.scrollTop;
+    const update = () => {
+      stage = next;
+      section.classList.toggle('is-track-stage', next === 'track');
+      section.classList.toggle('is-car-stage', next === 'car');
+      stageTitle.textContent = next === 'track' ? 'Choose your track' : 'Choose your car';
+      backButton.textContent = next === 'track' ? '← Back' : '← Back to Tracks';
+      if (next === 'car' && !showroom) showroom = createCarShowroom(canvas, selectedColor);
+      showroom?.setActive(next === 'car');
+      requestAnimationFrame(() => {
+        section.parentElement?.scrollTo(0, 0);
+        backButton.focus({ preventScroll: true });
+        if (next === 'track') scroll.scrollTop = savedScrollTop;
+      });
+    };
+    const transition = (document as Document & { startViewTransition?: (callback: () => void) => { finished: Promise<void> } }).startViewTransition;
+    if (transition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      transitioning = true;
+      void transition.call(document, update).finished.finally(() => { transitioning = false; });
+    } else update();
+  }
+  function goBack(): void { if (stage === 'car') setStage('track'); else callbacks.onBack(); }
   search.addEventListener('input', renderCards);
   sort.addEventListener('change', renderCards);
-  section.querySelector<HTMLButtonElement>('[data-back]')!.addEventListener('click', callbacks.onBack);
+  backButton.addEventListener('click', goBack);
+  section.querySelector<HTMLButtonElement>('[data-change-track]')!.addEventListener('click', () => setStage('track'));
+  continueButton.addEventListener('click', () => { if (selectedTrack() && !preparing) setStage('car'); });
+  function onEscape(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || section.hidden || event.defaultPrevented) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.matches('input, select, textarea') || target.isContentEditable)) return;
+    if (document.querySelector('dialog[open], [role="dialog"]:not([hidden])')) return;
+    event.preventDefault(); goBack();
+  }
+  document.addEventListener('keydown', onEscape);
   startButton.addEventListener('click', () => {
-    const track = selectedTrack(); if (!track) return;
-    startButton.disabled = true; status.textContent = 'Preparing time trial…';
+    const track = selectedTrack(); if (!track || preparing || stage !== 'car') return;
+    preparing = true; startButton.disabled = true; continueButton.disabled = true;
+    status.textContent = 'Preparing time trial…';
     callbacks.onStart(track, selectedColor);
   });
 
   return {
     show(): void {
       section.hidden = false; selectedColor = preferredCarColor(); renderColors();
-      userSelected = false; status.textContent = '';
-      showroom?.dispose(); showroom = createCarShowroom(canvas, selectedColor);
+      userSelected = false; status.textContent = ''; preparing = false; savedScrollTop = 0; transitioning = false;
+      stage = 'track'; section.classList.add('is-track-stage'); section.classList.remove('is-car-stage');
+      stageTitle.textContent = 'Choose your track'; backButton.textContent = '← Back';
+      showroom?.dispose(); showroom = null;
       search.value = ''; sort.value = 'popular';
       selectedId = orderedTracks()[0]?.id ?? null; renderCards(); selectTrack(selectedId ?? '');
     },
@@ -196,8 +252,12 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
       selectedId = previousId && tracks.some(track => track.id === previousId) ? previousId : orderedTracks()[0]?.id ?? null;
       renderCards(); selectTrack(selectedId ?? '');
     },
-    setStatus(message: string): void { status.textContent = message; startButton.disabled = !selectedTrack() || message.startsWith('Preparing'); },
+    setStatus(message: string): void {
+      status.textContent = message; preparing = message.startsWith('Preparing');
+      startButton.disabled = !selectedTrack() || preparing;
+      continueButton.disabled = !selectedTrack() || preparing;
+    },
     get selection(): { track: TimeTrialTrackOption | null; color: string } { return { track: selectedTrack(), color: selectedColor }; },
-    dispose(): void { showroom?.dispose(); renderGeneration++; leaderboardRequest++; section.remove(); },
+    dispose(): void { showroom?.dispose(); renderGeneration++; leaderboardRequest++; document.removeEventListener('keydown', onEscape); section.remove(); },
   };
 }

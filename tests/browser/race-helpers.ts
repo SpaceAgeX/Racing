@@ -26,6 +26,8 @@ export async function enterRace(page: Page, trackId?: string): Promise<void> {
     await expect(target).toBeVisible();
     await target.click();
   }
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Choose your car' })).toBeVisible();
   await page.getByRole('button', { name: 'Start Time Trial' }).click();
   await expect(page.locator('#race-screen')).toBeVisible();
 }
