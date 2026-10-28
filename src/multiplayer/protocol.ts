@@ -1,23 +1,12 @@
 import type { HandlingParameters, VehicleState } from '../simulation/types.ts';
 import type { RaceInput, RacePlayer } from '../simulation/race.ts';
 import type { SplineTrack as TrackLayout } from '../track/spline-records.ts';
-import { splinePresets as trackPresets } from '../track/spline-presets.ts';
 
 export interface TrackOption {
   id: string;
   name: string;
   layout: TrackLayout;
   visibility?: 'ranked' | 'personal';
-}
-
-export const trackOptions: TrackOption[] = trackPresets.map((preset) => ({
-  id: preset.id,
-  name: preset.name,
-  layout: preset.create(),
-}));
-
-export function getTrackOption(trackId: string | null | undefined): TrackOption {
-  return trackOptions.find((option) => option.id === trackId) ?? trackOptions[0]!;
 }
 
 export interface LobbySettings {

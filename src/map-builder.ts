@@ -1,7 +1,6 @@
 import { serializeSpline, splineTrackError } from './track/spline-records.ts';
 import { listSharedTracks, getSharedTrack, saveSharedTrack, deleteSharedTrack } from './track/api.ts';
 import { selectTrackForPlay, clearActiveTrack } from './track/storage.ts';
-import { splinePresets } from './track/spline-presets.ts';
 import { startAdmissionHeartbeat } from './admission.ts';
 import { createSplinePreview } from './rendering/spline-preview.ts';
 import { requireAccount } from './auth/session.ts';
@@ -859,9 +858,8 @@ setTool('add');
 async function refreshLibrary(){
   try {
     const previous=librarySelect.value;
-    const tracks=[...splinePresets.map(p=>({id:p.id,name:p.name})),
-      ...(await listSharedTracks()).map(track=>({id:track.id,
-        name:`${track.visibility === 'personal' ? 'Personal' : 'Ranked'} · ${track.name}`}))];
+    const tracks=(await listSharedTracks()).map(track=>({id:track.id,
+        name:`${track.visibility === 'personal' ? 'Personal' : 'Ranked'} · ${track.name}`}));
     librarySelect.replaceChildren(new Option('Select a track',''));
     for(const track of tracks)librarySelect.add(new Option(track.name,track.id));
     if(tracks.some(t=>t.id===previous))librarySelect.value=previous;
@@ -885,8 +883,7 @@ saveButton.onclick=()=>void save();playButton.onclick=()=>void save(true);
 document.querySelector<HTMLButtonElement>('#load-track')!.onclick=async()=>{
   const id=librarySelect.value;if(!id)return;
   try{
-    const preset=splinePresets.find(p=>p.id===id);
-    const record=preset?{name:preset.name,layout:preset.create()}:await getSharedTrack(id);
+    const record=await getSharedTrack(id);
     Object.assign(graph,structuredClone(record.layout));trackName.value=record.name;
     trackVisibility.value='visibility' in record && record.visibility === 'ranked' && canPublishRankedTracks
       ? 'ranked' : 'personal';
@@ -899,7 +896,6 @@ document.querySelector<HTMLButtonElement>('#load-track')!.onclick=async()=>{
 };
 document.querySelector<HTMLButtonElement>('#delete-track')!.onclick=async()=>{
   const id=librarySelect.value;if(!id)return;
-  if(splinePresets.some(p=>p.id===id)){libraryStatus.textContent='Presets cannot be deleted.';return;}
   try{await deleteSharedTrack(id);clearActiveTrack(localStorage,id);await refreshLibrary();libraryStatus.textContent='Deleted from the shared library.';}
   catch(error){libraryStatus.textContent=(error as Error).message;}
 };

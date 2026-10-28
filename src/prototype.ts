@@ -22,9 +22,7 @@ import { speedUnit, speedValueFromMetersPerSecond } from './ui/units.ts';
 import type { TuningParameters } from './ui/tuning.ts';
 import { listBrowserTracks, loadActiveTrack, selectTrackForPlay } from './track/storage.ts';
 import { listSharedTracks } from './track/api.ts';
-import { splinePresets } from './track/spline-presets.ts';
 import { buildRoadGeometry } from './track/road-geometry.ts';
-const trackLayout = splinePresets[0]!.create();
 
 import { createRoadWorld } from './simulation/road-world.ts';
 import { createVehicleState, copyVehicleState, interpolateVehicleState } from './simulation/vehicle.ts';
@@ -49,7 +47,7 @@ import type {
   RaceDeathNotice,
   RaceDeathAcknowledgement,
 } from './multiplayer/protocol.ts';
-import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from './multiplayer/protocol.ts';
+import { maxLobbyPlayers, playerColorPalette } from './multiplayer/protocol.ts';
 import { projectRemoteVehicle } from './multiplayer/remote-motion.ts';
 
 interface MultiplayerPreferences {
@@ -626,9 +624,10 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   createTab.addEventListener('click', () => showEntryTab(true));
   joinTab.addEventListener('click', () => showEntryTab(false));
   let trackOptions: TrackOption[] = [];
+  createButton.disabled = true;
 
   function selectedTrackId(): string {
-    return trackOptions.find(track => track.id === preferredTrackId)?.id ?? trackOptions[0]?.id ?? 'default';
+    return trackOptions.find(track => track.id === preferredTrackId)?.id ?? trackOptions[0]?.id ?? '';
   }
 
   function renderLobbies(lobbies: LobbySummary[]): void {
@@ -665,6 +664,8 @@ function createHomeScreen(root: HTMLElement, callbacks: {
     setStatus(message: string): void { status.textContent = message; },
     setTrackOptions(options: TrackOption[]): void {
       trackOptions = options;
+      createButton.disabled = options.length === 0;
+      createButton.textContent = options.length ? 'Create lobby' : 'No ranked tracks available';
     },
     setLobbies(lobbies: LobbySummary[]): void { renderLobbies(lobbies); },
     getSelectedTrackId(): string { return selectedTrackId(); },
@@ -676,17 +677,17 @@ function createHomeScreen(root: HTMLElement, callbacks: {
 }
 
 export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
-  const selectedTrack = loadActiveTrack(localStorage);
-  const fallbackLayout = selectedTrack?.layout ?? trackLayout;
-  const fallbackTrackName = selectedTrack?.name ?? 'Default circuit';
-  const fallbackTrackId = selectedTrack?.id ?? 'local-default';
+  const retiredTrackIds = new Set(['default', 'simple-loop']);
+  const isRetiredTrack = (id: string): boolean => retiredTrackIds.has(id.replace(/^preset:/, ''));
+  const storedTrack = loadActiveTrack(localStorage);
+  const selectedTrack = storedTrack && !isRetiredTrack(storedTrack.id) ? storedTrack : null;
   const timeTrialColorKey = 'racing-time-trial-color-v1';
   let timeTrialColor: string = playerColorPalette[0];
   try {
     const storedColor = localStorage.getItem(timeTrialColorKey);
     if (playerColorPalette.includes(storedColor as typeof playerColorPalette[number])) timeTrialColor = storedColor as typeof timeTrialColor;
   } catch { /* Color preferences are optional. */ }
-  let timeTrialTrack: TrackOption = { id: fallbackTrackId, name: fallbackTrackName, layout: fallbackLayout };
+  let timeTrialTrack: TrackOption | null = selectedTrack;
 
   const homeRoot = document.querySelector<HTMLElement>('#home-screen');
   const lobbyRoot = document.querySelector<HTMLElement>('#lobby-screen');
@@ -801,9 +802,11 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   }
 
   function ensureSession(room: LobbySnapshot | null): DrivingSession {
-    const desiredLayout = room?.settings.layout ?? timeTrialTrack.layout;
-    const desiredTrackName = room?.settings.trackName ?? timeTrialTrack.name;
-    const desiredTrackId = room?.settings.trackId ?? timeTrialTrack.id;
+    const track = room?.settings ?? timeTrialTrack;
+    if (!track) throw new Error('Select a track before starting a time trial.');
+    const desiredLayout = track.layout;
+    const desiredTrackName = 'trackName' in track ? track.trackName : track.name;
+    const desiredTrackId = 'trackId' in track ? track.trackId : track.id;
     const desiredColor = room ? localPlayerColor(room, localPlayerId) : timeTrialColor;
     if (!session || session.trackId !== desiredTrackId || session.playerColor !== desiredColor) {
       disposeSession();
@@ -897,17 +900,17 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   }
 
   function startPendingTimeTrial(): void {
-    if (!pendingSoloRequest || !socket.connected) return;
+    if (!pendingSoloRequest || !socket.connected || !timeTrialTrack) return;
     socket.emit('time-trial:start', { requestId: pendingSoloRequest, trackId: timeTrialTrack.id,
       name: timeTrialTrack.name, layout: timeTrialTrack.layout, handling: copyTuningParameters(tuningPanel.parameters) });
   }
 
   function availableTimeTrialTracks(sharedTracks: Awaited<ReturnType<typeof listSharedTracks>> = []): TrackOption[] {
     const unique = new Map<string, TrackOption>();
-    for (const track of presetTrackOptions) unique.set(track.id, track);
-    for (const track of sharedTracks) unique.set(track.id, track);
+    for (const track of sharedTracks) if (!isRetiredTrack(track.id)) unique.set(track.id, track);
     const knownLayouts = new Set([...unique.values()].map(track => JSON.stringify(track.layout)));
     for (const track of [...listBrowserTracks(localStorage), ...(selectedTrack ? [selectedTrack] : [])]) {
+      if (isRetiredTrack(track.id)) continue;
       const key = JSON.stringify(track.layout);
       if (unique.has(track.id) || knownLayouts.has(key)) continue;
       unique.set(track.id, { id: track.id, name: track.name, layout: track.layout });
@@ -918,7 +921,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   async function refreshTimeTrialTracks(): Promise<void> {
     const localTracks = availableTimeTrialTracks();
-    const preferredId = localTracks.find(track => JSON.stringify(track.layout) === JSON.stringify(timeTrialTrack.layout))?.id ?? timeTrialTrack.id;
+    const currentTrack = timeTrialTrack;
+    const preferredId = currentTrack
+      ? (localTracks.find(track => JSON.stringify(track.layout) === JSON.stringify(currentTrack.layout))?.id ?? currentTrack.id)
+      : undefined;
     timeTrialSetup.setTracks(localTracks, preferredId);
     timeTrialSetup.setStatus('Loading shared tracks…');
     try {
@@ -927,7 +933,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       timeTrialSetup.setTracks(availableTimeTrialTracks(sharedTracks));
       timeTrialSetup.setStatus('');
     } catch {
-      timeTrialSetup.setStatus('Shared tracks could not be loaded. Presets and locally saved tracks are available.');
+      timeTrialSetup.setStatus('Shared tracks could not be loaded. Locally saved tracks may still be available.');
     }
   }
 
@@ -1025,7 +1031,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       socket.emit('multiplayer:join-lobby', payload);
       homeScreen.setStatus('Joining lobby...');
     },
-  }, username, fallbackTrackId.replace(/^preset:/, ''));
+  }, username, selectedTrack?.id ?? '');
 
   timeTrialSetup = createTimeTrialSetup(homeRoot, {
     onBack() {
@@ -1163,7 +1169,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       raceRoomStatusElement.textContent = physicsTime === 1 ? 'Ranked · server-timed'
         : `Ranked · Physics Time ${physicsTime.toFixed(1)}× · server-timed`;
     } else {
-      raceRoomStatusElement.textContent = timeTrialTrack.visibility === 'personal'
+      raceRoomStatusElement.textContent = timeTrialTrack?.visibility === 'personal'
         ? 'Personal track · unranked' : 'Custom handling or local track · unranked';
     }
   }

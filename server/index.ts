@@ -25,7 +25,7 @@ import type {
   StartLobbyPayload,
   UpdateLobbySettingsPayload,
 } from '../src/multiplayer/protocol.ts';
-import { maxLobbyPlayers, playerColorPalette, trackOptions as presetTrackOptions } from '../src/multiplayer/protocol.ts';
+import { maxLobbyPlayers, playerColorPalette } from '../src/multiplayer/protocol.ts';
 import { prepareRaceRoad, type PreparedRaceRoad } from './road-preparation.ts';
 import { createMultiplayerRound, validRoundOptions, type RoundUpdate } from './multiplayer-round.ts';
 import { splineTrackError } from '../src/track/spline-records.ts';
@@ -104,8 +104,7 @@ app.patch('/api/account', express.json({ limit: '4kb' }), async (request, respon
 });
 app.get('/api/leaderboard/:trackId', async (request, response) => {
   if (request.params.trackId.length > 100) { response.sendStatus(404); return; }
-  const track = presetTrackOptions.find(item => item.id === request.params.trackId)
-    ?? await accounts.getTrack(request.params.trackId);
+  const track = await accounts.getTrack(request.params.trackId);
   if (!track || track.visibility === 'personal') { response.sendStatus(404); return; }
   response.setHeader('Cache-Control', 'no-store');
   response.json(await accounts.leaderboard(track.id, trackLayoutHash(track.layout), defaultRulesetHash));
@@ -430,12 +429,11 @@ function destroyLobby(lobbyId: string): void {
 }
 
 async function availableTracks(): Promise<TrackOption[]> {
-  return [...presetTrackOptions, ...await accounts.listRankedTracks()];
+  return accounts.listRankedTracks();
 }
 
 async function resolveTrack(trackId: string): Promise<TrackOption> {
-  const preset = presetTrackOptions.find((track) => track.id === trackId);
-  const track = preset ?? await accounts.getTrack(trackId);
+  const track = await accounts.getTrack(trackId);
   if (!track) throw new Error('That track no longer exists. Choose another track.');
   return track;
 }
@@ -663,10 +661,12 @@ io.on('connection', (socket) => {
     timeTrials.delete(socket.id);
     try {
       if (playerLobby.has(socket.id)) throw new Error('Leave the lobby before starting a time trial.');
+      if (payload.trackId === 'default' || payload.trackId === 'simple-loop') {
+        throw new Error('That built-in track is no longer available. Choose a saved track.');
+      }
       const handling = normalizeHandling(payload.handling);
       if (!handling) throw new Error('The handling settings are invalid.');
-      const known = presetTrackOptions.find(track => track.id === payload.trackId)
-        ?? await accounts.getTrack(payload.trackId, socket.data.account.id);
+      const known = await accounts.getTrack(payload.trackId, socket.data.account.id);
       let track: TrackOption;
       if (known) track = { id: known.id, name: known.name, layout: known.layout, visibility: known.visibility };
       else {

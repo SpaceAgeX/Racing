@@ -4,7 +4,7 @@ import type { startPrototype } from '../../src/prototype.ts';
 import { readFile } from 'node:fs/promises';
 import { formatLapTime } from '../../src/ui/lap-display.ts';
 import { enterRace, testAuthHeaders } from './race-helpers.ts';
-import { trackOptions } from '../../src/multiplayer/protocol.ts';
+import { splinePresets } from '../../src/track/spline-presets.ts';
 
 type Prototype = ReturnType<typeof startPrototype>;
 
@@ -77,11 +77,11 @@ test('the car, spline track, and start arch render with a controls hint and no b
 });
 
 test('time trial setup previews shared maps, selects car color, and starts solo on the chosen track', async ({ page }) => {
-  const duplicate = { ...trackOptions[0]!, id: 'old-default-copy', updatedAt: 1 };
+  const saved = { id: 'local-test-track', name: 'Local test track', layout: splinePresets[0]!.create(), updatedAt: 1 };
   await page.addInitScript(record => {
     localStorage.setItem('racing-active-spline-track-v2', JSON.stringify(record));
-    localStorage.setItem('racing-track-library-v1', JSON.stringify([record]));
-  }, duplicate);
+    localStorage.setItem('racing-spline-library-v2', JSON.stringify([record]));
+  }, saved);
   await page.goto('/');
   await expect(page.getByRole('link', { name: /Map Builder/ })).toBeVisible();
   await page.getByRole('button', { name: /Time Trial/ }).click();
@@ -90,20 +90,21 @@ test('time trial setup previews shared maps, selects car color, and starts solo 
   await expect(page.locator('#home-screen .trial-color-swatch')).toHaveCount(15);
   const trackSelect = page.locator('#time-trial-track-select');
   await expect(trackSelect.locator('option')).not.toHaveCount(0);
-  await expect(trackSelect.locator('option').filter({ hasText: 'Default circuit' })).toHaveCount(1);
-  await trackSelect.selectOption('simple-loop');
-  await expect(page.locator('[data-track-name]')).toHaveText('Simple loop track');
+  await expect(trackSelect.locator('option[value="default"]')).toHaveCount(0);
+  await expect(trackSelect.locator('option[value="simple-loop"]')).toHaveCount(0);
+  await trackSelect.selectOption(saved.id);
+  await expect(page.locator('[data-track-name]')).toHaveText(saved.name);
   await expect(page.locator('[data-preview]')).toBeVisible();
   await page.getByRole('button', { name: 'Pink', exact: true }).click();
   await page.getByRole('button', { name: 'Start Time Trial' }).click();
   await expect(page.locator('#race-screen')).toBeVisible();
-  await expect(page.locator('#active-track-name')).toHaveText('Simple loop track');
+  await expect(page.locator('#active-track-name')).toHaveText(saved.name);
   const choices = await page.evaluate(() => ({
     color: localStorage.getItem('racing-time-trial-color-v1'),
     track: JSON.parse(localStorage.getItem('racing-active-spline-track-v2') ?? 'null') as { id?: string } | null,
   }));
   expect(choices.color).toBe('#ff8ab0');
-  expect(choices.track?.id).toBe('simple-loop');
+  expect(choices.track?.id).toBe(saved.id);
 });
 
 test('connecting to multiplayer keeps the lobby browser visible', async ({ page }) => {
