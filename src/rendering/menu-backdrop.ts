@@ -8,11 +8,7 @@ import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts
 
 // Local car forward is -Z. The finish stripe is at Z = 0.
 const finishSeconds = 2.5;
-const placements = [
-  { x: -0.8, startZ: 18, finishZ: 3.1, heading: -0.02 },
-  { x: 4.1, startZ: 23, finishZ: 7.0, heading: 0.075 },
-  { x: 3.2, startZ: 32, finishZ: 14.5, heading: -0.11 },
-] as const;
+const placement = { x: -0.8, startZ: 18, finishZ: 3.1, heading: -0.02 } as const;
 
 /** Decorative scene only: no gameplay simulation or network connection. */
 export function createMenuBackdrop(canvas: HTMLCanvasElement) {
@@ -89,20 +85,16 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   rim.position.set(7, 7, -8);
   scene.add(rim);
 
-  const visuals = placements.map((placement, index) => {
-    const visual = createCarVisual(index === 0 ? Number.parseInt(accent.slice(1), 16) : 0x101010);
-    const state = createVehicleState();
-    state.position.x = placement.x;
-    state.position.z = placement.startZ;
-    state.heading = placement.heading;
-    visual.update(state);
-    scene.add(visual.object);
-    return { visual, state };
-  });
+  const visual = createCarVisual(Number.parseInt(accent.slice(1), 16));
+  const state = createVehicleState();
+  state.position.x = placement.x;
+  state.position.z = placement.startZ;
+  state.heading = placement.heading;
+  visual.update(state);
+  scene.add(visual.object);
 
   const unsubscribeAccent = onActiveAccentColorChange(color => {
-    const nextColor = Number.parseInt(color.slice(1), 16);
-    visuals[0]!.visual.setColor(nextColor);
+    visual.setColor(Number.parseInt(color.slice(1), 16));
     if (active) render();
   });
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -119,12 +111,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     const progress = seconds / finishSeconds;
     // Cubic deceleration makes the first second fast and the last second slow.
     const eased = 1 - (1 - progress) ** 3;
-    for (let index = 0; index < placements.length; index++) {
-      const placement = placements[index]!;
-      const { visual, state } = visuals[index]!;
-      state.position.z = placement.startZ + (placement.finishZ - placement.startZ) * eased;
-      visual.update(state);
-    }
+    state.position.z = placement.startZ + (placement.finishZ - placement.startZ) * eased;
+    visual.update(state);
     const hold = Math.max(0, elapsed - finishSeconds);
     const drift = motion.matches ? 0 : Math.sin(hold * 0.24) * 0.28;
     const arrival = motion.matches ? 1 : eased;
@@ -173,7 +161,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   document.addEventListener('visibilitychange', schedule);
   motion.addEventListener('change', schedule);
   resize();
-  void Promise.all(visuals.map(item => item.visual.ready)).then(() => { if (active && !disposed) render(); });
+  void visual.ready.then(() => { if (active && !disposed) render(); });
 
   return {
     setActive(value: boolean): void {
@@ -193,7 +181,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
       document.removeEventListener('visibilitychange', schedule);
       motion.removeEventListener('change', schedule);
       unsubscribeAccent();
-      for (const item of visuals) item.visual.dispose();
+      visual.dispose();
       for (const mesh of resources) {
         mesh.geometry.dispose();
         (mesh.material as MeshStandardMaterial).dispose();
