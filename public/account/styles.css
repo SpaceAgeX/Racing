@@ -55,6 +55,12 @@ button { cursor: pointer; font: inherit; } a { color: inherit; text-decoration: 
 .profile-id { width: min(100%, 300px); min-width: 220px; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border-left: 1px solid #ffffff22; padding-left: 26px; }
 .profile-id span { font-size: 10px; color: #f39467; font-weight: 800; letter-spacing: .16em; }.profile-id strong { font-size: 21px; }
 .profile-id small { color: #829ba3; }
+.account-country-flag { display: inline-block; margin-top: 5px; font-size: 23px; }
+.country-form { width: 100%; margin-top: 20px; padding-top: 18px; border-top: 1px solid #ffffff22; }
+.country-form label { display: block; margin-bottom: 8px; color: #f39467; font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+.country-form input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #66818b; border-radius: 8px; background: #0e1b21; color: #fff; }
+.country-form input:focus-visible { outline: 2px solid #f18455; outline-offset: 2px; }
+.country-form p { min-height: 1.2em; margin: 8px 0 0; color: #f3ab8d; font-size: 12px; }
 .username-edit-button { margin-top: 8px; padding: 0; border: 0; background: none; color: #ffa475; font-size: 13px; font-weight: 700; }
 .username-edit-button:hover { color: #fff; text-decoration: underline; }
 #username-form { width: 100%; margin-top: 10px; }

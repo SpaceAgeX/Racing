@@ -1,0 +1,85 @@
+/* Time-trial track browser. Scoped so lobby panels keep their existing layout. */
+.screen-home .trial-browser {
+  width: min(1500px, 100%); min-height: calc(100svh - 48px); margin: 0 auto;
+  padding: clamp(20px, 3vw, 48px); border: 0; border-radius: 0;
+  background: #111417; box-shadow: none; backdrop-filter: none;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+.trial-browser-shell { display: grid; gap: 30px; }
+.trial-browser-header { display: flex; align-items: center; gap: clamp(18px, 3vw, 48px); }
+.trial-browser-header .back-button { flex: none; padding: 10px 0; border: 0; background: none; color: #cbd1d5; font-size: 14px; }
+.trial-browser-header .back-button:hover { color: var(--auth-text-accent); }
+.trial-browser-header h1 { margin: 3px 0 0; color: #f5f7f8; font: 800 clamp(38px, 4.2vw, 62px)/.95 'Barlow Condensed', Impact, sans-serif; text-transform: uppercase; }
+.trial-browser-layout { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(310px, .9fr); gap: clamp(24px, 3vw, 46px); align-items: start; }
+.trial-browser-main, .trial-browser-side { min-width: 0; }
+.trial-browser-controls { display: flex; gap: 12px; align-items: end; margin-bottom: 18px; }
+.trial-browser-controls label:first-child { flex: 1; min-width: 0; }
+.trial-browser-controls input, .trial-browser-controls select {
+  min-height: 45px; padding: 10px 13px; border: 1px solid #ffffff30; border-radius: 7px;
+  background: #1b2328; color: #f4f5f6; font: inherit; font-size: 14px;
+}
+.trial-browser-controls input { width: 100%; }
+.trial-browser-controls label:last-child { display: grid; gap: 5px; color: #9ca8ae; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.trial-browser-controls select { min-width: 130px; cursor: pointer; }
+.trial-browser-controls input:focus-visible, .trial-browser-controls select:focus-visible,
+.trial-track-card:focus-visible, .trial-compact-swatch:focus-visible { outline: 2px solid var(--auth-focus); outline-offset: 3px; }
+.trial-track-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 13px; }
+.trial-track-card { display: flex; flex-direction: column; min-width: 0; overflow: hidden; padding: 0; border: 1px solid #ffffff1d;
+  border-radius: 8px; background: #1b2328; color: #f3f5f6; text-align: left; cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease; }
+.trial-track-card:hover { transform: translateY(-2px); border-color: #ffffff64; }
+.trial-track-card[aria-pressed='true'] { border-color: var(--auth-accent); background: color-mix(in srgb, var(--auth-accent) 8%, #1b2328); box-shadow: 0 0 0 1px var(--auth-accent); }
+.trial-track-thumbnail { display: block; width: 100%; aspect-ratio: 1; height: auto; background: #202d35; }
+.trial-track-details { display: grid; gap: 4px; padding: 11px 12px 13px; }
+.trial-track-details strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trial-track-details small { color: #a2afb5; font-size: 11px; }
+.trial-track-empty { grid-column: 1/-1; margin: 0; padding: 42px 14px; color: #a9b4b9; text-align: center; border: 1px solid #ffffff20; border-radius: 8px; }
+.trial-browser-status { min-height: 18px; margin: 12px 0 0; color: #b9c5ca; font-size: 12px; }
+.trial-browser-side { display: grid; gap: 18px; }
+.trial-selected-info { padding-bottom: 16px; border-bottom: 1px solid #ffffff1c; }
+.trial-selected-info .setup-label, .trial-browser-side .setup-label { color: var(--auth-text-accent); }
+.trial-selected-info h2, .trial-browser-side h2 { margin: 5px 0 0; font: 700 29px/1 'Barlow Condensed', Impact, sans-serif; text-transform: uppercase; }
+.trial-selected-info p { margin: 7px 0 0; color: #a6b2b7; font-size: 12px; }
+.trial-board-panel, .trial-car-panel { min-width: 0; }
+.trial-board-panel h2, .trial-car-panel h2 { margin-bottom: 12px; }
+.trial-board-head, .trial-board-rows li { display: grid; grid-template-columns: 30px minmax(0, 1fr) 70px; gap: 8px; align-items: center; }
+.trial-board-head { padding: 7px 8px; color: #9daab0; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; border-bottom: 1px solid #ffffff27; }
+.trial-board-head span:last-child { text-align: right; }
+.trial-board-rows { list-style: none; margin: 0; padding: 0; }
+.trial-board-rows li { min-height: 30px; padding: 6px 8px; border-bottom: 1px solid #ffffff13; color: #c8d1d5; font-size: 12px; }
+.trial-board-rows li.is-you { background: color-mix(in srgb, var(--auth-accent) 13%, transparent); color: #fff; }
+.trial-board-rows li > strong { color: #f5f7f8; font-variant-numeric: tabular-nums; text-align: right; }
+.trial-board-driver { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.trial-board-driver > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trial-board-status { min-height: 15px; margin: 10px 0 0; color: #9faeb5; font-size: 12px; }
+.trial-car-panel { padding-top: 2px; border-top: 1px solid #ffffff1c; }
+.trial-car-panel .setup-label { display: inline-block; margin-top: 14px; }
+.trial-car-canvas { display: block; width: 100%; height: 150px; border-radius: 8px; background: #111417; }
+.trial-compact-swatches { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.trial-compact-swatch { width: 26px; height: 26px; padding: 0; border: 2px solid #ffffff50; border-radius: 50%; background: var(--swatch-color); cursor: pointer; transition: transform 140ms ease; }
+.trial-compact-swatch:hover { transform: scale(1.12); }
+.trial-compact-swatch[aria-pressed='true'] { outline: 2px solid #fff; outline-offset: 2px; }
+.trial-shuffle { display: grid; place-items: center; color: #f5f7f8; background: #29333a; }
+.trial-color-name { display: block; margin-top: 9px; color: #b4c1c6; font-size: 11px; }
+.trial-browser-side .trial-start-button { width: 100%; max-width: none; min-height: 50px; display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 18px; border: 1px solid var(--auth-accent); border-radius: 7px; background: var(--auth-accent); color: var(--auth-button-text, #111417); font-size: 14px; }
+.trial-browser-side .trial-start-button span { font-size: 22px; line-height: 1; }
+.trial-browser-side .trial-start-button:disabled { opacity: .45; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+@media (max-width: 1100px) { .trial-track-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 780px) {
+  .screen-home .trial-browser { padding: 20px 14px 90px; }
+  .trial-browser-layout { grid-template-columns: 1fr; }
+  .trial-browser-header { align-items: start; gap: 18px; }
+  .trial-browser-header h1 { font-size: 40px; }
+  .trial-car-canvas { height: 190px; }
+  .trial-browser-side .trial-start-button { position: fixed; z-index: 20; bottom: 12px; left: 14px; width: calc(100% - 28px); box-shadow: 0 10px 32px #000b; }
+}
+@media (max-width: 450px) {
+  .trial-browser-header { display: block; }
+  .trial-browser-header .back-button { margin-bottom: 10px; }
+  .trial-track-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .trial-browser-controls select { min-width: 105px; }
+  .trial-track-details { padding: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .trial-track-card, .trial-compact-swatch { transition: none; } }

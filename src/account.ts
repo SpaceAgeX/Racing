@@ -2,9 +2,11 @@ import { accountFetch, requireAccount } from './auth/session.ts';
 import { startAdmissionHeartbeat } from './admission.ts';
 import { usernameError } from './auth/username.ts';
 import { formatDistanceFromMeters } from './ui/units.ts';
+import { countryFlag, countryOptions } from './ui/countries.ts';
 
 interface Dashboard {
   username: string;
+  countryCode: string | null;
   canPublishRankedTracks: boolean;
   racesStarted: number;
   multiplayerWins: number;
@@ -34,6 +36,39 @@ function showUsername(value: string): void {
   accountAvatar.textContent = value[0]!.toUpperCase();
 }
 showUsername(name);
+const countryList = countryOptions();
+const countryInput = document.querySelector<HTMLInputElement>('#country-input')!;
+const countryFlagElement = document.querySelector<HTMLElement>('#account-country-flag')!;
+const countryFeedback = document.querySelector<HTMLElement>('#country-feedback')!;
+const countries = document.querySelector<HTMLDataListElement>('#country-options')!;
+for (const country of countryList) countries.append(new Option(`${country.name} (${country.code})`, country.name));
+function showCountry(code: string | null): void {
+  const country = countryList.find(item => item.code === code);
+  countryInput.value = country?.name ?? '';
+  countryFlagElement.textContent = countryFlag(code);
+  countryFlagElement.hidden = !country;
+}
+showCountry(data.countryCode);
+document.querySelector<HTMLFormElement>('#country-form')!.addEventListener('submit', event => {
+  event.preventDefault();
+  void (async () => {
+    const text = countryInput.value.trim();
+    const country = countryList.find(item => item.name.toLowerCase() === text.toLowerCase()
+      || item.code.toLowerCase() === text.toLowerCase());
+    if (text && !country) { countryFeedback.textContent = 'Choose a country from the list.'; return; }
+    try {
+      const response = await accountFetch('/api/account/country', { method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ countryCode: country?.code ?? null }) });
+      if (!response.ok) throw new Error('Could not save country.');
+      showCountry(country?.code ?? null);
+      countryFeedback.textContent = 'Country saved.';
+    } catch (error) { countryFeedback.textContent = (error as Error).message; }
+  })();
+});
+document.querySelector<HTMLButtonElement>('#clear-country')!.addEventListener('click', () => {
+  countryInput.value = '';
+  document.querySelector<HTMLFormElement>('#country-form')!.requestSubmit();
+});
 document.querySelector<HTMLElement>('#account-email')!.textContent = session.user.email ?? 'Google account';
 document.querySelector<HTMLElement>('#builder-approval')!.textContent = data.canPublishRankedTracks
   ? 'Approved' : 'Not approved';

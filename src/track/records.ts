@@ -6,7 +6,10 @@ export interface SavedTrack {
   name: string;
   layout: SplineTrack;
   updatedAt: number;
+  createdAt?: number;
   visibility?: 'ranked' | 'personal';
+  popularityMs?: number;
+  completedLaps?: number;
 }
 
 export function trackNameError(name: unknown): string | null {
@@ -19,6 +22,9 @@ export function isSavedTrack(value: unknown): value is SavedTrack {
   const record = value as Partial<SavedTrack>;
   return typeof record.id === 'string' && record.id.length > 0 && trackNameError(record.name) === null
     && typeof record.updatedAt === 'number' && Number.isFinite(record.updatedAt)
+    && (record.createdAt === undefined || typeof record.createdAt === 'number' && Number.isFinite(record.createdAt))
+    && (record.popularityMs === undefined || typeof record.popularityMs === 'number' && Number.isFinite(record.popularityMs))
+    && (record.completedLaps === undefined || typeof record.completedLaps === 'number' && Number.isFinite(record.completedLaps))
     && (record.visibility === undefined || record.visibility === 'ranked' || record.visibility === 'personal')
     && playableTrackError(record.layout) === null;
 }

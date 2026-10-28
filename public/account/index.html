@@ -8,7 +8,7 @@
     <section class="dashboard-hero">
       <div class="hero-copy"><p class="eyebrow">RACER PROFILE / <span>01</span></p>
         <div class="identity"><div id="account-avatar" class="avatar" aria-hidden="true">R</div><div>
-          <p class="identity-label">YOUR GARAGE</p><h1 id="account-name">Racer</h1>
+          <p class="identity-label">YOUR GARAGE</p><h1 id="account-name">Racer</h1><span id="account-country-flag" class="account-country-flag" aria-label="Country"></span>
           <p id="account-email" class="account-email"></p></div></div>
         <p class="hero-description">Every lap adds to your story. Keep pushing the line.</p>
         <a class="hero-action" href="/">Get back on track <span aria-hidden="true">&rarr;</span></a></div>
@@ -33,6 +33,13 @@
           <div class="username-actions"><button type="submit">Save username</button><button id="cancel-username" type="button">Cancel</button></div>
         </form>
         <p id="username-feedback" role="status" aria-live="polite"></p>
+        <form id="country-form" class="country-form">
+          <label for="country-input">COUNTRY / FLAG</label>
+          <input id="country-input" type="text" list="country-options" autocomplete="off" placeholder="Search countries" aria-describedby="country-feedback">
+          <datalist id="country-options"></datalist>
+          <div class="username-actions"><button type="submit">Save country</button><button id="clear-country" type="button">Clear</button></div>
+          <p id="country-feedback" role="status" aria-live="polite"></p>
+        </form>
       </div></section>
   </main>
   <script type="module" src="/assets/account.js"></script>

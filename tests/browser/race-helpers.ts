@@ -19,11 +19,12 @@ export async function testAuthHeaders(): Promise<{ Authorization: string }> {
 export async function enterRace(page: Page, trackId?: string): Promise<void> {
   if (await page.locator('#race-screen').isVisible()) return;
   await page.getByRole('button', { name: /Time Trial/ }).click();
-  const select = page.locator('#time-trial-track-select');
-  await expect(select.locator('option')).not.toHaveCount(0);
+  const cards = page.locator('.trial-track-card');
+  await expect(cards.first()).toBeVisible();
   if (trackId) {
-    await expect(select.locator(`option[value="${trackId}"]`)).toHaveCount(1);
-    await select.selectOption(trackId);
+    const target = page.locator(`.trial-track-card[data-track-id="${trackId}"]`);
+    await expect(target).toBeVisible();
+    await target.click();
   }
   await page.getByRole('button', { name: 'Start Time Trial' }).click();
   await expect(page.locator('#race-screen')).toBeVisible();

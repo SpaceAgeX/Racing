@@ -23,6 +23,14 @@ export async function listSharedTracks(): Promise<SavedTrack[]> {
   return records;
 }
 
+export async function listDiscoverableTracks(): Promise<SavedTrack[]> {
+  const response = await accountFetch('/api/tracks/discovery', { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error('Could not load track popularity.');
+  const records: unknown = await response.json();
+  if (!Array.isArray(records) || !records.every(isSavedTrack)) throw new Error('The server returned invalid track data.');
+  return records;
+}
+
 export async function getSharedTrack(id: string): Promise<SavedTrack> {
   const record = await request(`/${encodeURIComponent(id)}`);
   if (!isSavedTrack(record)) throw new Error('The server returned an invalid track.');

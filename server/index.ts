@@ -93,6 +93,13 @@ app.post('/api/account/username', express.json({ limit: '4kb' }), async (request
 app.patch('/api/account/username', express.json({ limit: '4kb' }), async (request, response) => {
   response.json({ username: await accounts.updateUsername(response.locals.account.id, request.body?.username) });
 });
+app.patch('/api/account/country', express.json({ limit: '4kb' }), async (request, response) => {
+  response.json({ countryCode: await accounts.updateCountry(response.locals.account.id, request.body?.countryCode) });
+});
+app.get('/api/tracks/discovery', async (_request, response) => {
+  response.setHeader('Cache-Control', 'no-store');
+  response.json(await accounts.listTrackDiscovery(response.locals.account.id));
+});
 app.use('/api/tracks', createAccountTracksApi(accounts, broadcastTrackOptions));
 app.get('/api/account', async (_request, response) => {
   response.setHeader('Cache-Control', 'no-store');

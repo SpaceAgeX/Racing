@@ -21,7 +21,7 @@ import { copyTuningParameters, createTuningPanel } from './ui/tuning.ts';
 import { speedUnit, speedValueFromMetersPerSecond } from './ui/units.ts';
 import type { TuningParameters } from './ui/tuning.ts';
 import { listBrowserTracks, loadActiveTrack, selectTrackForPlay } from './track/storage.ts';
-import { listSharedTracks } from './track/api.ts';
+import { listDiscoverableTracks, listSharedTracks } from './track/api.ts';
 import { buildRoadGeometry } from './track/road-geometry.ts';
 
 import { createRoadWorld } from './simulation/road-world.ts';
@@ -921,16 +921,13 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   async function refreshTimeTrialTracks(): Promise<void> {
     const localTracks = availableTimeTrialTracks();
-    const currentTrack = timeTrialTrack;
-    const preferredId = currentTrack
-      ? (localTracks.find(track => JSON.stringify(track.layout) === JSON.stringify(currentTrack.layout))?.id ?? currentTrack.id)
-      : undefined;
-    timeTrialSetup.setTracks(localTracks, preferredId);
+    const builderSelection = new URLSearchParams(location.search).get('mode') === 'time-trial' ? selectedTrack?.id : undefined;
+    timeTrialSetup.setTracks(localTracks, builderSelection);
     timeTrialSetup.setStatus('Loading shared tracks…');
     try {
-      const sharedTracks = await listSharedTracks();
+      const sharedTracks = await listDiscoverableTracks();
       // Keep a user's choice if the shared-track request completes after they select a map.
-      timeTrialSetup.setTracks(availableTimeTrialTracks(sharedTracks));
+      timeTrialSetup.setTracks(availableTimeTrialTracks(sharedTracks), builderSelection);
       timeTrialSetup.setStatus('');
     } catch {
       timeTrialSetup.setStatus('Shared tracks could not be loaded. Locally saved tracks may still be available.');
@@ -1044,7 +1041,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       setMode('home');
     },
     onStart(track, color) { enterTimeTrial(track, color); },
-  }, timeTrialColor);
+  }, username);
 
   lobbyScreen = createLobbyScreen(lobbyRoot, {
     onEnterTrack() {

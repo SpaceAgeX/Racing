@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 
 export interface AuthConfig { url: string; publishableKey: string; googleEnabled: boolean }
-export interface AccountProfile { username: string | null; displayName: string; canPublishRankedTracks: boolean }
+export interface AccountProfile { username: string | null; displayName: string; canPublishRankedTracks: boolean; countryCode: string | null }
 export interface AccountSession { user: User; profile: AccountProfile; signOut(): Promise<void> }
 
 let client: SupabaseClient | null = null;

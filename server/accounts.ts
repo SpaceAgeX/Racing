@@ -7,6 +7,7 @@ import { trackNameError, type SavedTrack } from '../src/track/records.ts';
 import type { SplineTrack } from '../src/track/spline-records.ts';
 import type { HandlingParameters } from '../src/simulation/types.ts';
 import { usernameError } from '../src/auth/username.ts';
+import { countryCodes } from '../src/ui/countries.ts';
 
 export class AccountError extends Error {
   readonly status: number;
@@ -52,11 +53,19 @@ export function createAccounts() {
   };
 
   async function profile(userId: string) {
-    const result = await db.query<{ username: string | null; display_name: string; can_publish_ranked_tracks: boolean }>(
-      'select username, display_name, can_publish_ranked_tracks from public.profiles where user_id = $1', [userId]);
+    const result = await db.query<{ username: string | null; display_name: string; can_publish_ranked_tracks: boolean; country_code: string | null }>(
+      'select username, display_name, can_publish_ranked_tracks, country_code from public.profiles where user_id = $1', [userId]);
     if (!result.rows[0]) throw new AccountError('Account profile is missing.', 500);
     return { username: result.rows[0].username, displayName: result.rows[0].display_name,
-      canPublishRankedTracks: result.rows[0].can_publish_ranked_tracks };
+      canPublishRankedTracks: result.rows[0].can_publish_ranked_tracks, countryCode: result.rows[0].country_code };
+  }
+
+  async function updateCountry(userId: string, value: unknown): Promise<string | null> {
+    if (value !== null && (typeof value !== 'string' || !countryCodes.has(value))) {
+      throw new AccountError('Choose a valid country or clear the selection.');
+    }
+    await db.query('update public.profiles set country_code=$2 where user_id=$1', [userId, value]);
+    return value;
   }
 
   async function usernameAvailable(value: unknown): Promise<boolean> {
@@ -102,16 +111,17 @@ export function createAccounts() {
     await db.query('update public.profiles set display_name=$2 where user_id=$1', [userId, value.trim()]);
   }
 
-  function savedTrack(row: { id: string; name: string; layout: SplineTrack; updated_at: Date;
+  function savedTrack(row: { id: string; name: string; layout: SplineTrack; updated_at: Date; created_at?: Date;
     visibility: 'ranked' | 'personal' }): SavedTrack {
     return { id: row.id, name: row.name, layout: row.layout,
-      updatedAt: new Date(row.updated_at).getTime(), visibility: row.visibility };
+      updatedAt: new Date(row.updated_at).getTime(), createdAt: row.created_at ? new Date(row.created_at).getTime() : undefined,
+      visibility: row.visibility };
   }
 
   async function listTracks(userId: string): Promise<SavedTrack[]> {
     const result = await db.query<{ id: string; name: string; layout: SplineTrack; updated_at: Date;
       visibility: 'ranked' | 'personal' }>(
-      "select id, name, layout, updated_at, visibility from public.tracks where visibility='ranked' or owner_id=$1 order by updated_at desc", [userId]);
+      "select id, name, layout, created_at, updated_at, visibility from public.tracks where visibility='ranked' or owner_id=$1 order by updated_at desc", [userId]);
     return result.rows.map(savedTrack);
   }
 
@@ -120,6 +130,24 @@ export function createAccounts() {
       visibility: 'ranked' | 'personal' }>(
       "select id, name, layout, updated_at, visibility from public.tracks where visibility='ranked' order by updated_at desc");
     return result.rows.map(savedTrack);
+  }
+
+  let popularityCache: { expiresAt: number; values: Map<string, { popularityMs: number; completedLaps: number }> } | null = null;
+  async function listTrackDiscovery(userId: string): Promise<SavedTrack[]> {
+    const tracks = await listTracks(userId);
+    if (!popularityCache || Date.now() >= popularityCache.expiresAt) {
+      // One cached, indexed aggregate for all cards; no estimates from personal bests.
+      const result = await db.query<{ track_id: string; popularity_ms: string; completed_laps: string }>(
+        `select track_id, sum(duration_ms)::text as popularity_ms, count(*)::text as completed_laps
+         from public.lap_results where ranked and duration_ms between 500 and 1800000
+         group by track_id`);
+      popularityCache = { expiresAt: Date.now() + 60_000,
+        values: new Map(result.rows.map(row => [row.track_id, {
+          popularityMs: Number(row.popularity_ms), completedLaps: Number(row.completed_laps) }])) };
+    }
+    return tracks.map(track => ({ ...track,
+      popularityMs: popularityCache!.values.get(track.id)?.popularityMs ?? 0,
+      completedLaps: popularityCache!.values.get(track.id)?.completedLaps ?? 0 }));
   }
 
   async function getTrack(id: string, userId?: string): Promise<SavedTrack | null> {
@@ -224,12 +252,13 @@ export function createAccounts() {
   }
 
   async function leaderboard(trackId: string, layoutHash: string, rulesetHash: string) {
-    const result = await db.query<{ username: string; duration_ms: number }>(`select coalesce(p.username,p.display_name) as username,
+    const result = await db.query<{ username: string; country_code: string | null; duration_ms: number }>(`select coalesce(p.username,p.display_name) as username,
+      p.country_code,
       min(l.duration_ms)::integer as duration_ms from public.lap_results l
       join public.profiles p on p.user_id=l.user_id
       where l.track_id=$1 and l.layout_hash=$2 and l.ruleset_hash=$3 and l.ranked
-      group by l.user_id,p.username,p.display_name order by duration_ms asc limit 10`, [trackId, layoutHash, rulesetHash]);
-    return result.rows.map(row => ({ name: row.username, durationMs: row.duration_ms }));
+      group by l.user_id,p.username,p.display_name,p.country_code order by duration_ms asc limit 10`, [trackId, layoutHash, rulesetHash]);
+    return result.rows.map(row => ({ name: row.username, countryCode: row.country_code, durationMs: row.duration_ms }));
   }
 
   async function personalBest(userId: string, trackId: string, layoutHash: string, rulesetHash: string): Promise<number | null> {
@@ -240,8 +269,8 @@ export function createAccounts() {
     return result.rows[0]?.duration_ms ?? null;
   }
 
-  return { identity, requireAccount, profile, usernameAvailable, claimUsername, updateUsername, updateDisplayName,
-    listTracks, listRankedTracks, getTrack, saveTrack, deleteTrack,
+  return { identity, requireAccount, profile, usernameAvailable, claimUsername, updateUsername, updateDisplayName, updateCountry,
+    listTracks, listRankedTracks, listTrackDiscovery, getTrack, saveTrack, deleteTrack,
     recordLap, startRace, recordMultiplayerWin, addActivity, dashboard, leaderboard, personalBest, close: () => db.end() };
 }
 export type Accounts = ReturnType<typeof createAccounts>;

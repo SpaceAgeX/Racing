@@ -7,6 +7,10 @@ export interface TrackOption {
   name: string;
   layout: TrackLayout;
   visibility?: 'ranked' | 'personal';
+  updatedAt?: number;
+  createdAt?: number;
+  popularityMs?: number;
+  completedLaps?: number;
 }
 
 export interface LobbySettings {

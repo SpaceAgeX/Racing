@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { startPrototype } from '../../src/prototype.ts';
 import { readFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { formatLapTime } from '../../src/ui/lap-display.ts';
 import { enterRace, testAuthHeaders } from './race-helpers.ts';
 import { splinePresets } from '../../src/track/spline-presets.ts';
@@ -86,15 +87,13 @@ test('time trial setup previews shared maps, selects car color, and starts solo 
   await expect(page.getByRole('link', { name: /Map Builder/ })).toBeVisible();
   await page.getByRole('button', { name: /Time Trial/ }).click();
   await expect(page.getByRole('heading', { name: 'Choose your track' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sky blue', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#home-screen .trial-color-swatch')).toHaveCount(15);
-  const trackSelect = page.locator('#time-trial-track-select');
-  await expect(trackSelect.locator('option')).not.toHaveCount(0);
-  await expect(trackSelect.locator('option[value="default"]')).toHaveCount(0);
-  await expect(trackSelect.locator('option[value="simple-loop"]')).toHaveCount(0);
-  await trackSelect.selectOption(saved.id);
+  await expect(page.locator('#home-screen .trial-compact-swatch[aria-pressed="true"]')).toHaveCount(1);
+  await expect(page.locator('#home-screen .trial-compact-swatch')).toHaveCount(16);
+  await expect(page.locator('.trial-track-card[data-track-id="default"]')).toHaveCount(0);
+  await expect(page.locator('.trial-track-card[data-track-id="simple-loop"]')).toHaveCount(0);
+  await page.locator(`.trial-track-card[data-track-id="${saved.id}"]`).click();
   await expect(page.locator('[data-track-name]')).toHaveText(saved.name);
-  await expect(page.locator('[data-preview]')).toBeVisible();
+  await expect(page.locator(`.trial-track-card[data-track-id="${saved.id}"] canvas`)).toBeVisible();
   await page.getByRole('button', { name: 'Pink', exact: true }).click();
   await page.getByRole('button', { name: 'Start Time Trial' }).click();
   await expect(page.locator('#race-screen')).toBeVisible();
@@ -308,8 +307,13 @@ test('the server corrects forged car position and lap data during a time trial',
 
 test('the finish line starts the timer and records laps, best time, and differences in either direction', async ({ page }) => {
   test.setTimeout(120_000);
+  const trackName = `Lap test ${randomUUID().slice(0, 8)}`;
+  const savedTrack = await page.request.post('/api/tracks', { headers: await testAuthHeaders(),
+    data: { name: trackName, layout: splinePresets[0]!.create(), visibility: 'ranked' } });
+  expect(savedTrack.ok()).toBe(true);
+  const trackId = (await savedTrack.json() as { id: string }).id;
   await page.goto('/');
-  await enterRace(page, 'default');
+  await enterRace(page, trackId);
   const accountBefore = await page.request.get('/api/account', { headers: await testAuthHeaders() });
   expect(accountBefore.ok()).toBe(true);
   const previousAccount = await accountBefore.json() as { lapsCompleted: number; username: string };
@@ -335,13 +339,13 @@ test('the finish line starts the timer and records laps, best time, and differen
     return ((await response.json()) as { lapsCompleted: number }).lapsCompleted;
   }).toBe(completedBefore + 1);
   await expect.poll(async () => {
-    const response = await page.request.get('/api/leaderboard/default', { headers: await testAuthHeaders() });
+    const response = await page.request.get(`/api/leaderboard/${trackId}`, { headers: await testAuthHeaders() });
     return (await response.json() as { name: string; durationMs: number }[])
       .some(lap => lap.name === previousAccount.username);
   }).toBe(true);
   const savedAccount = await page.request.get('/api/account', { headers: await testAuthHeaders() });
   expect((await savedAccount.json() as { personalBests: { trackName: string; durationMs: number }[] })
-    .personalBests.some(best => best.trackName === 'Default circuit' && best.durationMs > 0)).toBe(true);
+    .personalBests.some(best => best.trackName === trackName && best.durationMs > 0)).toBe(true);
   const first = await lapSnapshot(page);
   expect(first.last).toBeGreaterThan(0);
   expect(first.best).toBe(first.last);
