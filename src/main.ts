@@ -8,26 +8,25 @@ const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (!canvas) throw new Error('Driving canvas is missing.');
 
 export const prototype = startPrototype(canvas, account.profile.username!);
-const accountLink = document.querySelector<HTMLAnchorElement>('#home-account-link')!;
+const accountLink = document.querySelector<HTMLButtonElement>('#home-account-link')!;
 const avatar = document.querySelector<HTMLElement>('#home-account-avatar')!;
-accountLink.setAttribute('aria-label', `Your account: ${account.profile.username}`);
+accountLink.setAttribute('aria-label', `Account menu for ${account.profile.username}`);
 avatar.textContent = account.profile.username![0]!.toUpperCase();
 document.querySelector<HTMLElement>('#home-profile-name')!.textContent = account.profile.username!;
-const profileToggle = document.querySelector<HTMLButtonElement>('#home-profile-toggle')!;
 const profileMenu = document.querySelector<HTMLElement>('#home-profile-menu')!;
-profileToggle.addEventListener('click', () => {
-  profileMenu.hidden = !profileMenu.hidden;
-  profileToggle.setAttribute('aria-expanded', String(!profileMenu.hidden));
-});
+function setProfileMenuOpen(open: boolean): void {
+  profileMenu.hidden = !open;
+  accountLink.setAttribute('aria-expanded', String(open));
+}
+accountLink.addEventListener('click', () => { setProfileMenuOpen(profileMenu.hidden === true); });
 document.addEventListener('pointerdown', event => {
   if (!(event.target instanceof Node) || document.querySelector('.home-profile')?.contains(event.target)) return;
-  profileMenu.hidden = true;
-  profileToggle.setAttribute('aria-expanded', 'false');
+  setProfileMenuOpen(false);
 });
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
-  profileMenu.hidden = true;
-  profileToggle.setAttribute('aria-expanded', 'false');
+  if (!profileMenu.hidden) accountLink.focus();
+  setProfileMenuOpen(false);
 });
 document.querySelector<HTMLButtonElement>('#home-sign-out')!.addEventListener('click', () => { void account.signOut(); });
 const picture = account.user.user_metadata.avatar_url ?? account.user.user_metadata.picture;

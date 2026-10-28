@@ -10,17 +10,18 @@ import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts
 // Local car forward is -Z. The finish stripe is at Z = 0.
 const finishSeconds = 2.5;
 const placements = [
-  { x: -1.85, startZ: 18, finishZ: 1.85 },
-  { x: 1.65, startZ: 20, finishZ: 2.12 },
-  { x: 0.1, startZ: 25, finishZ: 7.1 },
+  { x: -1.9, startZ: 18, finishZ: 1.25 },
+  { x: 1.15, startZ: 21, finishZ: 4.6 },
+  { x: 3.7, startZ: 25, finishZ: 7.0 },
 ] as const;
 
 function companionColors(accent: string): number[] {
-  const palette = [...carColorNames.keys()];
-  const preferred = ['#f5d76e', '#ef5350', '#6bc5ff', '#8ce5ad', '#c38fff'];
-  const chosen = preferred.filter(color => color !== accent);
-  for (const color of palette) if (color !== accent && !chosen.includes(color)) chosen.push(color);
-  return chosen.slice(0, 2).map(color => Number.parseInt(color.slice(1), 16));
+  const palette = [...carColorNames].filter(([color, name]) => color !== accent && name !== 'Charcoal' && name !== 'Slate').map(([color]) => color);
+  for (let index = palette.length - 1; index > 0; index--) {
+    const other = Math.floor(Math.random() * (index + 1));
+    [palette[index], palette[other]] = [palette[other]!, palette[index]!];
+  }
+  return palette.slice(0, 2).map(color => Number.parseInt(color.slice(1), 16));
 }
 
 /** Decorative scene only: no gameplay simulation or network connection. */
@@ -78,8 +79,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     }
   }
 
-  scene.add(new AmbientLight(0xb8cad1, 0.7));
-  const key = new DirectionalLight(0xfff2e3, 3.2);
+  scene.add(new AmbientLight(0xb8cad1, 0.9));
+  const key = new DirectionalLight(0xfff2e3, 3.6);
   key.position.set(-5, 11, -4);
   key.target.position.set(0, 0, 3);
   key.castShadow = true;
@@ -92,9 +93,12 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   key.shadow.camera.far = 35;
   key.shadow.normalBias = 0.025;
   scene.add(key, key.target);
-  const fill = new DirectionalLight(0x9dc6e2, 1.2);
+  const fill = new DirectionalLight(0x9dc6e2, 1.4);
   fill.position.set(5, 5, 12);
   scene.add(fill);
+  const rim = new DirectionalLight(0xd7e7f0, 0.75);
+  rim.position.set(7, 7, -8);
+  scene.add(rim);
 
   const palette = companionColors(accent);
   const visuals = placements.map((placement, index) => {
@@ -108,7 +112,19 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   });
 
   const unsubscribeAccent = onActiveAccentColorChange(color => {
-    visuals[0]!.visual.setColor(Number.parseInt(color.slice(1), 16));
+    const nextColor = Number.parseInt(color.slice(1), 16);
+    visuals[0]!.visual.setColor(nextColor);
+    for (let index = 0; index < palette.length; index++) {
+      if (palette[index] !== nextColor) continue;
+      const unavailable = new Set([nextColor, ...palette]);
+      const replacement = [...carColorNames.keys()]
+        .map(value => Number.parseInt(value.slice(1), 16))
+        .find(value => !unavailable.has(value));
+      if (replacement !== undefined) {
+        palette[index] = replacement;
+        visuals[index + 1]!.visual.setColor(replacement);
+      }
+    }
     if (active) render();
   });
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -134,8 +150,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     const hold = Math.max(0, elapsed - finishSeconds);
     const drift = motion.matches ? 0 : Math.sin(hold * 0.24) * 0.28;
     const arrival = motion.matches ? 1 : eased;
-    camera.position.set(-7.8 + drift, 3.7, -10.5 - (1 - arrival) * 1.6);
-    camera.lookAt(0.25 + drift * 0.2, 0.55, 3.1);
+    camera.position.set(-7.8 + drift, 3.55, -9.8 - (1 - arrival) * 1.6);
+    camera.lookAt(0.25 + drift * 0.2, 0.55, 3.2);
     renderer.render(scene, camera);
   }
 
@@ -166,7 +182,9 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, width < 700 ? 1 : 1.5));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
-    camera.fov = width < 700 ? 50 : 42;
+    camera.fov = width < 700 ? 50 : 39;
+    const shift = width < 700 ? 0 : width < 1000 ? 0.1 : 0.18;
+    camera.setViewOffset(width, height, -width * shift, 0, width, height);
     camera.updateProjectionMatrix();
     if (active) render();
   }

@@ -568,10 +568,9 @@ function createHomeScreen(root: HTMLElement, callbacks: {
 }, username: string, preferredTrackId = ''): HomeScreenController {
   root.innerHTML = `
     <div class="home-profile">
-      <a id="home-account-link" class="home-account-link" href="/account/" aria-label="Your account" title="Your account"><span id="home-account-avatar" aria-hidden="true">R</span><span id="home-profile-name" class="home-profile-name"></span></a>
-      <button id="home-profile-toggle" class="home-profile-toggle" type="button" aria-label="Account menu" aria-expanded="false" aria-controls="home-profile-menu">⌄</button>
+      <button id="home-account-link" class="home-account-link" type="button" aria-label="Account menu" aria-expanded="false" aria-controls="home-profile-menu"><span id="home-account-avatar" aria-hidden="true">R</span><span id="home-profile-name" class="home-profile-name"></span></button>
       <div id="home-profile-menu" class="home-profile-menu" hidden>
-        <a href="/account/">Dashboard &amp; settings</a>
+        <a href="/account/">Profile / Dashboard</a>
         <button id="home-sign-out" type="button">Sign out</button>
       </div>
     </div>
