@@ -10,8 +10,8 @@ import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts
 const finishSeconds = 2.5;
 const placements = [
   { x: -0.8, startZ: 18, finishZ: 3.1, heading: -0.02 },
-  { x: -4.0, startZ: 23, finishZ: 7.0, heading: 0.075 },
-  { x: 2.65, startZ: 27, finishZ: 9.1, heading: -0.11 },
+  { x: -4.4, startZ: 23, finishZ: 7.0, heading: 0.075 },
+  { x: 1.7, startZ: 27, finishZ: 9.1, heading: -0.11 },
 ] as const;
 
 /** Decorative scene only: no gameplay simulation or network connection. */
@@ -128,8 +128,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     const hold = Math.max(0, elapsed - finishSeconds);
     const drift = motion.matches ? 0 : Math.sin(hold * 0.24) * 0.28;
     const arrival = motion.matches ? 1 : eased;
-    camera.position.set(-7.25 + drift, 3.1, -8.8 - (1 - arrival) * 1.6);
-    camera.lookAt(0.1 + drift * 0.2, 0.55, 4.0);
+    camera.position.set(-4.8 + drift, 2.6, -4.8 - (1 - arrival) * 1.6);
+    camera.lookAt(1.0 + drift * 0.2, 0.55, 3.8);
     renderer.render(scene, camera);
   }
 
