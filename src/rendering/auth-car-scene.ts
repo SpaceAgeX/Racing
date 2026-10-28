@@ -7,6 +7,7 @@ import { createVehicleState } from '../simulation/vehicle.ts';
 import { carColorNames } from '../ui/car-colors.ts';
 
 const lastColorKey = 'auth-scene-last-car-color';
+const excludedAuthColors = new Set(['Pearl', 'Charcoal']);
 
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((offset) => {
@@ -23,19 +24,16 @@ function contrast(a: string, b: string): number {
 }
 
 function chooseCarColor(): number {
-  const colors = [...carColorNames.keys()];
+  const colors = [...carColorNames].filter(([, name]) => !excludedAuthColors.has(name)).map(([color]) => color);
   let previous: string | null = null;
   try { previous = sessionStorage.getItem(lastColorKey); } catch { /* Storage may be unavailable. */ }
   const choices = colors.filter((color) => color !== previous);
   const selected = choices[Math.floor(Math.random() * choices.length)]!;
   try { sessionStorage.setItem(lastColorKey, selected); } catch { /* The color still works without storage. */ }
-  const pearl = selected === '#e8edf2';
-  const accent = pearl ? '#000000' : selected;
-  document.documentElement.toggleAttribute('data-auth-pearl', pearl);
-  document.documentElement.toggleAttribute('data-auth-dark-accent', !pearl && contrast(accent, '#111417') < 4.5);
-  document.documentElement.style.setProperty('--auth-accent', accent);
+  document.documentElement.toggleAttribute('data-auth-dark-accent', contrast(selected, '#111417') < 4.5);
+  document.documentElement.style.setProperty('--auth-accent', selected);
   document.documentElement.style.setProperty('--auth-button-text',
-    contrast(accent, '#111417') >= contrast(accent, '#f5f7f8') ? '#111417' : '#f5f7f8');
+    contrast(selected, '#111417') >= contrast(selected, '#f5f7f8') ? '#111417' : '#f5f7f8');
   return Number.parseInt(selected.slice(1), 16);
 }
 
