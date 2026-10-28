@@ -10,8 +10,8 @@ import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts
 const finishSeconds = 2.5;
 const placements = [
   { x: -0.8, startZ: 18, finishZ: 3.1, heading: -0.02 },
-  { x: -4.4, startZ: 23, finishZ: 7.0, heading: 0.075 },
-  { x: 1.7, startZ: 27, finishZ: 9.1, heading: -0.11 },
+  { x: 4.1, startZ: 23, finishZ: 7.0, heading: 0.075 },
+  { x: 3.2, startZ: 32, finishZ: 14.5, heading: -0.11 },
 ] as const;
 
 /** Decorative scene only: no gameplay simulation or network connection. */
