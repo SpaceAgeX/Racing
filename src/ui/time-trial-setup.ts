@@ -51,8 +51,8 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
     </div></div>
     <dialog class="trial-track-dialog" data-track-dialog aria-label="Choose a track">
       <div class="trial-dialog-shell">
-        <header class="trial-dialog-header"><div><span class="menu-eyebrow">SOLO RACE</span><h2>Choose your track</h2></div>
-          <button class="trial-dialog-close" data-close-tracks type="button" aria-label="Close track selection">×</button></header>
+        <header class="trial-dialog-header"><button class="back-button" data-close-tracks type="button">← Back</button>
+          <div><span class="menu-eyebrow">SOLO RACE</span><h2>Choose your track</h2></div></header>
         <div class="trial-dialog-layout">
           <section class="trial-browser-main" aria-label="Track browser">
             <div class="trial-browser-controls"><label><span class="sr-only">Search tracks</span><input data-search type="search" placeholder="Search tracks" autocomplete="off"></label>
@@ -100,6 +100,11 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
   let savedScrollTop = 0;
   let preparing = false;
   const selectedTrack = () => tracks.find(track => track.id === selectedId) ?? null;
+  const lastTrackKey = `racing-last-solo-track-v1:${username.toLocaleLowerCase()}`;
+  let lastTrackInMemory: string | null = null;
+  function lastRacedId(): string | null {
+    try { return localStorage.getItem(lastTrackKey) ?? lastTrackInMemory; } catch { return lastTrackInMemory; }
+  }
 
   function orderedTracks(): TimeTrialTrackOption[] {
     return [...tracks].sort((a, b) => {
@@ -245,16 +250,22 @@ export function createTimeTrialSetup(root: HTMLElement, callbacks: {
   });
 
   return {
+    rememberLastRaced(id: string): void {
+      lastTrackInMemory = id;
+      try { localStorage.setItem(lastTrackKey, id); } catch { /* Selection stays in memory for this session. */ }
+    },
     show(): void {
       section.hidden = false; closeTracks(); selectedColor = preferredCarColor(); renderColors();
       userSelected = false; status.textContent = ''; preparing = false; savedScrollTop = 0;
       showroom?.dispose(); showroom = createCarShowroom(canvas, selectedColor);
       search.value = ''; sort.value = 'popular';
-      selectedId = orderedTracks()[0]?.id ?? null; renderCards(); selectTrack(selectedId ?? '');
+      const lastId = lastRacedId();
+      selectedId = lastId && tracks.some(track => track.id === lastId) ? lastId : orderedTracks()[0]?.id ?? null;
+      renderCards(); selectTrack(selectedId ?? '');
     },
     hide(): void { closeTracks(); section.hidden = true; showroom?.dispose(); showroom = null; renderGeneration++; leaderboardRequest++; },
     setTracks(options: TimeTrialTrackOption[], preferredId?: string): void {
-      const previousId = userSelected ? selectedId : preferredId;
+      const previousId = userSelected ? selectedId : preferredId ?? lastRacedId();
       tracks = options;
       selectedId = previousId && tracks.some(track => track.id === previousId) ? previousId : orderedTracks()[0]?.id ?? null;
       renderCards(); selectTrack(selectedId ?? '');

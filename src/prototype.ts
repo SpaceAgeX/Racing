@@ -1176,6 +1176,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     pendingSoloRequest = 0;
     soloRaceActive = true;
     timeTrialTrack = track;
+    timeTrialSetup.rememberLastRaced(track.id);
     timeTrialBest = personalBestMs === null ? null : personalBestMs / 1000;
     Object.assign(tuningPanel.parameters.driving, handling.driving);
     Object.assign(tuningPanel.parameters.physics, handling.physics);

@@ -103,7 +103,7 @@ test('time trial setup previews shared maps, selects car color, and starts solo 
   await page.getByRole('button', { name: 'Choose track' }).click();
   await expect(page.locator('[data-search]')).toHaveValue(saved.name);
   await expect(page.locator('[data-sort]')).toHaveValue('name');
-  await page.getByRole('button', { name: 'Close track selection' }).click();
+  await page.locator('.trial-dialog-header .back-button').click();
   await expect(page.getByRole('button', { name: 'Pink', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Start Time Trial' }).click();
   await expect(page.locator('#race-screen')).toBeVisible();
@@ -114,6 +114,13 @@ test('time trial setup previews shared maps, selects car color, and starts solo 
   }));
   expect(choices.color).toBe('#ff8ab0');
   expect(choices.track?.id).toBe(saved.id);
+  expect(await page.evaluate(() => {
+    const key = Object.keys(localStorage).find(name => name.startsWith('racing-last-solo-track-v1:'));
+    return key ? localStorage.getItem(key) : null;
+  })).toBe(saved.id);
+  await page.getByRole('button', { name: 'Leave game' }).click();
+  await page.getByRole('button', { name: /Time Trial/ }).click();
+  await expect(page.locator('[data-track-name]')).toHaveText(saved.name);
 });
 
 test('connecting to multiplayer keeps the lobby browser visible', async ({ page }) => {
