@@ -46,7 +46,7 @@ export function createCarShowroom(canvas: HTMLCanvasElement, color: string) {
     if (disposed || !active) return;
     const angle = 2.45 + angleOffset + (reducedMotion.matches || pointerX !== null ? 0 : Math.sin(now * .00022) * .18);
     camera.position.set(Math.sin(angle) * 4.45, 2.2, Math.cos(angle) * 4.45);
-    camera.lookAt(0, -.06, 0);
+    camera.lookAt(0, .08, 0);
     renderer.render(scene, camera);
   }
   function animate(now: number): void {
