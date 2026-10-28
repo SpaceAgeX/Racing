@@ -167,7 +167,7 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
     const url = URL.createObjectURL(new Blob([JSON.stringify(parameters, null, 2)], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'racing-handling.json';
+    link.download = 'beggars-grand-prix-handling.json';
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
     message.textContent = 'Settings saved as JSON.';

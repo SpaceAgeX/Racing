@@ -42,7 +42,7 @@ try {
   const user = await currentUser(client);
   if (user) {
     const response = await accountFetch('/api/account', { cache: 'no-store' });
-    if (!response.ok) throw new Error('Could not load your racing account.');
+    if (!response.ok) throw new Error('Could not load your account.');
     const profile = await response.json() as { username: string | null };
     if (profile.username) location.replace(next);
     else {

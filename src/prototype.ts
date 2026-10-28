@@ -570,7 +570,7 @@ function createHomeScreen(root: HTMLElement, callbacks: {
     <a id="home-account-link" class="home-account-link" href="/account/" aria-label="Your account" title="Your account"><span id="home-account-avatar" aria-hidden="true">R</span></a>
     <div class="home-shell">
       <section id="home-landing" class="home-landing">
-        <div class="home-title"><span class="menu-eyebrow">RACING</span><h1>Select an Option</h1></div>
+        <div class="home-title"><span class="menu-eyebrow">BEGGAR'S GRAND PRIX</span><h1>Select an Option</h1></div>
         <nav class="home-choice-grid" aria-label="Main options">
           <button id="home-time-trial" class="home-choice" type="button"><strong>Time Trial</strong><span>Race solo on a track.</span></button>
           <button id="home-multiplayer" class="home-choice" type="button"><strong>Multiplayer Race</strong><span>Create a room or join an open lobby.</span></button>

@@ -1,8 +1,8 @@
-# Driving prototype
+# Beggar's Grand Prix
 
 Pi deployment, the global 15-session admission limit, Cloudflare setup, and benchmark recorder commands are documented in [deploy/README.md](deploy/README.md).
 
-A browser racing prototype using Three.js and TypeScript, served by Node.js and Express with Socket.IO race rooms. The scene contains animated car models, spline roads with elevation, a start/finish arch, sunlight, ambient light, and a smooth following camera. Wide red strips trace exposed road edges, and a continuous white line follows the road center in races and the 3D builder preview.
+Beggar's Grand Prix is a browser racing game built with Three.js and TypeScript, served by Node.js and Express with Socket.IO race rooms. The scene contains animated car models, spline roads with elevation, a start/finish arch, sunlight, ambient light, and a smooth following camera. Wide red strips trace exposed road edges, and a continuous white line follows the road center in races and the 3D builder preview.
 
 ## Run locally with hosted Supabase
 
@@ -75,7 +75,7 @@ All driving values are in `src/simulation/parameters.ts`: forward and reverse ac
 
 The same parameters file contains `physicsParameters`: gravity, the one-second respawn delay, ground contact snap distance, collision bounce, spin damping, crash tire grip, and crash recovery time. The **Crashes** sliders in the Handling panel tune these collision values live.
 
-The **Handling** panel on the right has live sliders for every driving and falling parameter. It starts hidden; open it with **Tuning**. Changes apply immediately and mark the entire time-trial session unranked, even if you reset the sliders later. It shows current speed and offers **Reset defaults** and **Save settings** (downloads `racing-handling.json`). Steering angles show radians and degrees; speed limits show m/s and km/h. High-speed steering is kept at or below the maximum steering angle. The next time trial starts with default handling again. Browser tuning changes do not modify the source defaults.
+The **Handling** panel on the right has live sliders for every driving and falling parameter. It starts hidden; open it with **Tuning**. Changes apply immediately and mark the entire time-trial session unranked, even if you reset the sliders later. It shows current speed and offers **Reset defaults** and **Save settings** (downloads `beggars-grand-prix-handling.json`). Steering angles show radians and degrees; speed limits show m/s and km/h. High-speed steering is kept at or below the maximum steering angle. The next time trial starts with default handling again. Browser tuning changes do not modify the source defaults.
 
 ## Track layout
 

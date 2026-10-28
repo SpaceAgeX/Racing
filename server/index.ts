@@ -1010,7 +1010,7 @@ const recorder = createGameRecorder(() => ({
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
 const server = httpServer.listen(port, host, () => {
-  console.log(`Driving prototype: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
+  console.log(`Beggar's Grand Prix: http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
   if (host === '0.0.0.0') {
     for (const addresses of Object.values(networkInterfaces())) {
       for (const address of addresses ?? []) {

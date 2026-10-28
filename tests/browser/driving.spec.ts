@@ -240,7 +240,7 @@ test('optional tuning changes driving, disqualifies the session, and resets for 
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Save settings', exact: true }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe('racing-handling.json');
+  expect(download.suggestedFilename()).toBe('beggars-grand-prix-handling.json');
   const filename = await download.path();
   expect(JSON.parse(await readFile(filename!, 'utf8'))).toEqual(tuned);
 

@@ -15,7 +15,7 @@ try {
   googleNote.hidden = config.googleEnabled;
   async function finishSignIn(): Promise<void> {
     const response = await accountFetch('/api/account', { cache: 'no-store' });
-    if (!response.ok) throw new Error('Could not load your racing account.');
+    if (!response.ok) throw new Error('Could not load your account.');
     const profile = await response.json() as { username: string | null };
     location.replace(profile.username ? next : `/signup/?complete=1&next=${encodeURIComponent(next)}`);
   }

@@ -1,5 +1,5 @@
 [Unit]
-Description=Racing browser game
+Description=Beggar's Grand Prix browser game
 After=network-online.target
 Wants=network-online.target
 

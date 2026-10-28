@@ -1,5 +1,5 @@
 [Unit]
-Description=Cloudflare tunnel for racing only
+Description=Cloudflare tunnel for Beggar's Grand Prix only
 After=network-online.target racing.service
 Wants=network-online.target
 ConditionPathExists=/etc/racing/tunnel-token
