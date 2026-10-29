@@ -1,0 +1,28 @@
+[Unit]
+Description=Beggar's Grand Prix browser game
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=racing
+Group=racing
+WorkingDirectory=/opt/racing/current
+EnvironmentFile=/etc/racing/server.env
+ExecStart=/usr/bin/node server/index.ts
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/racing
+MemoryHigh=512M
+MemoryMax=1G
+CPUWeight=50
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
