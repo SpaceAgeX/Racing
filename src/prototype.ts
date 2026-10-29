@@ -784,6 +784,8 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     roundSetupToggle!.hidden = mode !== 'race' || activeRoom?.phase !== 'lobby' || activeRoom.hostId !== localPlayerId;
     roundCancelHint!.hidden = mode !== 'race' || !activeRoom || activeRoom.phase === 'lobby' || activeRoom.hostId !== localPlayerId;
     chat.setRoom((mode === 'lobby' || mode === 'race') ? activeRoom?.id ?? null : null);
+    chat.setPresentation(mode === 'lobby' || mode === 'race' && lobbyPanelOpen
+      ? lobbyScreenRoot.querySelector<HTMLElement>('#lobby-chat-slot') : null);
     input.setEnabled(mode === 'race' && !chat.isOpen && !lobbyPanelOpen && !raceSetupOpen);
     performanceStats.setActive(mode === 'race');
   }

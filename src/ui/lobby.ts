@@ -4,7 +4,6 @@ import { maxLobbyPlayers, playerColorPalette } from '../multiplayer/protocol.ts'
 import { createMinimap } from './minimap.ts';
 import { createLobbyGrid } from '../rendering/lobby-grid.ts';
 import { createLobbyTrackPicker } from './lobby-track-picker.ts';
-import { countryFlagImageUrl } from './countries.ts';
 import { carColorNames } from './car-colors.ts';
 
 export function createLobbyScreen(root: HTMLElement, callbacks: {
@@ -24,14 +23,12 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         <header class="lobby-overhaul-header">
           <button id="lobby-leave" class="back-button" type="button" aria-label="Leave lobby">&#8592; Back</button>
           <div class="lobby-heading"><span class="menu-eyebrow">ONLINE RACING</span><h1>LOBBY</h1><p id="lobby-room-name"></p><p id="lobby-room-meta"></p></div>
+          <span id="lobby-player-count" class="lobby-driver-count"></span>
           <button id="lobby-close-panel" class="back-button" type="button" aria-label="Close lobby settings">&times;</button>
         </header>
         <div class="lobby-grid-stage"><canvas id="lobby-grid-canvas" aria-label="Starting grid showing the players' cars"></canvas><div id="lobby-grid-labels" aria-hidden="true"></div></div>
         <div class="lobby-overhaul-bottom">
-          <section class="lobby-roster-panel">
-            <div class="lobby-panel-heading"><span class="setup-label">STARTING GRID</span><h2>Drivers <span id="lobby-player-count"></span></h2></div>
-            <div id="lobby-player-list" class="lobby-player-slots"></div>
-          </section>
+          <section id="lobby-chat-slot" class="lobby-chat-slot" aria-label="Lobby chat"></section>
           <aside class="lobby-controls-panel">
             <div class="lobby-track-summary"><span class="setup-label">SELECTED TRACK</span><div class="lobby-track-details"><canvas class="track-preview-canvas" id="lobby-preview" aria-label="Lobby track preview"></canvas>
             <div><h2 id="lobby-track-name"></h2><p id="lobby-track-permission" class="setup-status"></p></div></div>
@@ -68,7 +65,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const roomMeta = root.querySelector<HTMLElement>('#lobby-room-meta')!;
   const status = root.querySelector<HTMLElement>('#lobby-status')!;
   const changeTrackButton = root.querySelector<HTMLButtonElement>('#lobby-change-track')!;
-  const playerList = root.querySelector<HTMLElement>('#lobby-player-list')!;
   const startButton = root.querySelector<HTMLButtonElement>('#lobby-start')!;
   const startFromLobbyButton = root.querySelector<HTMLButtonElement>('#lobby-start-from-lobby')!;
   const enterTrackButton = root.querySelector<HTMLButtonElement>('#lobby-enter-track')!;
@@ -195,35 +191,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   }
 
   function renderPlayers(room: LobbySnapshot): void {
-    playerList.replaceChildren();
-    root.querySelector('#lobby-player-count')!.textContent = `${room.players.length} / ${maxLobbyPlayers}`;
-    for (let index = 0; index < maxLobbyPlayers; index++) {
-      const player = room.players.find(entry => entry.gridIndex === index);
-      const row = document.createElement('div');
-      row.className = player ? 'player-entry' : 'player-slot-empty';
-      row.classList.toggle('is-you', player?.id === localPlayerId);
-      const rank = document.createElement('span');
-      rank.className = 'player-rank';
-      rank.textContent = String(index + 1);
-      row.append(rank);
-      if (player) {
-        const name = document.createElement('strong');
-        name.textContent = player.name;
-        const flagUrl = countryFlagImageUrl(player.countryCode ?? 'US');
-        if (flagUrl) {
-          const flag = document.createElement('img'); flag.className = 'lobby-player-flag'; flag.src = flagUrl;
-          flag.alt = `${player.countryCode ?? 'US'} flag`; flag.width = 20; flag.height = 15; row.append(flag);
-        }
-        if (player.isHost) { const host = document.createElement('span'); host.className = 'lobby-host-tag'; host.textContent = 'HOST'; row.append(host); }
-        if (player.id === localPlayerId) { const you = document.createElement('span'); you.className = 'lobby-you-tag'; you.textContent = 'YOU'; row.append(you); }
-        const dot = document.createElement('span');
-        dot.className = 'player-dot';
-        dot.style.background = player.color;
-        dot.title = carColorNames.get(player.color) ?? player.color;
-        row.append(name, dot);
-      }
-      playerList.append(row);
-    }
+    root.querySelector('#lobby-player-count')!.textContent = `${room.players.length} / ${maxLobbyPlayers} DRIVERS`;
     grid.setPlayers(room.players, localPlayerId);
     const localPlayer = room.players.find(player => player.id === localPlayerId);
     for (const { color, button } of colorButtons) {
@@ -278,7 +246,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         qualifyingInput.checked = room.nextRoundOptions.qualifying;
       }
       roomName.textContent = room.name;
-      roomMeta.textContent = `${room.players.length} / ${maxLobbyPlayers} drivers · ${isHost ? 'You are the host' : `Hosted by ${room.hostName}`}`;
+      roomMeta.textContent = isHost ? 'You are the host' : `Hosted by ${room.hostName}`;
       status.textContent = isHost
         ? onTrack ? 'Free drive is open. Hold Space on the track to set up a formal race.'
           : 'Choose the track, then enter it or start a race.'

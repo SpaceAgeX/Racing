@@ -3,6 +3,7 @@ import type { ChatMessage } from '../multiplayer/protocol.ts';
 export function createChat(send: (text: string) => void, onOpenChange: (open: boolean) => void) {
   let roomId: string | null = null;
   let open = false;
+  let docked = false;
   let unread = 0;
   const root = document.createElement('section');
   root.className = 'room-chat';
@@ -17,16 +18,26 @@ export function createChat(send: (text: string) => void, onOpenChange: (open: bo
   const panel = root.querySelector<HTMLElement>('.chat-panel')!;
   const messages = root.querySelector<HTMLElement>('.chat-messages')!;
   const input = root.querySelector('input')!;
+  const close = root.querySelector<HTMLButtonElement>('.chat-close')!;
+  const hint = root.querySelector<HTMLElement>('small')!;
+  const heading = root.querySelector<HTMLElement>('.chat-panel header')!;
+  function render() {
+    toggle.hidden = docked;
+    close.hidden = docked;
+    hint.hidden = docked;
+    heading.firstChild!.textContent = docked ? 'LOBBY CHAT ' : 'Room chat ';
+    panel.hidden = !(docked || open);
+  }
   function setOpen(value: boolean) {
-    open = value && !!roomId;
-    panel.hidden = !open;
+    open = value && !!roomId && !docked;
+    render();
     if (open) { unread = 0; toggle.textContent = 'Chat (T)'; }
     onOpenChange(open);
     if (open) { input.focus(); messages.scrollTop = messages.scrollHeight; }
     else if (root.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
   }
   toggle.onclick = () => setOpen(!open);
-  root.querySelector<HTMLButtonElement>('.chat-close')!.onclick = () => setOpen(false);
+  close.onclick = () => setOpen(false);
   root.querySelector('form')!.onsubmit = event => {
     event.preventDefault();
     const text = input.value.trim();
@@ -35,6 +46,16 @@ export function createChat(send: (text: string) => void, onOpenChange: (open: bo
   };
   function onKey(event: KeyboardEvent) {
     if (!roomId || event.isComposing) return;
+    if (docked) {
+      if (event.key === 'Escape' && root.contains(document.activeElement)) {
+        event.preventDefault(); event.stopImmediatePropagation(); (document.activeElement as HTMLElement).blur();
+      } else if (event.code === 'KeyT' && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        const target = event.target;
+        if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input,textarea,select'))) return;
+        event.preventDefault(); event.stopImmediatePropagation(); input.focus();
+      }
+      return;
+    }
     if (open && event.key === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation(); setOpen(false);
     } else if (!open && event.code === 'KeyT' && !event.repeat && !event.ctrlKey && !event.altKey && !event.metaKey) {
@@ -46,6 +67,14 @@ export function createChat(send: (text: string) => void, onOpenChange: (open: bo
   window.addEventListener('keydown', onKey, true);
   return {
     get isOpen() { return open; },
+    setPresentation(host: HTMLElement | null) {
+      const nextParent = host ?? document.body;
+      if (root.parentElement === nextParent && docked === Boolean(host)) return;
+      docked = Boolean(host);
+      nextParent.append(root);
+      if (docked && open) { open = false; onOpenChange(false); }
+      render();
+    },
     setRoom(id: string | null) {
       if (id !== roomId) { roomId = id; setOpen(false); messages.replaceChildren(); input.value = ''; unread = 0; toggle.textContent = 'Chat (T)'; }
       root.hidden = !id;
@@ -56,10 +85,11 @@ export function createChat(send: (text: string) => void, onOpenChange: (open: bo
       const name = document.createElement('strong');
       name.textContent = message.name + ': ';
       row.append(name, document.createTextNode(message.text));
+      const nearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 48;
       messages.append(row);
       while (messages.children.length > 100) messages.firstElementChild!.remove();
-      messages.scrollTop = messages.scrollHeight;
-      if (!open) toggle.textContent = `Chat (T) · ${++unread} new`;
+      if (nearBottom) messages.scrollTop = messages.scrollHeight;
+      if (!open && !docked) toggle.textContent = `Chat (T) · ${++unread} new`;
     },
     dispose() { window.removeEventListener('keydown', onKey, true); root.remove(); },
   };
