@@ -85,6 +85,8 @@ export interface LobbyPlayerSnapshot {
   name: string;
   isHost: boolean;
   color: string;
+  countryCode?: string | null;
+  gridIndex: number;
   state: VehicleState | null;
 }
 
@@ -108,6 +110,8 @@ export interface LobbySummary {
   hostName: string;
   settings: Pick<LobbySettings, 'trackId' | 'trackName'>;
   playerCount: number;
+  phase: LobbyPhase;
+  trackOpen: boolean;
 }
 
 export interface MultiplayerBootstrap {
@@ -121,10 +125,12 @@ export interface MultiplayerBootstrap {
 
 export interface CreateLobbyPayload {
   trackId: string;
+  preferredColor?: string;
 }
 
 export interface JoinLobbyPayload {
   lobbyId: string;
+  preferredColor?: string;
 }
 
 export interface UpdateLobbySettingsPayload {

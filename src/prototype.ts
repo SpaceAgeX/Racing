@@ -17,6 +17,7 @@ import { createMultiplayerRoundUi } from './ui/multiplayer-round.ts';
 import { createPerformanceStats } from './ui/performance-stats.ts';
 import { createDeveloperConsole } from './ui/developer-console.ts';
 import { createTimeTrialSetup } from './ui/time-trial-setup.ts';
+import { preferredCarColor } from './ui/car-color-preference.ts';
 import { copyTuningParameters, createTuningPanel } from './ui/tuning.ts';
 import { speedUnit, speedValueFromMetersPerSecond } from './ui/units.ts';
 import type { TuningParameters } from './ui/tuning.ts';
@@ -104,6 +105,7 @@ interface HomeScreenController {
 interface LobbyScreenController {
   setRoom(room: LobbySnapshot | null, localPlayerId: string): void;
   setOnTrack(onTrack: boolean): void;
+  setActive(active: boolean): void;
   setTrackOptions(trackOptions: TrackOption[]): void;
   setStatus(message: string): void;
   openRaceSetup(): void;
@@ -586,20 +588,10 @@ function createHomeScreen(root: HTMLElement, callbacks: {
       <section id="home-multiplayer-menu" class="home-multiplayer" hidden>
         <header class="multiplayer-entry-header">
           <button id="home-back" class="back-button" type="button">&#8592; Back</button>
-          <span class="menu-eyebrow">MULTIPLAYER</span><h1>Create or join a lobby</h1>
-          <p class="multiplayer-account-name">Playing as <strong id="home-username"></strong></p>
+          <div><span class="menu-eyebrow">ONLINE RACING</span><h1>MULTIPLAYER</h1><p class="multiplayer-account-name">Playing as <strong id="home-username"></strong></p></div>
+          <button id="home-create-lobby" class="trial-start-button" type="button">Create Lobby <span aria-hidden="true">→</span></button>
         </header>
-        <div class="multiplayer-entry-tabs" aria-label="Lobby options">
-          <button id="home-create-tab" type="button" aria-pressed="false">Create</button>
-          <button id="home-join-tab" type="button" aria-pressed="true">Join</button>
-        </div>
-        <section id="home-create-panel" hidden>
-          <div class="multiplayer-launch">
-            <p class="multiplayer-account-name">Your room: <strong id="home-created-lobby-name"></strong></p>
-            <button id="home-create-lobby" class="trial-start-button" type="button">Create lobby</button>
-          </div>
-        </section>
-        <section id="home-join-panel"><h2>Open lobbies</h2><div id="home-lobby-list" class="lobby-list"></div></section>
+        <section id="home-join-panel"><div class="multiplayer-list-header"><span class="setup-label">ONLINE NOW</span><h2>Available lobbies</h2></div><div id="home-lobby-list" class="lobby-list"></div></section>
         <div id="home-status" class="multiplayer-status">Connect to view open lobbies.</div>
       </section>
     </div>
@@ -607,7 +599,6 @@ function createHomeScreen(root: HTMLElement, callbacks: {
 
   const status = root.querySelector<HTMLElement>('#home-status')!;
   root.querySelector('#home-username')!.textContent = username;
-  root.querySelector('#home-created-lobby-name')!.textContent = `${username}'s Lobby`;
   const createButton = root.querySelector<HTMLButtonElement>('#home-create-lobby')!;
   const lobbyList = root.querySelector<HTMLElement>('#home-lobby-list')!;
   const homeShell = root.querySelector<HTMLElement>('.home-shell')!;
@@ -616,17 +607,8 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   root.querySelector<HTMLButtonElement>('#home-time-trial')!.addEventListener('click', callbacks.onTimeTrial);
   root.querySelector<HTMLButtonElement>('#home-multiplayer')!.addEventListener('click', callbacks.onMultiplayer);
   root.querySelector<HTMLButtonElement>('#home-back')!.addEventListener('click', () => { callbacks.onBackToLanding(); });
-  const createTab = root.querySelector<HTMLButtonElement>('#home-create-tab')!;
-  const joinTab = root.querySelector<HTMLButtonElement>('#home-join-tab')!;
-  function showEntryTab(create: boolean): void {
-    root.querySelector<HTMLElement>('#home-create-panel')!.hidden = !create;
-    root.querySelector<HTMLElement>('#home-join-panel')!.hidden = create;
-    createTab.setAttribute('aria-pressed', String(create));
-    joinTab.setAttribute('aria-pressed', String(!create));
-  }
-  createTab.addEventListener('click', () => showEntryTab(true));
-  joinTab.addEventListener('click', () => showEntryTab(false));
   let trackOptions: TrackOption[] = [];
+  let lobbySummaries: LobbySummary[] = [];
   createButton.disabled = true;
 
   function selectedTrackId(): string {
@@ -634,46 +616,53 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   }
 
   function renderLobbies(lobbies: LobbySummary[]): void {
-    lobbyList.innerHTML = '';
+    lobbySummaries = lobbies;
+    lobbyList.replaceChildren();
     if (lobbies.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'multiplayer-empty';
-      empty.textContent = 'No open lobbies right now.';
+      empty.textContent = 'No active lobbies. Create one to get started.';
       lobbyList.append(empty);
       return;
     }
     for (const lobby of lobbies) {
       const card = document.createElement('article');
-      card.className = 'multiplayer-card';
+      card.className = 'multiplayer-row';
       const title = document.createElement('strong');
-      title.textContent = lobby.name;
+      title.textContent = lobby.hostName;
       const meta = document.createElement('small');
-      meta.textContent = `${lobby.playerCount} / ${maxLobbyPlayers} players ? Host: ${lobby.hostName}`;
+      const phase = lobby.phase === 'lobby' ? (lobby.trackOpen ? 'Free drive' : 'Waiting') : 'Racing';
+      meta.textContent = `${lobby.playerCount} / ${maxLobbyPlayers} drivers · ${phase} · ${lobby.settings.trackName}`;
       const button = document.createElement('button');
       button.type = 'button';
-      button.textContent = lobby.playerCount >= maxLobbyPlayers ? 'Lobby full' : 'Join lobby';
-      button.disabled = lobby.playerCount >= maxLobbyPlayers;
-      button.addEventListener('click', () => callbacks.onJoinLobby({ lobbyId: lobby.id }));
+      button.textContent = lobby.phase !== 'lobby' ? 'In race' : lobby.playerCount >= maxLobbyPlayers ? 'Full' : 'Join';
+      button.disabled = lobby.phase !== 'lobby' || lobby.playerCount >= maxLobbyPlayers;
+      button.addEventListener('click', () => { button.disabled = true; callbacks.onJoinLobby({ lobbyId: lobby.id, preferredColor: preferredCarColor() }); });
       card.append(title, meta, button);
       lobbyList.append(card);
     }
   }
 
   createButton.addEventListener('click', () => {
-    callbacks.onCreateLobby({ trackId: selectedTrackId() });
+    createButton.disabled = true;
+    callbacks.onCreateLobby({ trackId: selectedTrackId(), preferredColor: preferredCarColor() });
   });
 
   return {
-    setStatus(message: string): void { status.textContent = message; },
+    setStatus(message: string): void {
+      status.textContent = message;
+      if (!message.startsWith('Creating')) createButton.disabled = trackOptions.length === 0;
+      if (!message.startsWith('Joining')) renderLobbies(lobbySummaries);
+    },
     setTrackOptions(options: TrackOption[]): void {
       trackOptions = options;
       createButton.disabled = options.length === 0;
-      createButton.textContent = options.length ? 'Create lobby' : 'No ranked tracks available';
+      createButton.innerHTML = options.length ? 'Create Lobby <span aria-hidden="true">→</span>' : 'No ranked tracks available';
     },
     setLobbies(lobbies: LobbySummary[]): void { renderLobbies(lobbies); },
     getSelectedTrackId(): string { return selectedTrackId(); },
     showLanding(): void { homeShell.hidden = false; landing.hidden = false; multiplayerMenu.hidden = true; },
-    showMultiplayer(): void { showEntryTab(false); homeShell.hidden = false; landing.hidden = true; multiplayerMenu.hidden = false; },
+    showMultiplayer(): void { homeShell.hidden = false; landing.hidden = true; multiplayerMenu.hidden = false; renderLobbies(lobbySummaries); },
     showTimeTrialSetup(): void { homeShell.hidden = true; landing.hidden = true; multiplayerMenu.hidden = true; },
     dispose(): void { createButton.replaceWith(createButton.cloneNode(true)); },
   };
@@ -750,6 +739,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   let activeRoom: LobbySnapshot | null = null;
   let lobbyPanelOpen = false;
   let raceSetupOpen = false;
+  let openSetupAfterTrack = false;
   let lastRoundReceivedAt = 0;
   let displayedRaceTime = 0;
   let displayedRaceRoundId = '';
@@ -783,6 +773,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     menuBackdrop.setActive(mode === 'home');
     setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer' || mode === 'time-trial-setup');
     setScreenVisibility(lobbyScreenRoot, mode === 'lobby' || mode === 'race' && lobbyPanelOpen);
+    lobbyScreen?.setActive(mode === 'lobby');
     lobbyScreenRoot.classList.toggle('is-overlay', mode === 'race' && lobbyPanelOpen);
     setScreenVisibility(raceScreenRoot, mode === 'race');
     const isTimeTrial = mode === 'race' && activeRoom === null;
@@ -811,7 +802,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     const desiredColor = room ? localPlayerColor(room, localPlayerId) : timeTrialColor;
     if (!session || session.trackId !== desiredTrackId || session.playerColor !== desiredColor) {
       disposeSession();
-      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor, Math.max(0, room?.players.findIndex(p => p.id === localPlayerId) ?? 0), room !== null || soloRaceActive, room ? null : timeTrialBest, room === null && soloRaceActive);
+      session = createDrivingSession(canvas, desiredLayout, desiredTrackName, desiredTrackId, room?.settings.handling ?? tuningPanel.parameters, desiredColor, room?.players.find(p => p.id === localPlayerId)?.gridIndex ?? 0, room !== null || soloRaceActive, room ? null : timeTrialBest, room === null && soloRaceActive);
     }
     return session;
   }
@@ -825,6 +816,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     disposeSession();
     lobbyPanelOpen = false;
     raceSetupOpen = false;
+    openSetupAfterTrack = false;
     lobbyScreen?.setRoom(null, localPlayerId);
     setMode('home');
     timeTrialSetup?.hide();
@@ -856,6 +848,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     if (enteringFromMenu && room.phase === 'lobby') canvas.focus({ preventScroll: true });
     lobbyScreen.setOnTrack(true);
     lobbyScreen.setRoom(room, localPlayerId);
+    if (openSetupAfterTrack && room.trackOpen && room.phase === 'lobby' && room.hostId === localPlayerId) {
+      openSetupAfterTrack = false;
+      lobbyScreen.openRaceSetup();
+    }
     raceLeaderboard.setRoom(room, localPlayerId);
     roundUi.setRound(room.round, localPlayerId);
     currentSession.syncRemotePlayers(room.players, localPlayerId);
@@ -945,7 +941,10 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   function syncRoom(room: LobbySnapshot | null): void {
     if (!room) {
-      enterHomeScreen('You left the room. Pick another lobby or create one.');
+      const hostClosed = activeRoom && activeRoom.hostId !== localPlayerId;
+      enterHomeScreen(hostClosed ? 'The host left and the lobby closed.' : 'You left the lobby.');
+      enterMultiplayerMenu();
+      if (hostClosed) homeScreen.setStatus('The host left and the lobby closed.');
       return;
     }
 
@@ -959,7 +958,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     const handlingChanged = JSON.stringify(session.tuning) !== JSON.stringify(activeRoom.settings.handling);
     if (session.trackId !== activeRoom.settings.trackId || session.playerColor !== desiredColor || handlingChanged) {
       session.dispose();
-      session = createDrivingSession(canvas, activeRoom.settings.layout, activeRoom.settings.trackName, activeRoom.settings.trackId, activeRoom.settings.handling, desiredColor, Math.max(0, activeRoom.players.findIndex(p=>p.id===localPlayerId)), true);
+      session = createDrivingSession(canvas, activeRoom.settings.layout, activeRoom.settings.trackName, activeRoom.settings.trackId, activeRoom.settings.handling, desiredColor, activeRoom.players.find(p => p.id === localPlayerId)?.gridIndex ?? 0, true);
     }
   }
 
@@ -1045,8 +1044,9 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   }, username);
 
   lobbyScreen = createLobbyScreen(lobbyRoot, {
-    onEnterTrack() {
+    onEnterTrack(prepareRace = false) {
       if (activeRoom?.hostId === localPlayerId && !activeRoom.trackOpen) {
+        openSetupAfterTrack = prepareRace;
         lobbyScreen.setStatus('Opening the track for everyone...');
         socket.emit('multiplayer:enter-track');
       }
@@ -1235,6 +1235,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   socket.on('multiplayer:error', ({ message }) => {
     networkStats.errorsReceived++;
+    openSetupAfterTrack = false;
     homeScreen.setStatus(message);
     lobbyScreen.setStatus(message);
     saveMultiplayerPreferences({ lobbyId: null });
