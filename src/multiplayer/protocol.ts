@@ -121,7 +121,6 @@ export interface MultiplayerBootstrap {
 
 export interface CreateLobbyPayload {
   trackId: string;
-  handling?: HandlingParameters;
 }
 
 export interface JoinLobbyPayload {
@@ -130,7 +129,6 @@ export interface JoinLobbyPayload {
 
 export interface UpdateLobbySettingsPayload {
   trackId?: string;
-  handling?: HandlingParameters;
 }
 
 export interface StartLobbyPayload {

@@ -341,17 +341,6 @@ body.tuning-collapsed { --panel-width: 0px; }
   gap: 16px;
 }
 
-.lobby-handling-section { min-width: 0; }
-.lobby-handling-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.lobby-handling-header p { margin: 0; font-size: 11px; }
-.lobby-handling-header button { flex: none; }
-.lobby-handling-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-height: 46vh; overflow-y: auto; padding: 2px 6px 2px 0; scrollbar-width: thin; }
-.lobby-handling-fields fieldset { min-width: 0; padding: 10px; margin: 0; border: 1px solid #ffffff18; border-radius: 10px; background: #ffffff05; }
-.lobby-handling-fields legend { padding: 0 5px; color: #a7b7bf; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
-.lobby-handling-fields .tuning-slider { margin-bottom: 8px; }
-.lobby-handling-fields .slider-heading label { font-size: 10px; }
-.lobby-handling-fields .slider-heading output { font-size: 9px; }
-.lobby-handling-fields input:disabled { opacity: 0.55; cursor: default; }
 
 .lobby-list-card .multiplayer-card,
 .lobby-list-card .multiplayer-empty {
@@ -584,7 +573,6 @@ body.tuning-collapsed { --panel-width: 0px; }
   .trial-selected-color { margin: 0; }
   .trial-start-button { grid-column: 1 / -1; margin-top: 10px; }
   .home-multiplayer { grid-template-columns: 1fr; }
-  .lobby-handling-fields { grid-template-columns: 1fr; max-height: 50vh; }
   .race-stage { grid-template-columns: 1fr; }
   .multiplayer-panel { padding: 14px 12px 12px; }
 }
@@ -702,12 +690,6 @@ kbd {
 .player-dot { flex-shrink: 0; }
 .color-taken { cursor: not-allowed; opacity: .55; color: #fff; font-size: 26px; font-weight: bold; text-shadow: 0 1px 4px #000; }
 .lobby-color-hint { color: #aebdc4; font-size: 11px; margin: 0; }
-.lobby-shared-settings { border: 1px solid #ffffff21; border-radius: 15px; padding: 18px; background: #ffffff08; }
-.lobby-shared-settings h2 { font-size: 18px; margin: 0 0 12px; }
-.lobby-shared-settings button { padding: 8px 12px; border: 1px solid #ffffff30; border-radius: 8px; background: #15232b; color: #fff; font: inherit; cursor: pointer; }
-.lobby-shared-settings button:disabled { opacity: .5; cursor: default; }
-.lobby-shared-settings button:focus-visible { outline: 2px solid #6bc5ff; outline-offset: 3px; }
-.lobby-shared-settings .lobby-handling-fields { max-height: 240px; overflow: auto; }
 .lobby-setup-footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .lobby-setup-footer .trial-start-button { max-width: 260px; }
 .lobby-setup select:disabled { opacity: .8; cursor: default; }

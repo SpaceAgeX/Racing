@@ -486,11 +486,10 @@ function leaveLobby(socketId: string): void {
   broadcastLobbyList();
 }
 
-async function createLobby(socketId: string, trackId: string, requestedHandling: unknown): Promise<LobbyRecord> {
+async function createLobby(socketId: string, trackId: string): Promise<LobbyRecord> {
   const track = await resolveTrack(trackId);
   const road = await prepareRaceRoad(track.layout);
-  const handling = normalizeHandling(requestedHandling) ?? { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
-  if (handling.physics.physicsTime !== 1) throw new Error('Physics Time is fixed at 1× in multiplayer.');
+  const handling = { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
   const socket = io.sockets.sockets.get(socketId);
   if (!socket) throw new Error('The player disconnected.');
   const username = socket.data.username as string;
@@ -551,14 +550,11 @@ function joinLobby(socketId: string, lobbyId: string): LobbyRecord | null {
   return lobby;
 }
 
-async function updateLobbySettings(socketId: string, { trackId, handling: requestedHandling }: UpdateLobbySettingsPayload): Promise<LobbyRecord | null> {
+async function updateLobbySettings(socketId: string, { trackId }: UpdateLobbySettingsPayload): Promise<LobbyRecord | null> {
   const lobbyId = playerLobby.get(socketId);
   if (!lobbyId) return null;
   const lobby = lobbies.get(lobbyId);
   if (!lobby || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
-  const handling = requestedHandling === undefined ? null : normalizeHandling(requestedHandling);
-  if (requestedHandling !== undefined && !handling) throw new Error('The handling settings are invalid.');
-  if (handling && handling.physics.physicsTime !== 1) throw new Error('Physics Time is fixed at 1× in multiplayer.');
   const track = trackId === undefined ? null : await resolveTrack(trackId);
   const road = track && track.id !== lobby.settings.trackId ? await prepareRaceRoad(track.layout) : null;
   if (lobbies.get(lobbyId) !== lobby || playerLobby.get(socketId) !== lobbyId || lobby.hostId !== socketId || lobby.phase !== 'lobby') return null;
@@ -566,7 +562,7 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
     trackId: track?.id ?? lobby.settings.trackId,
     trackName: track?.name ?? lobby.settings.trackName,
     layout: track?.layout ?? lobby.settings.layout,
-    handling: handling ?? lobby.settings.handling,
+    handling: lobby.settings.handling,
   };
   lobby.layoutHash = trackLayoutHash(lobby.settings.layout);
   if (road) {
@@ -574,8 +570,6 @@ async function updateLobbySettings(socketId: string, { trackId, handling: reques
     lobby.race = createRaceSimulation(road, lobby.settings.handling);
     let index = 0;
     for (const player of lobby.players.values()) player.state = lobby.race.addPlayer(player.id, index++).state;
-  } else {
-    lobby.race?.setHandling(lobby.settings.handling);
   }
   return lobby;
 }
@@ -740,8 +734,8 @@ io.on('connection', (socket) => {
   socket.on('multiplayer:create-lobby', async (payload) => {
     try {
       if (!payload || typeof payload.trackId !== 'string') return;
-      const { trackId, handling } = payload;
-      const lobby = await createLobby(socket.id, trackId, handling);
+      if ('handling' in payload) throw new Error('Multiplayer uses default handling.');
+      const lobby = await createLobby(socket.id, payload.trackId);
       await socket.join(lobby.id);
       broadcastLobbyRoom(lobby);
       broadcastLobbyList();
@@ -778,6 +772,7 @@ io.on('connection', (socket) => {
   socket.on('multiplayer:update-settings', (settings) => {
     pendingSettings = pendingSettings.then(async () => {
     try {
+      if (!settings || 'handling' in settings) throw new Error('Multiplayer uses default handling.');
       const lobby = await updateLobbySettings(socket.id, settings);
       if (!lobby) return;
       broadcastLobbyRoom(lobby);

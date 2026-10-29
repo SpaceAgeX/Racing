@@ -13,7 +13,7 @@ async function remoteCars(page: Page) {
   });
 }
 
-test('shared maps, host settings, and server-owned car states reach a guest', async ({ page, browser }) => {
+test('shared maps, default handling, and server-owned car states reach a guest', async ({ page, browser }) => {
   test.setTimeout(60_000);
   const context = await browser.newContext({ baseURL: 'http://127.0.0.1:3100' });
   let trackId = '';
@@ -48,7 +48,7 @@ test('shared maps, host settings, and server-owned car states reach a guest', as
     const lobbyName = await page.locator('#lobby-room-name').textContent();
     expect(lobbyName).toMatch(/'s Lobby$/);
     await expect(page.locator('#game')).toBeVisible();
-    await expect(page.locator('#lobby-room-meta')).toContainText('Formal race laps ranked');
+    await expect(page.locator('#lobby-room-meta')).toContainText('Default handling');
     await guest.getByRole('button', { name: 'Join', exact: true }).click();
     await guest.locator('#home-lobby-list article').filter({ hasText: lobbyName! }).getByRole('button', { name: 'Join lobby' }).click();
     await expect(guest.locator('#race-screen')).toBeVisible();
@@ -64,26 +64,11 @@ test('shared maps, host settings, and server-owned car states reach a guest', as
     await expect(page.locator('#lobby-player-list .player-entry')).toHaveCount(2);
     await expect(guest.getByRole('button', { name: 'Start race', exact: true })).toBeHidden();
     await expect(guest.locator('#lobby-track-select')).toBeDisabled();
-    await page.getByRole('button', { name: 'Edit handling' }).click();
-    await expect(page.locator('#lobby-handling-acceleration')).toBeEnabled();
-    await expect(page.locator('#lobby-handling-physicsTime')).toHaveCount(0);
-    await expect(guest.locator('#lobby-shared-settings')).toBeHidden();
-    await page.locator('#lobby-handling-acceleration').evaluate((element: HTMLInputElement) => {
-      element.value = '1';
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await expect(page.locator('#lobby-room-meta')).toContainText('Formal race laps unranked');
-    await expect(guest.locator('#lobby-room-meta')).toContainText('Formal race laps unranked');
-    await expect(guest.locator('#lobby-shared-settings')).toBeHidden();
-    await page.locator('#lobby-handling-acceleration').evaluate((element: HTMLInputElement) => {
-      element.value = '40';
-      element.dispatchEvent(new Event('input', { bubbles: true }));
-      element.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await expect(page.locator('#lobby-room-meta')).toContainText('Formal race laps ranked');
-    await expect(guest.locator('#lobby-room-meta')).toContainText('Formal race laps ranked');
-    await expect(guest.locator('#lobby-shared-settings')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Edit handling' })).toHaveCount(0);
+    await expect(page.locator('#lobby-shared-settings')).toHaveCount(0);
+    await page.keyboard.press(']');
+    await expect(page.locator('#lobby-shared-settings')).toHaveCount(0);
+    await expect(guest.locator('#lobby-shared-settings')).toHaveCount(0);
     await page.locator('#lobby-track-select').selectOption('simple-loop');
     await expect(guest.locator('#lobby-track-select')).toHaveValue('simple-loop');
     await page.locator('#lobby-track-select').selectOption(trackId);

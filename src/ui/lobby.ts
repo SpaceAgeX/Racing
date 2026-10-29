@@ -2,7 +2,6 @@ import type { LobbySnapshot, TrackOption, UpdateLobbySettingsPayload, StartLobby
 import { maxLobbyPlayers, playerColorPalette } from '../multiplayer/protocol.ts';
 
 import { createMinimap } from './minimap.ts';
-import { createLobbyHandlingEditor } from './tuning.ts';
 import { carColorNames } from './car-colors.ts';
 
 export function createLobbyScreen(root: HTMLElement, callbacks: {
@@ -43,10 +42,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
             <p class="lobby-color-hint">Marked colors are taken.</p>
           </aside>
         </div>
-        <section id="lobby-shared-settings" class="lobby-shared-settings" hidden>
-          <h2>Advanced race settings</h2>
-          <div id="lobby-handling-editor" hidden></div>
-        </section>
         <footer class="lobby-setup-footer">
           <div id="lobby-status" class="lobby-status" role="status"></div>
           <button id="lobby-enter-track" class="trial-start-button" type="button">Open track for everyone</button>
@@ -77,11 +72,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const enterTrackButton = root.querySelector<HTMLButtonElement>('#lobby-enter-track')!;
   const preview = root.querySelector<HTMLCanvasElement>('#lobby-preview')!;
   const colors = root.querySelector<HTMLElement>('#lobby-colors')!;
-  const settingsSection = root.querySelector<HTMLElement>('#lobby-shared-settings')!;
-  const editorElement = root.querySelector<HTMLElement>('#lobby-handling-editor')!;
-  const handlingEditor = createLobbyHandlingEditor(editorElement, handling => {
-    callbacks.onUpdateSettings({ handling });
-  });
   let trackOptions: TrackOption[] = [];
   let currentRoom: LobbySnapshot | null = null;
   let localPlayerId = '';
@@ -159,16 +149,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     raceSetup.classList.remove('is-holding');
   }
   window.addEventListener('keydown', onSpaceDown);
-  function onTuningShortcut(event: KeyboardEvent): void {
-    if (event.code !== 'BracketRight' || event.repeat || root.hidden || !raceSetup.hidden
-      || !currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
-    const target = event.target;
-    if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
-    event.preventDefault();
-    editorElement.hidden = !editorElement.hidden;
-    settingsSection.hidden = editorElement.hidden;
-  }
-  window.addEventListener('keydown', onTuningShortcut);
   window.addEventListener('keyup', onSpaceUp);
   window.addEventListener('blur', cancelHold);
   startButton.addEventListener('click', openRaceSetup);
@@ -267,8 +247,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       if (!room || room.phase === 'lobby') cancelRequested = false;
       if (!room) {
         closeRaceSetup();
-        editorElement.hidden = true;
-        settingsSection.hidden = true;
         minimap?.dispose();
         minimap = null;
         previewKey = '';
@@ -282,10 +260,10 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         qualifyingInput.checked = room.nextRoundOptions.qualifying;
       }
       roomName.textContent = room.name;
-      roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · ${room.ranked ? 'Formal race laps ranked' : 'Formal race laps unranked · custom handling'}`;
+      roomMeta.textContent = `${isHost ? 'You are the host' : `Hosted by ${room.hostName}`} · Default handling`;
       status.textContent = isHost
         ? onTrack ? 'Free drive is open. Hold Space on the track to set up a formal race.'
-          : 'Choose the track and handling, then open the track for everyone.'
+          : 'Choose the track, then open it for everyone.'
         : `${onTrack ? 'Free drive is open' : 'Choose a color and wait for the host to open the track'} · host's next race: ${room.nextRoundOptions.laps} laps · ${room.nextRoundOptions.fallMode}
           · ${room.nextRoundOptions.qualifying ? 'Qualifying on' : 'No qualifying'}`;
       renderPlayers(room);
@@ -299,25 +277,19 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         previewKey = key;
       }
       trackSelect.disabled = !isHost || room.phase !== 'lobby';
-      if (!isHost || room.phase !== 'lobby') {
-        editorElement.hidden = true;
-      }
-      settingsSection.hidden = editorElement.hidden;
       root.querySelector('#lobby-track-permission')!.textContent = isHost
         ? 'Choose the track for everyone.' : 'Only the host can change the track.';
       enterTrackButton.hidden = onTrack || !isHost || room.trackOpen || room.phase !== 'lobby';
       startButton.hidden = !onTrack || !isHost || room.phase !== 'lobby';
-      handlingEditor.setRoomHandling(room.settings.handling, isHost && room.phase === 'lobby');
     },
     setTrackOptions(options: TrackOption[]): void { trackOptions = options; renderTrackOptions(); },
     setStatus(message: string): void { status.textContent = message; },
     openRaceSetup,
     dispose(): void {
       window.removeEventListener('keydown', onSpaceDown);
-      window.removeEventListener('keydown', onTuningShortcut);
       window.removeEventListener('keyup', onSpaceUp);
       window.removeEventListener('blur', cancelHold);
-      minimap?.dispose(); handlingEditor.dispose(); raceSetup.remove(); root.replaceChildren();
+      minimap?.dispose(); raceSetup.remove(); root.replaceChildren();
     },
   };
 }

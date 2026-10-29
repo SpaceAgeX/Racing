@@ -232,7 +232,8 @@ test('optional tuning changes driving, disqualifies the session, and resets for 
   await expect(page.locator('#tuning-panel')).toBeHidden();
   await expect(page.locator('#race-room-status')).toContainText('Ranked');
   await expect(page.locator('#race-speed-value')).toBeVisible();
-  await page.getByRole('button', { name: 'Tuning', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Tuning', exact: true })).toHaveCount(0);
+  await page.keyboard.press(']');
   await expect(page.locator('#tuning-panel')).toBeVisible();
   await expect(page.locator('#tuning-panel input[type="range"]')).toHaveCount(22);
   await expect(page.locator('#tuning-panel').getByLabel('Physics Time', { exact: true })).toHaveValue('1');
@@ -290,13 +291,13 @@ test('hiding and showing the tuning panel resizes the canvas and camera', async 
   await page.goto('/');
   await enterRace(page);
   await expect(page.locator('#tuning-panel')).toBeHidden();
-  await page.getByRole('button', { name: 'Tuning', exact: true }).click();
+  await page.keyboard.press(']');
   const initialWidth = await page.locator('#game').evaluate((canvas: HTMLCanvasElement) => canvas.clientWidth);
-  await page.getByRole('button', { name: 'Hide', exact: true }).click();
+  await page.keyboard.press(']');
   await expect(page.locator('#tuning-panel')).toBeHidden();
   await expect.poll(async () => page.locator('#game').evaluate((canvas: HTMLCanvasElement) => canvas.clientWidth)).toBe(1280);
   await expect.poll(async () => (await snapshot(page)).aspect).toBe(1280 / (await snapshot(page)).canvasHeight);
-  await page.getByRole('button', { name: 'Tuning', exact: true }).click();
+  await page.keyboard.press(']');
   await expect(page.locator('#tuning-panel')).toBeVisible();
   await expect.poll(async () => page.locator('#game').evaluate((canvas: HTMLCanvasElement) => canvas.clientWidth)).toBe(initialWidth);
   await expect.poll(async () => (await snapshot(page)).aspect).toBe(initialWidth / (await snapshot(page)).canvasHeight);
@@ -399,7 +400,7 @@ test('an unranked time-trial lap cannot replace the displayed verified best', as
   await page.goto('/');
   await enterRace(page, 'default');
   const verifiedBest = await page.locator('#lap-best').textContent();
-  await page.getByRole('button', { name: 'Tuning', exact: true }).click();
+  await page.keyboard.press(']');
   await setSlider(page, 'Acceleration', 20);
   await expect(page.locator('#race-room-status')).toContainText('unranked');
   await page.keyboard.down('w');

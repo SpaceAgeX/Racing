@@ -41,12 +41,10 @@ test('lobby previews, colors and host settings update live for guests', async ({
     await expect(guest.locator('#lobby-track-name')).toHaveText('Simple loop track');
     await expect(guest.locator('#lobby-track-select')).toBeDisabled();
     await expect(guest.locator('#lobby-track-permission')).toHaveText('Only the host can change the track.');
-    await expect(guest.locator('#lobby-handling-acceleration')).toBeDisabled();
-    await page.locator('#lobby-handling-acceleration').evaluate((input: HTMLInputElement) => {
-      input.value = '18';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await expect(guest.locator('#lobby-handling-acceleration')).toHaveValue('18');
+    await expect(page.locator('#lobby-handling-editor')).toHaveCount(0);
+    await expect(guest.locator('#lobby-handling-editor')).toHaveCount(0);
+    await page.keyboard.press(']');
+    await expect(page.locator('#lobby-shared-settings')).toHaveCount(0);
     await expect(guest.locator('#lobby-start')).toBeHidden();
     await page.screenshot({ path: 'test-results/lobby-setup.png', fullPage: true });
     await page.locator('#lobby-enter-track').click();
@@ -102,6 +100,12 @@ test('server rejects taken colors and an eleventh player, then reuses released s
     let room = await created;
     expect(room.name).toBe(`${usernames[0]}'s Lobby`);
     expect(room.players[0]!.name).toBe(usernames[0]);
+    const forgedHandling = nextError(host);
+    host.emit('multiplayer:update-settings', { handling: {
+      driving: { acceleration: 1 }, physics: { physicsTime: 1 },
+    } } as never);
+    expect(await forgedHandling).toContain('default handling');
+    expect(room.settings.handling.driving.acceleration).toBe(40);
     const lobbyId = room.id;
     for (let index = 1; index < 10; index++) {
       const joined = nextRoom(clients[index]!);
