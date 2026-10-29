@@ -42,7 +42,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
   const scene = new Scene();
   const key = addStagingAtmosphere(scene, true);
   const camera = new OrthographicCamera(-18, 18, 9, -9, .1, 100);
-  const road = addStagingRoad(scene, { length: 140, center: 24, horizontal: true });
+  const road = addStagingRoad(scene, { length: 140, center: 24, width: 24, horizontal: true });
   const cars = new Map<string, GridCar>();
   let active = false;
   let disposed = false;
@@ -81,7 +81,9 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     const height = cameraWidth * Math.max(1, canvas.clientHeight) / Math.max(1, canvas.clientWidth);
     camera.left = -cameraWidth / 2; camera.right = cameraWidth / 2;
     camera.top = height / 2; camera.bottom = -height / 2;
-    camera.position.set(cameraCenter, 21, 22);
+    // Roughly 29 degrees above the road: the grid remains readable while the
+    // car bodies show their sides and depth, closer to the menu's low view.
+    camera.position.set(cameraCenter, 16, 29);
     camera.lookAt(cameraCenter, 0, 0);
     camera.updateProjectionMatrix();
   }

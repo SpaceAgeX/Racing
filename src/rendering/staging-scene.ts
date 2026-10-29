@@ -14,8 +14,9 @@ export function stagingAsphalt(): MeshStandardMaterial {
 }
 
 /** The same asphalt, raised edge strips, and checkered finish for both staging views. */
-export function addStagingRoad(scene: Scene, options: { length: number; center: number; horizontal?: boolean }) {
+export function addStagingRoad(scene: Scene, options: { length: number; center: number; horizontal?: boolean; width?: number }) {
   const group = new Group();
+  const width = options.width ?? 12;
   if (options.horizontal) group.rotation.y = Math.PI / 2;
   scene.add(group);
   const meshes: Mesh[] = [];
@@ -25,12 +26,12 @@ export function addStagingRoad(scene: Scene, options: { length: number; center: 
     mesh.receiveShadow = true;
     group.add(mesh); meshes.push(mesh);
   };
-  const road = new Mesh(new PlaneGeometry(12, options.length), stagingAsphalt());
+  const road = new Mesh(new PlaneGeometry(width, options.length), stagingAsphalt());
   road.rotation.x = -Math.PI / 2;
   road.position.set(0, -.065, options.center);
   road.receiveShadow = true;
   group.add(road); meshes.push(road);
-  for (const side of [-1, 1]) addBox(.09, .012, options.length, stagingColors.edge, side * 5.7, -.05, options.center);
+  for (const side of [-1, 1]) addBox(.09, .012, options.length, stagingColors.edge, side * (width / 2 - .3), -.05, options.center);
   const tileWidth = 11.25 / 20;
   const tileLength = .42;
   for (let row = 0; row < 4; row++) for (let column = 0; column < 20; column++) {
@@ -49,7 +50,9 @@ export function addStagingRoad(scene: Scene, options: { length: number; center: 
 
 export function addStagingAtmosphere(scene: Scene, horizontal = false): DirectionalLight {
   scene.background = new Color(stagingColors.background);
-  scene.fog = new Fog(stagingColors.background, horizontal ? 22 : 24, horizontal ? 75 : 48);
+  // The lobby's long, horizontal road must stay sharp all the way to the viewport edge.
+  // The menu retains its short-range cinematic fog.
+  scene.fog = horizontal ? null : new Fog(stagingColors.background, 24, 48);
   scene.add(new AmbientLight(0xb8cad1, 1.05));
   const key = new DirectionalLight(0xfff2e3, 3.8);
   if (horizontal) { key.position.set(-6, 11, 5); key.target.position.set(5, 0, 0); }
