@@ -29,8 +29,8 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         <div class="lobby-grid-stage"><canvas id="lobby-grid-canvas" aria-label="Starting grid showing the players' cars"></canvas><div id="lobby-grid-labels" aria-hidden="true"></div>
           <div class="lobby-track-overlay">
             <button id="lobby-track-display" class="lobby-track-display" type="button" aria-label="Change selected track">
-              <canvas class="track-preview-canvas" id="lobby-preview" width="256" height="256" aria-hidden="true"></canvas>
               <strong id="lobby-track-name"></strong>
+              <canvas class="track-preview-canvas" id="lobby-preview" width="256" height="256" aria-hidden="true"></canvas>
             </button>
           </div>
         </div>
