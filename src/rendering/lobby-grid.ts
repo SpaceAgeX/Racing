@@ -68,7 +68,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     const right = farthest + 5;
     targetWidth = Math.max(right / (.93 - finishFraction), aspect * 7.1) * (1 + .15 * occupiedIndex / 9);
     // Keep the full checker stripe clear of the selected-track overlay.
-    targetCenter = (.5 - finishFraction) * targetWidth - (canvas.clientWidth >= 900 ? 4.5 : 0);
+    targetCenter = (.5 - finishFraction) * targetWidth - (canvas.clientWidth >= 900 ? 3 : 0);
     if (immediate || reducedMotion.matches) { cameraCenter = targetCenter; cameraWidth = targetWidth; }
   }
   function updateCamera(now: number): void {
@@ -85,7 +85,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     // Keep the viewpoint high while centering the cars and checker in the
     // space beside the track preview.
     camera.position.set(cameraCenter - 7.5, 11, 24);
-    camera.lookAt(cameraCenter + .5, 1.7, 0);
+    camera.lookAt(cameraCenter + .5, 1.35, 0);
     camera.updateProjectionMatrix();
   }
   const observer = new ResizeObserver(resize); observer.observe(canvas);
