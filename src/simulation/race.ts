@@ -1,6 +1,6 @@
 import type { RoadGeometry } from '../track/road-geometry.ts';
 import { createRoadWorld } from './road-world.ts';
-import { createLapTimer, resetCurrentLap, stepLapTimer, type LapTimerState } from './lap-timer.ts';
+import { createLapTimer, resetCurrentLap, stepLapTimer, type CheckpointSplit, type LapTimerState } from './lap-timer.ts';
 import { respawnVehicle, stepSplineVehicle } from './spline-vehicle.ts';
 import type { DrivingControls, HandlingParameters, VehicleState } from './types.ts';
 import { createVehicleState } from './vehicle.ts';
@@ -21,7 +21,7 @@ export interface RacePlayer {
   lastTransition: 'respawn' | 'start' | 'lap' | null;
 }
 export interface RaceStepResult {
-  laps: { playerId: string; durationSeconds: number }[];
+  laps: { playerId: string; durationSeconds: number; checkpointSplits: CheckpointSplit[] }[];
   falls: { playerId: string }[];
   activity: { playerId: string; seconds: number; distanceMeters: number }[];
   transitions: { kind: 'respawn' | 'start' | 'lap'; tick: number; player: RacePlayer }[];
@@ -156,6 +156,7 @@ export function createRaceSimulation(
           && player.state.airborneTime >= currentHandling.physics.respawnDelay) {
           result.falls.push({ playerId: player.id });
         }
+        let completedLap = null;
         if (respawned) {
           resetCurrentLap(player.lapTimer);
           player.lifeId++;
@@ -165,7 +166,7 @@ export function createRaceSimulation(
           player.acknowledgedInput = player.lastReceivedInput;
           player.lastInputAt = 0;
         } else {
-          stepLapTimer(player.lapTimer, previousPosition, player.state.position,
+          completedLap = stepLapTimer(player.lapTimer, previousPosition, player.state.position,
             simulatedTimestep, road.finish, road.checkpoints);
         }
         const distance = respawned ? 0 : Math.hypot(
@@ -174,8 +175,8 @@ export function createRaceSimulation(
         );
         result.activity.push({ playerId: player.id, seconds: RACE_TIMESTEP,
           distanceMeters: distance < 50 ? distance : 0 });
-        if (player.lapTimer.completedLaps > previousLaps && player.lapTimer.last !== null) {
-          result.laps.push({ playerId: player.id, durationSeconds: player.lapTimer.last });
+        if (completedLap) {
+          result.laps.push({ playerId: player.id, ...completedLap });
         }
         const kind = respawned ? 'respawn'
           : player.lapTimer.completedLaps > previousLaps ? 'lap'

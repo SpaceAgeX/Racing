@@ -53,7 +53,7 @@ test('qualifying finishers start ahead of fallers and later falls beat earlier f
   const fall = round.step({ ...empty, falls: [{ playerId: 'one' }] }, 4000);
   assert.equal(fall.resets.length, 1);
   assert.equal(round.snapshot(4000).players.find(p => p.id === 'one')?.status, 'qualifying-fall');
-  const qualified = round.step({ ...empty, laps: [{ playerId: 'two', durationSeconds: 42 }] }, 5000);
+  const qualified = round.step({ ...empty, laps: [{ playerId: 'two', durationSeconds: 42, checkpointSplits: [] }] }, 5000);
   assert.equal(qualified.changed, true);
   assert.equal(round.stage, 'countdown');
   assert.equal(round.snapshot(5000).players.find(p => p.id === 'two')?.gridPosition, 1);
@@ -71,8 +71,8 @@ test('qualifying finishers start ahead of fallers and later falls beat earlier f
 test('lap target and elimination produce server-ordered final results', () => {
   const { round } = setup({ laps: 2, fallMode: 'elimination', qualifying: false });
   round.ready('one', 0); round.ready('two', 0); round.advance(3000);
-  round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 30 }] }, 3017);
-  const finish = round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 28 }] }, 3034);
+  round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 30, checkpointSplits: [] }] }, 3017);
+  const finish = round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 28, checkpointSplits: [] }] }, 3034);
   assert.equal(finish.results, null);
   const end = round.step({ ...empty, falls: [{ playerId: 'two' }] }, 3051);
   assert.equal(end.results?.players[0]?.id, 'one');
@@ -93,7 +93,7 @@ test('respawn mode counts a fall without eliminating the driver', () => {
 test('qualifying finish parks the car at its start position while others continue', () => {
   const { race, round } = setup({ laps: 3, fallMode: 'respawn', qualifying: true });
   round.ready('one', 0); round.ready('two', 0); round.advance(3000);
-  const lap = round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 31 }] }, 3017);
+  const lap = round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 31, checkpointSplits: [] }] }, 3017);
   assert.equal(round.stage, 'qualifying');
   assert.equal(round.snapshot(3017).players.find(player => player.id === 'one')?.status, 'qualified');
   assert.equal(lap.resets.length, 1);
@@ -106,7 +106,7 @@ test('qualifying finish parks the car at its start position while others continu
 test('race finish locks the result but leaves the driver able to keep moving', () => {
   const { race, round } = setup({ laps: 1, fallMode: 'elimination', qualifying: false });
   round.ready('one', 0); round.ready('two', 0); round.advance(3000);
-  round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 30 }] }, 3017);
+  round.step({ ...empty, laps: [{ playerId: 'one', durationSeconds: 30, checkpointSplits: [] }] }, 3017);
   assert.equal(round.snapshot(3017).players.find(player => player.id === 'one')?.status, 'finished');
   assert.equal(round.isRacing('one'), false);
   assert.equal(race.input('one', { sequence: 1, lifeId: 1,

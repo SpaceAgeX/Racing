@@ -195,14 +195,18 @@ export function createAccounts() {
   }
 
   async function recordLap(input: { userId: string; trackId: string; trackName: string; layoutHash: string;
-    rulesetHash: string; durationSeconds: number; ranked: boolean; mode: 'time_trial' | 'multiplayer' }): Promise<void> {
+    rulesetHash: string; durationSeconds: number; checkpointSplits: { checkpointId: number; elapsedSeconds: number }[];
+    ranked: boolean; mode: 'time_trial' | 'multiplayer' }): Promise<void> {
     const durationMs = Math.round(input.durationSeconds * 1000);
     if (!Number.isSafeInteger(durationMs) || durationMs <= 0 || durationMs > 24 * 60 * 60 * 1000) return;
+    const checkpointSplits = input.checkpointSplits.map(split => ({
+      checkpointId: split.checkpointId, elapsedMs: Math.round(split.elapsedSeconds * 1000),
+    }));
     await db.query(`insert into public.lap_results
-      (user_id,track_id,track_name,layout_hash,ruleset_hash,duration_ms,ranked,mode)
-      values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      (user_id,track_id,track_name,layout_hash,ruleset_hash,duration_ms,ranked,mode,checkpoint_splits)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
       [input.userId, input.trackId, input.trackName, input.layoutHash, input.rulesetHash,
-        durationMs, input.ranked, input.mode]);
+        durationMs, input.ranked, input.mode, JSON.stringify(checkpointSplits)]);
   }
 
   async function startRace(userIds: string[]): Promise<void> {

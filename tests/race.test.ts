@@ -206,6 +206,10 @@ test('server requires every checkpoint before recording a lap', () => {
   assert.equal(result.completedLaps, 1);
   assert.ok(result.last !== null && result.last > 0);
   assert.deepEqual(result.checkpointsVisited, []);
+  assert.equal(completed.laps.length, 1);
+  assert.equal(completed.laps[0]!.checkpointSplits.length, 1);
+  assert.equal(completed.laps[0]!.checkpointSplits[0]!.checkpointId, 1);
+  assert.ok(completed.laps[0]!.checkpointSplits[0]!.elapsedSeconds < completed.laps[0]!.durationSeconds);
   assert.equal(completed.transitions[0]?.kind, 'lap');
   assert.equal(completed.transitions[0]?.player.lapTimer.completedLaps, 1);
   assert.equal(completed.transitions[0]?.player.attemptId, 2);

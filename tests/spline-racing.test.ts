@@ -119,19 +119,27 @@ test('all checkpoints count once in any order; incomplete finish keeps timing, c
   cross(20);
   cross(20);
   assert.deepEqual(timer.checkpointsVisited, [2]);
+  assert.deepEqual(timer.checkpointSplits, [{ checkpointId: 2, elapsedSeconds: 1 }]);
   cross(0);
   assert.equal(timer.completedLaps, 0);
   assert.ok(timer.elapsed > 2);
   assert.equal(timer.best, null);
   cross(10);
-  cross(0);
+  const completed = cross(0);
   assert.equal(timer.completedLaps, 1);
+  assert.deepEqual(completed?.checkpointSplits, [
+    { checkpointId: 2, elapsedSeconds: 1 },
+    { checkpointId: 1, elapsedSeconds: 4 },
+  ]);
+  assert.equal(completed.durationSeconds, 5);
   assert.deepEqual(timer.checkpointsVisited, []);
+  assert.deepEqual(timer.checkpointSplits, []);
   cross(0);
   assert.equal(timer.completedLaps, 1);
   cross(10);
   resetCurrentLap(timer);
   assert.deepEqual(timer.checkpointsVisited, []);
+  assert.deepEqual(timer.checkpointSplits, []);
   assert.equal(timer.running, false);
 });
 test('rotated elevated checkpoint gates reject side misses and crossing below the road', () => {

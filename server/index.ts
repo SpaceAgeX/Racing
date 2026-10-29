@@ -943,7 +943,7 @@ const raceClock = setInterval(() => {
         const rulesetHash = handlingHash(lobby.settings.handling);
         if (userId) lobby.pendingRaceLaps.push({ userId, trackId: lobby.settings.trackId,
           trackName: lobby.settings.trackName, layoutHash: lobby.layoutHash,
-          rulesetHash, durationSeconds: lap.durationSeconds,
+          rulesetHash, durationSeconds: lap.durationSeconds, checkpointSplits: lap.checkpointSplits,
           ranked: rulesetHash === defaultRulesetHash, mode: 'multiplayer' });
       }
       if (lobby.round) applyRoundUpdate(lobby, lobby.round.step(result, now));
@@ -977,7 +977,7 @@ const raceClock = setInterval(() => {
         const ranked = solo.rankedEligible;
         const write = accounts.recordLap({ userId, trackId: solo.track.id,
           trackName: solo.track.name, layoutHash: solo.layoutHash,
-          rulesetHash: solo.rulesetHash, durationSeconds: lap.durationSeconds,
+          rulesetHash: solo.rulesetHash, durationSeconds: lap.durationSeconds, checkpointSplits: lap.checkpointSplits,
           ranked, mode: 'time_trial' });
         queueWrite(write);
         const durationMs = Math.round(lap.durationSeconds * 1000);

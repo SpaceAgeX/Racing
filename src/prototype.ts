@@ -339,7 +339,10 @@ function createDrivingSession(canvas: HTMLCanvasElement, layout: TrackLayout, tr
       stepSplineVehicle(state, input.controls, RACE_TIMESTEP * tuning.physics.physicsTime, collisionWorld, spawn,
         tuning.physics, tuning.driving, false);
     }
-    Object.assign(lapTimer, player.lapTimer, { checkpointsVisited: [...player.lapTimer.checkpointsVisited] });
+    Object.assign(lapTimer, player.lapTimer, {
+      checkpointsVisited: [...player.lapTimer.checkpointsVisited],
+      checkpointSplits: player.lapTimer.checkpointSplits.map(split => ({ ...split })),
+    });
     lastAuthoritativeTimerAt = performance.now();
     const error = Math.hypot(before.x - state.position.x, before.y - state.position.y, before.z - state.position.z);
     lastPositionErrorMeters = error;
@@ -693,7 +696,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const lobbyRoot = document.querySelector<HTMLElement>('#lobby-screen');
   const raceRoot = document.querySelector<HTMLElement>('#race-screen');
   const tuningPanelElement = document.querySelector<HTMLElement>('#tuning-panel');
-  const tuningToggle = document.querySelector<HTMLButtonElement>('#tuning-toggle');
   const raceLeaveButton = document.querySelector<HTMLButtonElement>('#race-leave');
   const lobbyPanelToggle = document.querySelector<HTMLButtonElement>('#lobby-panel-toggle');
   const roundSetupToggle = document.querySelector<HTMLButtonElement>('#round-setup-toggle');
@@ -714,7 +716,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const lapStatus = document.querySelector<HTMLElement>('#lap-status')!;
   const raceLeaderboardElement = document.querySelector<HTMLElement>('#race-leaderboard');
 
-  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !tuningToggle || !raceLeaveButton || !lobbyPanelToggle || !roundSetupToggle || !roundCancelHint || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
+  if (!homeRoot || !lobbyRoot || !raceRoot || !tuningPanelElement || !raceLeaveButton || !lobbyPanelToggle || !roundSetupToggle || !roundCancelHint || !raceRoomName || !raceRoomStatus || !performanceStatsElement || !raceLeaderboardElement) {
     throw new Error('Multiplayer UI is missing.');
   }
 
@@ -722,7 +724,6 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   const lobbyScreenRoot = lobbyRoot;
   const raceScreenRoot = raceRoot;
   const tuningPanelRoot = tuningPanelElement;
-  const tuningToggleButton = tuningToggle;
   const raceLeaveButtonElement = raceLeaveButton;
   const raceRoomNameElement = raceRoomName;
   const raceRoomStatusElement = raceRoomStatus;
@@ -737,7 +738,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
   document.body.prepend(menuBackdropCanvas);
   const menuBackdrop = createMenuBackdrop(menuBackdropCanvas);
 
-  const tuningPanel = createTuningPanel(tuningPanelElement, tuningToggle);
+  const tuningPanel = createTuningPanel(tuningPanelElement);
   const input = createKeyboardInput(window, document);
   const preferences = loadMultiplayerPreferences();
 
@@ -786,7 +787,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
     setScreenVisibility(raceScreenRoot, mode === 'race');
     const isTimeTrial = mode === 'race' && activeRoom === null;
     tuningPanelRoot.hidden = !isTimeTrial || document.body.classList.contains('tuning-collapsed');
-    tuningToggleButton.hidden = !isTimeTrial;
+    if (!isTimeTrial) tuningPanel.close();
     raceScreenRoot.classList.toggle('multiplayer-race', mode === 'race' && activeRoom !== null);
     lobbyPanelToggle!.hidden = mode !== 'race' || activeRoom?.phase !== 'lobby';
     roundSetupToggle!.hidden = mode !== 'race' || activeRoom?.phase !== 'lobby' || activeRoom.hostId !== localPlayerId;
@@ -1367,6 +1368,14 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
 
   document.addEventListener('visibilitychange', resetTiming);
   window.addEventListener('blur', resetTiming);
+  function onTuningShortcut(event: KeyboardEvent): void {
+    if (event.code !== 'BracketRight' || event.repeat || currentMode !== 'race' || activeRoom !== null || chat.isOpen) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+    event.preventDefault();
+    tuningPanel.toggle();
+  }
+  window.addEventListener('keydown', onTuningShortcut);
   setMode('home');
   if (new URLSearchParams(location.search).get('mode') === 'time-trial') {
     homeScreen.showTimeTrialSetup(); timeTrialSetup.show(); setMode('time-trial-setup'); void refreshTimeTrialTracks();
@@ -1386,6 +1395,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       cancelAnimationFrame(animationFrame);
       document.removeEventListener('visibilitychange', resetTiming);
       window.removeEventListener('blur', resetTiming);
+      window.removeEventListener('keydown', onTuningShortcut);
       input.dispose();
       chat.dispose();
       performanceStats.dispose();

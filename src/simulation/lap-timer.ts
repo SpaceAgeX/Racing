@@ -16,17 +16,23 @@ export interface LapTimerState {
   delta: number | null;
   completedLaps: number;
   checkpointsVisited: number[];
+  checkpointSplits: CheckpointSplit[];
   checkpointCount: number;
   missedCheckpoints: boolean;
 }
 
+export interface CheckpointSplit { checkpointId: number; elapsedSeconds: number }
+export interface CompletedLap { durationSeconds: number; checkpointSplits: CheckpointSplit[] }
+
 export function createLapTimer(): LapTimerState {
-  return { running: false, elapsed: 0, best: null, last: null, delta: null, completedLaps: 0, checkpointsVisited: [], checkpointCount: 0, missedCheckpoints: false };
+  return { running: false, elapsed: 0, best: null, last: null, delta: null, completedLaps: 0,
+    checkpointsVisited: [], checkpointSplits: [], checkpointCount: 0, missedCheckpoints: false };
 }
 
 /** Reset an attempt after respawning, retaining this session's completed results. */
 export function resetCurrentLap(timer: LapTimerState): void {
   timer.checkpointsVisited = [];
+  timer.checkpointSplits = [];
   timer.missedCheckpoints = false;
   timer.running = false;
   timer.elapsed = 0;
@@ -48,8 +54,8 @@ function crossingFraction(from: Readonly<Vector3Data>, to: Readonly<Vector3Data>
 
 /** Swept finite gates, processed in crossing order within a fixed step. Checkpoints are unordered per lap. */
 export function stepLapTimer(timer: LapTimerState, from: Readonly<Vector3Data>, to: Readonly<Vector3Data>, timestep: number,
-  line: Readonly<FinishLine> | null, checkpoints: readonly (FinishLine & {id:number})[] = []): void {
-  if (!Number.isFinite(timestep) || timestep <= 0) return;
+  line: Readonly<FinishLine> | null, checkpoints: readonly (FinishLine & {id:number})[] = []): CompletedLap | null {
+  if (!Number.isFinite(timestep) || timestep <= 0) return null;
   timer.checkpointCount = checkpoints.length;
   const events: { fraction:number; id:number|null }[]=[];
   for(const cp of checkpoints){const fraction=crossingFraction(from,to,cp);if(fraction!==null)events.push({fraction,id:cp.id});}
@@ -57,19 +63,25 @@ export function stepLapTimer(timer: LapTimerState, from: Readonly<Vector3Data>, 
   if(finish!==null)events.push({fraction:finish,id:null});
   events.sort((a,b)=>a.fraction-b.fraction || (a.id===null?1:-1));
   let previous=0;
+  let completed: CompletedLap | null = null;
   for(const event of events){
     if(timer.running)timer.elapsed+=(event.fraction-previous)*timestep;
     previous=event.fraction;
     if(event.id!==null){
-      if(timer.running&&!timer.checkpointsVisited.includes(event.id))timer.checkpointsVisited.push(event.id);
+      if(timer.running&&!timer.checkpointsVisited.includes(event.id)) {
+        timer.checkpointsVisited.push(event.id);
+        timer.checkpointSplits.push({ checkpointId: event.id, elapsedSeconds: timer.elapsed });
+      }
       continue;
     }
-    if(!timer.running){timer.running=true;timer.elapsed=0;timer.checkpointsVisited=[];timer.missedCheckpoints=false;}
+    if(!timer.running){timer.running=true;timer.elapsed=0;timer.checkpointsVisited=[];timer.checkpointSplits=[];timer.missedCheckpoints=false;}
     else if(checkpoints.every(cp=>timer.checkpointsVisited.includes(cp.id))){
+      completed = { durationSeconds: timer.elapsed, checkpointSplits: timer.checkpointSplits.map(split => ({ ...split })) };
       timer.last=timer.elapsed;timer.delta=timer.best===null?null:timer.last-timer.best;
       timer.best=timer.best===null?timer.last:Math.min(timer.best,timer.last);timer.completedLaps++;
-      timer.elapsed=0;timer.checkpointsVisited=[];timer.missedCheckpoints=false;
+      timer.elapsed=0;timer.checkpointsVisited=[];timer.checkpointSplits=[];timer.missedCheckpoints=false;
     }else { timer.missedCheckpoints=true; } // Incomplete crossing does not reset elapsed time or award a lap.
   }
   if(timer.running)timer.elapsed+=(1-previous)*timestep;
+  return completed;
 }

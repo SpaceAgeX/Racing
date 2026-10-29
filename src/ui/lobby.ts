@@ -45,7 +45,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         </div>
         <section id="lobby-shared-settings" class="lobby-shared-settings" hidden>
           <h2>Advanced race settings</h2>
-          <button id="lobby-tuning-toggle" type="button" aria-controls="lobby-handling-editor" aria-expanded="false">Edit handling</button>
           <div id="lobby-handling-editor" hidden></div>
         </section>
         <footer class="lobby-setup-footer">
@@ -79,15 +78,9 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const preview = root.querySelector<HTMLCanvasElement>('#lobby-preview')!;
   const colors = root.querySelector<HTMLElement>('#lobby-colors')!;
   const settingsSection = root.querySelector<HTMLElement>('#lobby-shared-settings')!;
-  const tuningToggle = root.querySelector<HTMLButtonElement>('#lobby-tuning-toggle')!;
   const editorElement = root.querySelector<HTMLElement>('#lobby-handling-editor')!;
   const handlingEditor = createLobbyHandlingEditor(editorElement, handling => {
     callbacks.onUpdateSettings({ handling });
-  });
-  tuningToggle.addEventListener('click', () => {
-    editorElement.hidden = !editorElement.hidden;
-    tuningToggle.setAttribute('aria-expanded', String(!editorElement.hidden));
-    tuningToggle.textContent = editorElement.hidden ? 'Edit handling' : 'Hide handling';
   });
   let trackOptions: TrackOption[] = [];
   let currentRoom: LobbySnapshot | null = null;
@@ -166,6 +159,16 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     raceSetup.classList.remove('is-holding');
   }
   window.addEventListener('keydown', onSpaceDown);
+  function onTuningShortcut(event: KeyboardEvent): void {
+    if (event.code !== 'BracketRight' || event.repeat || root.hidden || !raceSetup.hidden
+      || !currentRoom || currentRoom.hostId !== localPlayerId || currentRoom.phase !== 'lobby') return;
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+    event.preventDefault();
+    editorElement.hidden = !editorElement.hidden;
+    settingsSection.hidden = editorElement.hidden;
+  }
+  window.addEventListener('keydown', onTuningShortcut);
   window.addEventListener('keyup', onSpaceUp);
   window.addEventListener('blur', cancelHold);
   startButton.addEventListener('click', openRaceSetup);
@@ -264,6 +267,8 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       if (!room || room.phase === 'lobby') cancelRequested = false;
       if (!room) {
         closeRaceSetup();
+        editorElement.hidden = true;
+        settingsSection.hidden = true;
         minimap?.dispose();
         minimap = null;
         previewKey = '';
@@ -294,11 +299,10 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         previewKey = key;
       }
       trackSelect.disabled = !isHost || room.phase !== 'lobby';
-      settingsSection.hidden = !isHost || room.phase !== 'lobby';
-      if (settingsSection.hidden) {
+      if (!isHost || room.phase !== 'lobby') {
         editorElement.hidden = true;
-        tuningToggle.setAttribute('aria-expanded', 'false');
       }
+      settingsSection.hidden = editorElement.hidden;
       root.querySelector('#lobby-track-permission')!.textContent = isHost
         ? 'Choose the track for everyone.' : 'Only the host can change the track.';
       enterTrackButton.hidden = onTrack || !isHost || room.trackOpen || room.phase !== 'lobby';
@@ -310,6 +314,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     openRaceSetup,
     dispose(): void {
       window.removeEventListener('keydown', onSpaceDown);
+      window.removeEventListener('keydown', onTuningShortcut);
       window.removeEventListener('keyup', onSpaceUp);
       window.removeEventListener('blur', cancelHold);
       minimap?.dispose(); handlingEditor.dispose(); raceSetup.remove(); root.replaceChildren();

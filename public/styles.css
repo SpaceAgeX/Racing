@@ -269,7 +269,6 @@ body.tuning-collapsed { --panel-width: 0px; }
 .lobby-card button:focus-visible,
 .panel-card button:focus-visible,
 .tuning-slider input:focus-visible,
-.tuning-toggle:focus-visible { outline: 2px solid #ee7136; outline-offset: 3px; }
 
 .multiplayer-status,
 .lobby-status {
@@ -630,10 +629,9 @@ kbd {
 .tuning-footer > div { display: flex; gap: 8px; }
 .tuning-footer button { flex: 1; padding: 8px 6px; }
 .tuning-footer p { margin: 8px 0 0; color: #a7b7bf; font-size: 10px; }
-.tuning-toggle, .tuning-footer button { border: 1px solid #ffffff30; border-radius: 5px; background: #ffffff0d; color: #eaf0f3; font: 12px system-ui, sans-serif; cursor: pointer; }
-.tuning-toggle:hover, .tuning-footer button:hover { background: #ffffff1c; }
-.tuning-toggle:focus-visible, .tuning-footer button:focus-visible, .tuning-slider input:focus-visible { outline: 2px solid #ee7136; outline-offset: 3px; }
-.tuning-toggle { position: absolute; z-index: 30; bottom: max(16px, env(safe-area-inset-bottom)); right: 16px; padding: 5px 10px; }
+.tuning-footer button { border: 1px solid #ffffff30; border-radius: 5px; background: #ffffff0d; color: #eaf0f3; font: 12px system-ui, sans-serif; cursor: pointer; }
+.tuning-footer button:hover { background: #ffffff1c; }
+.tuning-footer button:focus-visible, .tuning-slider input:focus-visible { outline: 2px solid #ee7136; outline-offset: 3px; }
 
 #developer-console { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 3vh 3vw; background: #03070beb; color: #cce5d1; font: 12px/1.45 ui-monospace, Consolas, monospace; }
 #developer-console[hidden] { display: none; }
@@ -650,7 +648,6 @@ kbd {
 @media (max-width: 760px) {
   body { grid-template-columns: 1fr; }
   .tuning-panel { position: absolute; z-index: 20; top: 0; right: 0; width: min(310px, calc(100% - 20px)); }
-  .tuning-toggle { bottom: max(172px, calc(env(safe-area-inset-bottom) + 156px)); }
   #developer-console { padding: 0; }
   .developer-console-window { width: 100%; height: 100%; border-radius: 0; }
   .developer-console-header { align-items: flex-start; flex-direction: column; gap: 8px; }

@@ -64,7 +64,7 @@ const sections = [
   ] },
 ];
 
-export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement) {
+export function createTuningPanel(panel: HTMLElement) {
   const parameters: TuningParameters = { driving: { ...drivingParameters }, physics: { ...physicsParameters } };
   let competitiveSettingsChanged = false;
   const cleanup: (() => void)[] = [];
@@ -180,20 +180,17 @@ export function createTuningPanel(panel: HTMLElement, toggle: HTMLButtonElement)
   function setCollapsed(collapsed: boolean): void {
     panel.hidden = collapsed;
     document.body.classList.toggle('tuning-collapsed', collapsed);
-    toggle.textContent = collapsed ? 'Tuning' : 'Hide';
-    toggle.setAttribute('aria-expanded', String(!collapsed));
   }
   const narrow = matchMedia('(max-width: 760px)');
   const onWidthChange = (): void => { if (narrow.matches) setCollapsed(true); };
-  const onToggle = (): void => setCollapsed(!panel.hidden);
   setCollapsed(true);
-  toggle.addEventListener('click', onToggle);
   narrow.addEventListener('change', onWidthChange);
-  cleanup.push(() => toggle.removeEventListener('click', onToggle));
   cleanup.push(() => narrow.removeEventListener('change', onWidthChange));
 
   return {
     parameters,
+    toggle(): void { setCollapsed(!panel.hidden); },
+    close(): void { setCollapsed(true); },
     resetDefaults(): void {
       Object.assign(parameters.driving, drivingParameters);
       Object.assign(parameters.physics, physicsParameters);
