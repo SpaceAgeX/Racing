@@ -22,6 +22,7 @@ export function createChat(send: (text: string) => void, onOpenChange: (open: bo
   const hint = root.querySelector<HTMLElement>('small')!;
   const heading = root.querySelector<HTMLElement>('.chat-panel header')!;
   function render() {
+    root.classList.toggle('is-lobby-panel', docked);
     toggle.hidden = docked;
     close.hidden = docked;
     hint.hidden = docked;
@@ -69,9 +70,8 @@ export function createChat(send: (text: string) => void, onOpenChange: (open: bo
     get isOpen() { return open; },
     setPresentation(host: HTMLElement | null) {
       const nextParent = host ?? document.body;
-      if (root.parentElement === nextParent && docked === Boolean(host)) return;
       docked = Boolean(host);
-      nextParent.append(root);
+      if (root.parentElement !== nextParent) nextParent.append(root);
       if (docked && open) { open = false; onOpenChange(false); }
       render();
     },

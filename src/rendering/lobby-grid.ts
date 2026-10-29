@@ -1,10 +1,10 @@
-import { Group, LineBasicMaterial, LineSegments, Mesh, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene, Vector3, BufferGeometry, Float32BufferAttribute, WebGLRenderer } from 'three';
+import { OrthographicCamera, Scene, Vector3, WebGLRenderer } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
 import { SPLINE_START_GRID_CAR_LENGTH, SPLINE_START_GRID_CAR_WIDTH, SPLINE_START_GRID_COLUMNS, SPLINE_START_GRID_ROW_GAP } from '../track/spline.ts';
 import type { LobbyPlayerSnapshot } from '../multiplayer/protocol.ts';
 import { countryFlagImageUrl } from '../ui/countries.ts';
-import { addStagingAtmosphere, stagingAsphalt, stagingColors } from './staging-scene.ts';
+import { addStagingAtmosphere, addStagingRoad } from './staging-scene.ts';
 
 const rowPitch = SPLINE_START_GRID_CAR_LENGTH + SPLINE_START_GRID_ROW_GAP;
 const firstDistance = SPLINE_START_GRID_CAR_LENGTH / 2 + 2;
@@ -42,34 +42,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
   const scene = new Scene();
   const key = addStagingAtmosphere(scene, true);
   const camera = new OrthographicCamera(-18, 18, 9, -9, .1, 100);
-  const asphalt = stagingAsphalt();
-  const edge = new MeshStandardMaterial({ color: stagingColors.edge, roughness: .9 });
-  const checkerLight = new MeshStandardMaterial({ color: stagingColors.checkerLight, roughness: .9 });
-  const checkerDark = new MeshStandardMaterial({ color: stagingColors.checkerDark, roughness: .9 });
-  const geometry: PlaneGeometry[] = [];
-  const track = new Group(); scene.add(track);
-  function plane(width: number, depth: number, x: number, z: number, material: MeshStandardMaterial, y = -.065): void {
-    const shape = new PlaneGeometry(width, depth); geometry.push(shape);
-    const mesh = new Mesh(shape, material); mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, y, z);
-    mesh.receiveShadow = true; track.add(mesh);
-  }
-  // Keep the road ends beyond the camera, with the same edge treatment as the main menu.
-  plane(140, 12, 24, 0, asphalt);
-  for (const z of [-5.7, 5.7]) plane(140, .09, 24, z, edge, -.05);
-  for (let row = 0; row < 4; row++) for (let column = 0; column < 20; column++)
-    plane(.414, .5565, (row - 1.5) * .42, -5.625 + (column + .5) * .5625,
-      (row + column) % 2 ? checkerDark : checkerLight, -.048);
-  const slotLines: number[] = [];
-  for (let index = 0; index < 10; index++) {
-    const slot = lobbyGridSlot(index);
-    const x0 = slot.x - 2.1, x1 = slot.x + 2.1, z0 = slot.z - 1.22, z1 = slot.z + 1.22;
-    for (const [ax, az, bx, bz] of [[x0,z0,x0+.6,z0], [x0,z0,x0,z0+.6], [x1,z0,x1-.6,z0], [x1,z0,x1,z0+.6],
-      [x0,z1,x0+.6,z1], [x0,z1,x0,z1-.6], [x1,z1,x1-.6,z1], [x1,z1,x1,z1-.6]])
-      slotLines.push(ax!, .035, az!, bx!, .035, bz!);
-  }
-  const lineGeometry = new BufferGeometry(); lineGeometry.setAttribute('position', new Float32BufferAttribute(slotLines, 3));
-  const lineMaterial = new LineBasicMaterial({ color: stagingColors.edge, transparent: true, opacity: .12 });
-  track.add(new LineSegments(lineGeometry, lineMaterial));
+  const road = addStagingRoad(scene, { length: 140, center: 24, horizontal: true });
   const cars = new Map<string, GridCar>();
   let active = false;
   let disposed = false;
@@ -108,7 +81,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     const height = cameraWidth * Math.max(1, canvas.clientHeight) / Math.max(1, canvas.clientWidth);
     camera.left = -cameraWidth / 2; camera.right = cameraWidth / 2;
     camera.top = height / 2; camera.bottom = -height / 2;
-    camera.position.set(cameraCenter, 26, 18);
+    camera.position.set(cameraCenter, 21, 22);
     camera.lookAt(cameraCenter, 0, 0);
     camera.updateProjectionMatrix();
   }
@@ -207,8 +180,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     dispose(): void {
       disposed = true; cancelAnimationFrame(frame); observer.disconnect();
       for (const car of cars.values()) { car.visual.dispose(); car.label.remove(); }
-      cars.clear(); geometry.forEach(item => item.dispose()); asphalt.dispose(); edge.dispose();
-      checkerLight.dispose(); checkerDark.dispose(); lineGeometry.dispose(); lineMaterial.dispose(); key.shadow.dispose(); renderer.dispose();
+      cars.clear(); road.dispose(); key.shadow.dispose(); renderer.dispose();
     },
   };
 }

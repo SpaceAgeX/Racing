@@ -1,11 +1,8 @@
-import {
-  BoxGeometry, Group, Mesh,
-  MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, WebGLRenderer,
-} from 'three';
+import { PerspectiveCamera, Scene, WebGLRenderer } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
 import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts';
-import { addStagingAtmosphere, stagingAsphalt, stagingColors } from './staging-scene.ts';
+import { addStagingAtmosphere, addStagingRoad } from './staging-scene.ts';
 
 // Local car forward is -Z. The finish stripe is at Z = 0.
 const finishSeconds = 2.5;
@@ -28,41 +25,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   // The shared atmosphere fades the road into the same near-black backdrop.
   const key = addStagingAtmosphere(scene);
   const camera = new PerspectiveCamera(42, 1, 0.1, 100);
-  const resources: Mesh[] = [];
-  const environment = new Group();
-  scene.add(environment);
-
-  function addBox(width: number, height: number, length: number, color: number, x: number, y: number, z: number): Mesh {
-    const mesh = new Mesh(new BoxGeometry(width, height, length), new MeshStandardMaterial({ color, roughness: 0.9 }));
-    mesh.position.set(x, y, z);
-    mesh.receiveShadow = true;
-    environment.add(mesh);
-    resources.push(mesh);
-    return mesh;
-  }
-
-  const road = new Mesh(new PlaneGeometry(12, 90), stagingAsphalt());
-  road.rotation.x = -Math.PI / 2;
-  road.position.set(0, -0.065, 11);
-  road.receiveShadow = true;
-  environment.add(road);
-  resources.push(road);
-
-  for (let side = -1; side <= 1; side += 2) {
-    addBox(0.09, 0.012, 90, stagingColors.edge, side * 5.7, -0.05, 11);
-  }
-
-  // Individual tiles keep the finish line crisp from a low camera angle.
-  const tilesAcross = 20;
-  const tileWidth = 11.25 / tilesAcross;
-  const tileLength = 0.42;
-  for (let row = 0; row < 4; row++) {
-    for (let column = 0; column < tilesAcross; column++) {
-      addBox(tileWidth - 0.006, 0.012, tileLength - 0.006,
-        (row + column) % 2 === 0 ? stagingColors.checkerLight : stagingColors.checkerDark,
-        -5.625 + (column + 0.5) * tileWidth, -0.048, (row - 1.5) * tileLength);
-    }
-  }
+  const road = addStagingRoad(scene, { length: 90, center: 11 });
 
   const visual = createCarVisual(Number.parseInt(accent.slice(1), 16));
   const state = createVehicleState();
@@ -161,10 +124,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
       motion.removeEventListener('change', schedule);
       unsubscribeAccent();
       visual.dispose();
-      for (const mesh of resources) {
-        mesh.geometry.dispose();
-        (mesh.material as MeshStandardMaterial).dispose();
-      }
+      road.dispose();
       key.shadow.dispose();
       renderer.dispose();
       canvas.remove();

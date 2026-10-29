@@ -1,4 +1,4 @@
-import { AmbientLight, Color, DirectionalLight, Fog, MeshStandardMaterial, Scene } from 'three';
+import { AmbientLight, BoxGeometry, Color, DirectionalLight, Fog, Group, Mesh, MeshStandardMaterial, PlaneGeometry, Scene } from 'three';
 
 /** Shared road and lighting treatment for the menu and multiplayer staging scenes. */
 export const stagingColors = {
@@ -11,6 +11,40 @@ export const stagingColors = {
 
 export function stagingAsphalt(): MeshStandardMaterial {
   return new MeshStandardMaterial({ color: stagingColors.asphalt, roughness: 1 });
+}
+
+/** The same asphalt, raised edge strips, and checkered finish for both staging views. */
+export function addStagingRoad(scene: Scene, options: { length: number; center: number; horizontal?: boolean }) {
+  const group = new Group();
+  if (options.horizontal) group.rotation.y = Math.PI / 2;
+  scene.add(group);
+  const meshes: Mesh[] = [];
+  const addBox = (width: number, height: number, depth: number, color: number, x: number, y: number, z: number) => {
+    const mesh = new Mesh(new BoxGeometry(width, height, depth), new MeshStandardMaterial({ color, roughness: .9 }));
+    mesh.position.set(x, y, z);
+    mesh.receiveShadow = true;
+    group.add(mesh); meshes.push(mesh);
+  };
+  const road = new Mesh(new PlaneGeometry(12, options.length), stagingAsphalt());
+  road.rotation.x = -Math.PI / 2;
+  road.position.set(0, -.065, options.center);
+  road.receiveShadow = true;
+  group.add(road); meshes.push(road);
+  for (const side of [-1, 1]) addBox(.09, .012, options.length, stagingColors.edge, side * 5.7, -.05, options.center);
+  const tileWidth = 11.25 / 20;
+  const tileLength = .42;
+  for (let row = 0; row < 4; row++) for (let column = 0; column < 20; column++) {
+    addBox(tileWidth - .006, .012, tileLength - .006,
+      (row + column) % 2 === 0 ? stagingColors.checkerLight : stagingColors.checkerDark,
+      -5.625 + (column + .5) * tileWidth, -.048, (row - 1.5) * tileLength);
+  }
+  return { dispose() {
+    scene.remove(group);
+    for (const mesh of meshes) {
+      mesh.geometry.dispose();
+      (mesh.material as MeshStandardMaterial).dispose();
+    }
+  } };
 }
 
 export function addStagingAtmosphere(scene: Scene, horizontal = false): DirectionalLight {

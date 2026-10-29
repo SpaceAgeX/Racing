@@ -54,13 +54,13 @@
 .lobby-grid-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lobby-grid-label small { flex: none; color: #cad4d7; font-size: 8px; letter-spacing: .06em; }
 .lobby-grid-label small.is-you { color: var(--auth-text-accent); }
-.lobby-track-overlay { position: absolute; z-index: 3; top: 50%; left: clamp(14px, 2.2vw, 34px); width: min(230px, 21%); transform: translateY(-50%); }
+.lobby-track-overlay { position: absolute; z-index: 3; top: 50%; left: clamp(14px, 2.2vw, 34px); width: min(210px, 19%); transform: translateY(-50%); }
 .lobby-track-overlay .setup-label { display: block; margin-bottom: 9px; }
-.lobby-track-display { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: #f4f6f7; text-align: left; font: inherit; cursor: pointer; }
+.lobby-track-display { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: #f4f6f7; text-align: left; font: inherit; cursor: pointer; }
 .lobby-track-display:disabled { cursor: default; opacity: 1; }
-.lobby-track-display canvas { display: block; flex: none; width: 66px; height: 66px; border: 1px solid #ffffff26; border-radius: 6px; background: #202d35; }
+.lobby-track-display canvas { display: block; flex: none; width: clamp(120px, 11vw, 144px); height: clamp(120px, 11vw, 144px); margin: 0; border: 1px solid #ffffff26; border-radius: 6px; background: #202d35; }
 .lobby-track-display:hover:not(:disabled) canvas, .lobby-track-display:focus-visible canvas { border-color: var(--auth-accent); }
-.lobby-track-copy { display: grid; min-width: 0; gap: 5px; }
+.lobby-track-copy { display: grid; min-width: 0; max-width: 100%; gap: 5px; }
 .lobby-track-copy strong { overflow: hidden; font: 700 22px/1 'Barlow Condensed', Impact, sans-serif; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
 .lobby-track-copy small { color: #aebbc0; font: 11px/1.35 'DM Sans', sans-serif; }
 .lobby-track-overlay .lobby-secondary-button { display: block; margin-top: 10px; padding: 3px 0; }
@@ -68,6 +68,7 @@
 .lobby-chat-slot, .lobby-controls-panel { min-width: 0; min-height: 0; }
 .lobby-chat-slot { overflow: hidden; border: 1px solid #ffffff1d; border-radius: 8px; background: #1b2328; }
 .lobby-chat-slot .room-chat.is-lobby-panel { position: static; z-index: auto; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+.lobby-chat-slot .room-chat[hidden] { display: none; }
 .lobby-chat-slot .chat-panel { display: flex; flex: 1; flex-direction: column; width: 100%; height: auto; min-height: 0; overflow: hidden; padding: 16px 18px; border: 0; border-radius: 0; background: transparent; }
 .lobby-chat-slot .chat-panel header { flex: none; padding-bottom: 10px; color: #e9eef0; font: 700 15px 'Barlow Condensed', Impact, sans-serif; letter-spacing: .08em; }
 .lobby-chat-slot .chat-messages { flex: 1 1 0; min-height: 0; height: auto; overflow-y: auto; padding: 6px 0; scrollbar-width: thin; font-size: 12px; }
@@ -111,6 +112,7 @@
   #lobby-grid-labels { top: 78px; }
   .lobby-track-overlay { position: relative; top: auto; left: auto; grid-row: 1; grid-column: 1; display: flex; align-items: center; gap: 14px; width: 100%; padding: 8px 12px; transform: none; }
   .lobby-track-overlay .setup-label { flex: none; margin: 0; }
+  .lobby-track-display { flex-direction: row; align-items: center; }
   .lobby-track-display { width: auto; max-width: 280px; }
   .lobby-track-display canvas { width: 48px; height: 48px; }
   .lobby-track-overlay .lobby-secondary-button { flex: none; margin: 0 0 0 auto; }
