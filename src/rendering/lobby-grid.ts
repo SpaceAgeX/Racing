@@ -42,7 +42,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
   const scene = new Scene();
   const key = addStagingAtmosphere(scene, true);
   const camera = new OrthographicCamera(-18, 18, 9, -9, .1, 100);
-  const road = addStagingRoad(scene, { length: 140, center: 24, width: 24, horizontal: true });
+  const road = addStagingRoad(scene, { length: 140, center: 24, width: 16, horizontal: true });
   const cars = new Map<string, GridCar>();
   let active = false;
   let disposed = false;
@@ -84,8 +84,8 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     camera.top = height / 2; camera.bottom = -height / 2;
     // Look along the grid from its left and near side. The lower angle reveals
     // the road's long side while retaining enough height to separate both rows.
-    camera.position.set(cameraCenter - 20, 7.5, 20);
-    camera.lookAt(cameraCenter + 1.5, .65, 0);
+    camera.position.set(cameraCenter - 7.5, 7.5, 24);
+    camera.lookAt(cameraCenter + .5, .65, 0);
     camera.updateProjectionMatrix();
   }
   const observer = new ResizeObserver(resize); observer.observe(canvas);

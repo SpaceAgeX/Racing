@@ -31,7 +31,7 @@ export function addStagingRoad(scene: Scene, options: { length: number; center: 
   let checkerMaterials: MeshStandardMaterial[] = [];
   if (options.horizontal) {
     // Only the lobby road gains a shallow slab; the main-menu scene stays as it was.
-    const roadThickness = .26;
+    const roadThickness = .45;
     const roadTop = -.065;
     const sideMaterial = () => new MeshStandardMaterial({ color: stagingColors.asphaltSide, roughness: 1 });
     const road = new Mesh(new BoxGeometry(width, roadThickness, options.length), [
