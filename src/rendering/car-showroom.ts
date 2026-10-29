@@ -1,4 +1,4 @@
-import { AmbientLight, Color, DirectionalLight, Fog, Mesh, MeshStandardMaterial, PCFSoftShadowMap, PerspectiveCamera, PlaneGeometry, Scene, WebGLRenderer } from 'three';
+import { AmbientLight, CanvasTexture, Color, DirectionalLight, Mesh, MeshBasicMaterial, PerspectiveCamera, PlaneGeometry, Scene, WebGLRenderer } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
 
@@ -9,29 +9,29 @@ export function createCarShowroom(canvas: HTMLCanvasElement, color: string) {
   catch { return { setColor(_color: string) {}, setActive(_active: boolean) {}, dispose() {} }; }
   const scene = new Scene();
   scene.background = new Color(0x111417);
-  scene.fog = new Fog(0x111417, 8, 24);
   const camera = new PerspectiveCamera(34, 1, .1, 40);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = PCFSoftShadowMap;
   scene.add(new AmbientLight(0xdcebf2, 1.1));
   const light = new DirectionalLight(0xfff1e9, 3.5);
-  light.position.set(-6, 6, 4);
-  light.castShadow = true;
-  light.shadow.mapSize.set(1024, 1024);
-  light.shadow.camera.left = light.shadow.camera.bottom = -7;
-  light.shadow.camera.right = light.shadow.camera.top = 7;
-  light.shadow.camera.near = .5;
-  light.shadow.camera.far = 20;
-  light.shadow.bias = -.0002;
+  light.position.set(-4, 7, 3);
   scene.add(light);
   const rim = new DirectionalLight(0x9bc8ff, 1.8);
   rim.position.set(4, 4, -5);
   scene.add(rim);
-  const ground = new Mesh(new PlaneGeometry(80, 80), new MeshStandardMaterial({ color: 0x15191c, roughness: 1 }));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -.03;
-  ground.receiveShadow = true;
-  scene.add(ground);
+  const shadowCanvas = document.createElement('canvas');
+  shadowCanvas.width = shadowCanvas.height = 128;
+  const shadowContext = shadowCanvas.getContext('2d');
+  let shadowTexture: CanvasTexture | null = null;
+  let shadow: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
+  if (shadowContext) {
+    const gradient = shadowContext.createRadialGradient(64, 64, 8, 64, 64, 64);
+    gradient.addColorStop(0, '#0009'); gradient.addColorStop(1, '#0000');
+    shadowContext.fillStyle = gradient; shadowContext.fillRect(0, 0, 128, 128);
+    shadowTexture = new CanvasTexture(shadowCanvas);
+    shadow = new Mesh(new PlaneGeometry(4.3, 3), new MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }));
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = .012;
+    scene.add(shadow);
+  }
   const car = createCarVisual(Number.parseInt(color.slice(1), 16));
   car.update(createVehicleState());
   scene.add(car.object);
@@ -88,7 +88,7 @@ export function createCarShowroom(canvas: HTMLCanvasElement, color: string) {
       disposed = true; cancelAnimationFrame(frame); observer.disconnect();
       canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove);
       canvas.removeEventListener('pointerup', pointerUp); canvas.removeEventListener('pointercancel', pointerUp);
-      car.dispose(); ground.geometry.dispose(); ground.material.dispose(); renderer.dispose();
+      car.dispose(); shadow?.geometry.dispose(); shadow?.material.dispose(); shadowTexture?.dispose(); renderer.dispose();
     },
   };
 }
