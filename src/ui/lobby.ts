@@ -1,7 +1,7 @@
 import type { LobbySnapshot, TrackOption, UpdateLobbySettingsPayload, StartLobbyPayload, RoundOptions } from '../multiplayer/protocol.ts';
 import { maxLobbyPlayers, playerColorPalette } from '../multiplayer/protocol.ts';
 
-import { createMinimap } from './minimap.ts';
+import { trackThumbnail } from './track-thumbnail.ts';
 import { createLobbyGrid } from '../rendering/lobby-grid.ts';
 import { createLobbyTrackPicker } from './lobby-track-picker.ts';
 import { carColorNames } from './car-colors.ts';
@@ -27,12 +27,11 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
           <button id="lobby-close-panel" class="back-button" type="button" aria-label="Close lobby settings">&times;</button>
         </header>
         <div class="lobby-grid-stage"><canvas id="lobby-grid-canvas" aria-label="Starting grid showing the players' cars"></canvas><div id="lobby-grid-labels" aria-hidden="true"></div>
-          <div class="lobby-track-overlay"><span class="setup-label">SELECTED TRACK</span>
+          <div class="lobby-track-overlay">
             <button id="lobby-track-display" class="lobby-track-display" type="button" aria-label="Change selected track">
-              <canvas class="track-preview-canvas" id="lobby-preview" aria-hidden="true"></canvas>
-              <span class="lobby-track-copy"><strong id="lobby-track-name"></strong><small id="lobby-track-permission"></small></span>
+              <canvas class="track-preview-canvas" id="lobby-preview" width="256" height="256" aria-hidden="true"></canvas>
+              <strong id="lobby-track-name"></strong>
             </button>
-            <button id="lobby-change-track" class="lobby-secondary-button" type="button">Change track <span aria-hidden="true">&rarr;</span></button>
           </div>
         </div>
         <div class="lobby-overhaul-bottom">
@@ -67,7 +66,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   const roomName = root.querySelector<HTMLElement>('#lobby-room-name')!;
   const roomMeta = root.querySelector<HTMLElement>('#lobby-room-meta')!;
   const status = root.querySelector<HTMLElement>('#lobby-status')!;
-  const changeTrackButton = root.querySelector<HTMLButtonElement>('#lobby-change-track')!;
   const trackDisplay = root.querySelector<HTMLButtonElement>('#lobby-track-display')!;
   const enterTrackButton = root.querySelector<HTMLButtonElement>('#lobby-enter-track')!;
   const preview = root.querySelector<HTMLCanvasElement>('#lobby-preview')!;
@@ -81,7 +79,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
   let currentRoom: LobbySnapshot | null = null;
   let localPlayerId = '';
   let onTrack = false;
-  let minimap: ReturnType<typeof createMinimap> | null = null;
   let previewKey = '';
   const raceSetup = root.querySelector<HTMLElement>('#lobby-race-setup')!;
   document.body.append(raceSetup);
@@ -213,7 +210,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
     if (currentRoom?.hostId === localPlayerId && currentRoom.phase === 'lobby')
       trackPicker.open(currentRoom.settings.trackId);
   }
-  changeTrackButton.addEventListener('click', openTrackPicker);
   trackDisplay.addEventListener('click', openTrackPicker);
 
   return {
@@ -233,8 +229,6 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
         trackPicker.close();
         grid.setActive(false);
         grid.setPlayers([], '');
-        minimap?.dispose();
-        minimap = null;
         previewKey = '';
         return;
       }
@@ -256,16 +250,11 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       root.querySelector('#lobby-track-name')!.textContent = room.settings.trackName;
       const key = JSON.stringify(room.settings.layout);
       if (key !== previewKey) {
-        minimap?.dispose();
-        minimap = createMinimap(preview, room.settings.layout);
-        minimap.update([]);
+        preview.getContext('2d')?.drawImage(trackThumbnail(room.settings.layout), 0, 0);
         previewKey = key;
       }
-      changeTrackButton.hidden = !isHost || room.phase !== 'lobby';
       trackDisplay.disabled = !isHost || room.phase !== 'lobby';
       trackDisplay.setAttribute('aria-label', isHost ? 'Change selected track' : 'Selected track');
-      root.querySelector('#lobby-track-permission')!.textContent = isHost
-        ? 'Choose the track for everyone.' : 'Only the host can change the track.';
       enterTrackButton.hidden = onTrack || !isHost || room.trackOpen || room.phase !== 'lobby';
     },
     setTrackOptions(options: TrackOption[]): void { trackOptions = options; renderTrackOptions(); },
@@ -279,7 +268,7 @@ export function createLobbyScreen(root: HTMLElement, callbacks: {
       window.removeEventListener('keydown', onSpaceDown);
       window.removeEventListener('keyup', onSpaceUp);
       window.removeEventListener('blur', cancelHold);
-      minimap?.dispose(); grid.dispose(); trackPicker.dispose(); raceSetup.remove(); root.replaceChildren();
+      grid.dispose(); trackPicker.dispose(); raceSetup.remove(); root.replaceChildren();
     },
   };
 }

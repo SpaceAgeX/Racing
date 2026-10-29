@@ -1,9 +1,10 @@
-import { AmbientLight, BoxGeometry, Color, DirectionalLight, Fog, Group, Mesh, MeshStandardMaterial, PlaneGeometry, Scene } from 'three';
+import { AmbientLight, BoxGeometry, Color, DirectionalLight, Fog, Group, InstancedMesh, Mesh, MeshStandardMaterial, Object3D, PlaneGeometry, Scene } from 'three';
 
 /** Shared road and lighting treatment for the menu and multiplayer staging scenes. */
 export const stagingColors = {
   background: 0x111417,
   asphalt: 0x252c30,
+  asphaltSide: 0x1a2024,
   edge: 0x747f83,
   checkerLight: 0xe4e9ea,
   checkerDark: 0x121719,
@@ -26,25 +27,78 @@ export function addStagingRoad(scene: Scene, options: { length: number; center: 
     mesh.receiveShadow = true;
     group.add(mesh); meshes.push(mesh);
   };
-  const road = new Mesh(new PlaneGeometry(width, options.length), stagingAsphalt());
-  road.rotation.x = -Math.PI / 2;
-  road.position.set(0, -.065, options.center);
-  road.receiveShadow = true;
-  group.add(road); meshes.push(road);
-  for (const side of [-1, 1]) addBox(.09, .012, options.length, stagingColors.edge, side * (width / 2 - .3), -.05, options.center);
-  const tileWidth = 11.25 / 20;
-  const tileLength = .42;
-  for (let row = 0; row < 4; row++) for (let column = 0; column < 20; column++) {
-    addBox(tileWidth - .006, .012, tileLength - .006,
-      (row + column) % 2 === 0 ? stagingColors.checkerLight : stagingColors.checkerDark,
-      -5.625 + (column + .5) * tileWidth, -.048, (row - 1.5) * tileLength);
+  let checkerGeometry: PlaneGeometry | null = null;
+  let checkerMaterials: MeshStandardMaterial[] = [];
+  if (options.horizontal) {
+    // Only the lobby road gains a shallow slab; the main-menu scene stays as it was.
+    const roadThickness = .26;
+    const roadTop = -.065;
+    const sideMaterial = () => new MeshStandardMaterial({ color: stagingColors.asphaltSide, roughness: 1 });
+    const road = new Mesh(new BoxGeometry(width, roadThickness, options.length), [
+      sideMaterial(), sideMaterial(), stagingAsphalt(), sideMaterial(), sideMaterial(), sideMaterial(),
+    ]);
+    road.position.set(0, roadTop - roadThickness / 2, options.center);
+    road.receiveShadow = true;
+    group.add(road); meshes.push(road);
+
+    const tileLength = .42;
+    const finishHalfLength = tileLength * 2;
+    const roadStart = options.center - options.length / 2;
+    const roadEnd = options.center + options.length / 2;
+    // Stop the raised edge strips at the stripe so checkers reach both road edges.
+    for (const side of [-1, 1]) {
+      const edgeX = side * (width / 2 - .3);
+      addBox(.09, .012, -finishHalfLength - roadStart, stagingColors.edge,
+        edgeX, -.05, (roadStart - finishHalfLength) / 2);
+      addBox(.09, .012, roadEnd - finishHalfLength, stagingColors.edge,
+        edgeX, -.05, (roadEnd + finishHalfLength) / 2);
+    }
+    const columns = Math.max(2, Math.round(width / .55));
+    const tileWidth = width / columns;
+    checkerGeometry = new PlaneGeometry(tileWidth - .004, tileLength - .004);
+    checkerMaterials = [stagingColors.checkerLight, stagingColors.checkerDark]
+      .map(color => new MeshStandardMaterial({ color, roughness: 1 }));
+    const checkerMeshes = checkerMaterials.map(material => {
+      const mesh = new InstancedMesh(checkerGeometry!, material, columns * 2);
+      mesh.receiveShadow = true;
+      group.add(mesh);
+      return mesh;
+    });
+    const tile = new Object3D();
+    tile.rotation.x = -Math.PI / 2;
+    const counts = [0, 0];
+    for (let row = 0; row < 4; row++) for (let column = 0; column < columns; column++) {
+      const shade = (row + column) % 2;
+      tile.position.set(-width / 2 + (column + .5) * tileWidth, roadTop + .002, (row - 1.5) * tileLength);
+      tile.updateMatrix();
+      checkerMeshes[shade]!.setMatrixAt(counts[shade]!, tile.matrix);
+      counts[shade] = counts[shade]! + 1;
+    }
+    for (const mesh of checkerMeshes) mesh.instanceMatrix.needsUpdate = true;
+  } else {
+    const road = new Mesh(new PlaneGeometry(width, options.length), stagingAsphalt());
+    road.rotation.x = -Math.PI / 2;
+    road.position.set(0, -.065, options.center);
+    road.receiveShadow = true;
+    group.add(road); meshes.push(road);
+    for (const side of [-1, 1]) addBox(.09, .012, options.length, stagingColors.edge, side * (width / 2 - .3), -.05, options.center);
+    const tileWidth = 11.25 / 20;
+    const tileLength = .42;
+    for (let row = 0; row < 4; row++) for (let column = 0; column < 20; column++) {
+      addBox(tileWidth - .006, .012, tileLength - .006,
+        (row + column) % 2 === 0 ? stagingColors.checkerLight : stagingColors.checkerDark,
+        -5.625 + (column + .5) * tileWidth, -.048, (row - 1.5) * tileLength);
+    }
   }
   return { dispose() {
     scene.remove(group);
     for (const mesh of meshes) {
       mesh.geometry.dispose();
-      (mesh.material as MeshStandardMaterial).dispose();
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of materials) material.dispose();
     }
+    checkerGeometry?.dispose();
+    for (const material of checkerMaterials) material.dispose();
   } };
 }
 

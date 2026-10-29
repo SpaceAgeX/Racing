@@ -66,8 +66,9 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     // Reserve the left side for the HTML track overlay, even when all ten slots are occupied.
     const finishFraction = canvas.clientWidth < 850 ? .16 : Math.max(.26, .34 - occupiedIndex * .01);
     const right = farthest + 5;
-    targetWidth = Math.max(right / (.93 - finishFraction), aspect * 7.1);
-    targetCenter = (.5 - finishFraction) * targetWidth;
+    targetWidth = Math.max(right / (.93 - finishFraction), aspect * 7.1) * (1 + .15 * occupiedIndex / 9);
+    // Keep the full checker stripe clear of the selected-track overlay.
+    targetCenter = (.5 - finishFraction) * targetWidth - (canvas.clientWidth >= 900 ? 5.5 : 0);
     if (immediate || reducedMotion.matches) { cameraCenter = targetCenter; cameraWidth = targetWidth; }
   }
   function updateCamera(now: number): void {
@@ -81,10 +82,10 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     const height = cameraWidth * Math.max(1, canvas.clientHeight) / Math.max(1, canvas.clientWidth);
     camera.left = -cameraWidth / 2; camera.right = cameraWidth / 2;
     camera.top = height / 2; camera.bottom = -height / 2;
-    // Roughly 29 degrees above the road: the grid remains readable while the
-    // car bodies show their sides and depth, closer to the menu's low view.
-    camera.position.set(cameraCenter, 16, 29);
-    camera.lookAt(cameraCenter, 0, 0);
+    // Look along the grid from its left and near side. The lower angle reveals
+    // the road's long side while retaining enough height to separate both rows.
+    camera.position.set(cameraCenter - 20, 7.5, 20);
+    camera.lookAt(cameraCenter + 1.5, .65, 0);
     camera.updateProjectionMatrix();
   }
   const observer = new ResizeObserver(resize); observer.observe(canvas);
