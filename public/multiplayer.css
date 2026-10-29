@@ -45,7 +45,7 @@
 .lobby-overhaul-header #lobby-close-panel { margin-left: auto; }
 .screen-lobby .menu-eyebrow, .screen-lobby .setup-label, .lobby-track-dialog .menu-eyebrow, .race-setup-card .menu-eyebrow { color: var(--auth-text-accent); }
 .lobby-grid-stage { position: relative; min-height: 0; overflow: hidden; border: 0; border-radius: 4px; background: #111417; }
-#lobby-grid-canvas { display: block; width: 100%; height: 100%; }
+#lobby-grid-canvas { display: block; width: 100%; height: 100%; -webkit-mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent); mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent); }
 #lobby-grid-labels { position: absolute; z-index: 2; inset: 0; pointer-events: none; overflow: hidden; }
 .lobby-grid-label { position: absolute; display: flex; align-items: center; justify-content: center; gap: 5px; max-width: 175px; color: #f3f6f7; font: 700 11px 'DM Sans', system-ui, sans-serif; white-space: nowrap; text-shadow: 0 1px 5px #000, 0 2px 9px #000; transform: translate(-50%, -100%); }
 .lobby-grid-label.is-lower { transform: translate(-50%, 0); }
