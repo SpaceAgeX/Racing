@@ -1,9 +1,10 @@
-import { AmbientLight, Color, DirectionalLight, Group, LineBasicMaterial, LineSegments, Mesh, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene, Vector3, BufferGeometry, Float32BufferAttribute, WebGLRenderer } from 'three';
+import { Group, LineBasicMaterial, LineSegments, Mesh, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene, Vector3, BufferGeometry, Float32BufferAttribute, WebGLRenderer } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
 import { SPLINE_START_GRID_CAR_LENGTH, SPLINE_START_GRID_CAR_WIDTH, SPLINE_START_GRID_COLUMNS, SPLINE_START_GRID_ROW_GAP } from '../track/spline.ts';
 import type { LobbyPlayerSnapshot } from '../multiplayer/protocol.ts';
 import { countryFlagImageUrl } from '../ui/countries.ts';
+import { addStagingAtmosphere, stagingAsphalt, stagingColors } from './staging-scene.ts';
 
 const rowPitch = SPLINE_START_GRID_CAR_LENGTH + SPLINE_START_GRID_ROW_GAP;
 const firstDistance = SPLINE_START_GRID_CAR_LENGTH / 2 + 2;
@@ -37,26 +38,27 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
   let renderer: WebGLRenderer;
   try { renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' }); }
   catch { return { setPlayers(_players: LobbyPlayerSnapshot[], _localId: string) {}, setActive(_active: boolean) {}, dispose() {} }; }
+  renderer.shadowMap.enabled = true;
   const scene = new Scene();
-  scene.background = new Color(0x111417);
+  const key = addStagingAtmosphere(scene, true);
   const camera = new OrthographicCamera(-18, 18, 9, -9, .1, 100);
-  const asphalt = new MeshStandardMaterial({ color: 0x1c2326, roughness: 1 });
-  const grit = new MeshStandardMaterial({ color: 0x252d30, roughness: 1, transparent: true, opacity: .1, depthWrite: false });
-  const checkerLight = new MeshStandardMaterial({ color: 0xa5b1b5, roughness: 1 });
-  const checkerDark = new MeshStandardMaterial({ color: 0x273034, roughness: 1 });
+  const asphalt = stagingAsphalt();
+  const edge = new MeshStandardMaterial({ color: stagingColors.edge, roughness: .9 });
+  const checkerLight = new MeshStandardMaterial({ color: stagingColors.checkerLight, roughness: .9 });
+  const checkerDark = new MeshStandardMaterial({ color: stagingColors.checkerDark, roughness: .9 });
   const geometry: PlaneGeometry[] = [];
   const track = new Group(); scene.add(track);
-  function plane(width: number, depth: number, x: number, z: number, material: MeshStandardMaterial, y = .005): void {
+  function plane(width: number, depth: number, x: number, z: number, material: MeshStandardMaterial, y = -.065): void {
     const shape = new PlaneGeometry(width, depth); geometry.push(shape);
-    const mesh = new Mesh(shape, material); mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, y, z); track.add(mesh);
+    const mesh = new Mesh(shape, material); mesh.rotation.x = -Math.PI / 2; mesh.position.set(x, y, z);
+    mesh.receiveShadow = true; track.add(mesh);
   }
-  plane(140, 65, 24, 0, asphalt);
-  // Sparse, low-contrast seams give the asphalt some scale without defining a platform edge.
-  for (let x = -5; x < 60; x += 4.7) plane(.055, 65, x, 0, grit, .012);
-  // Two alternating check rows make the finish line readable from the broadcast camera.
-  for (let row = 0; row < 12; row++) for (let column = 0; column < 2; column++)
-    plane(.52, .95, column * .52 - .26, -5.225 + row * .95,
-      (row + column) % 2 ? checkerLight : checkerDark, .025);
+  // Keep the road ends beyond the camera, with the same edge treatment as the main menu.
+  plane(140, 12, 24, 0, asphalt);
+  for (const z of [-5.7, 5.7]) plane(140, .09, 24, z, edge, -.05);
+  for (let row = 0; row < 4; row++) for (let column = 0; column < 20; column++)
+    plane(.414, .5565, (row - 1.5) * .42, -5.625 + (column + .5) * .5625,
+      (row + column) % 2 ? checkerDark : checkerLight, -.048);
   const slotLines: number[] = [];
   for (let index = 0; index < 10; index++) {
     const slot = lobbyGridSlot(index);
@@ -66,11 +68,8 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
       slotLines.push(ax!, .035, az!, bx!, .035, bz!);
   }
   const lineGeometry = new BufferGeometry(); lineGeometry.setAttribute('position', new Float32BufferAttribute(slotLines, 3));
-  const lineMaterial = new LineBasicMaterial({ color: 0x819197, transparent: true, opacity: .13 });
+  const lineMaterial = new LineBasicMaterial({ color: stagingColors.edge, transparent: true, opacity: .12 });
   track.add(new LineSegments(lineGeometry, lineMaterial));
-  scene.add(new AmbientLight(0xc6d5dc, .55));
-  const light = new DirectionalLight(0xfff3e5, 2.8); light.position.set(-7, 15, 10); scene.add(light);
-  const rim = new DirectionalLight(0x7da9bd, .65); rim.position.set(16, 8, -9); scene.add(rim);
   const cars = new Map<string, GridCar>();
   let active = false;
   let disposed = false;
@@ -91,9 +90,11 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
   function updateCameraTarget(immediate = false): void {
     const farthest = lobbyGridSlot(occupiedIndex).x;
     const aspect = Math.max(1, canvas.clientWidth) / Math.max(1, canvas.clientHeight);
-    const left = -3.5, right = farthest + 4.5;
-    targetCenter = (left + right) / 2;
-    targetWidth = Math.max(right - left, aspect * 6.4);
+    // Reserve the left side for the HTML track overlay, even when all ten slots are occupied.
+    const finishFraction = canvas.clientWidth < 850 ? .16 : Math.max(.26, .34 - occupiedIndex * .01);
+    const right = farthest + 5;
+    targetWidth = Math.max(right / (.93 - finishFraction), aspect * 7.1);
+    targetCenter = (.5 - finishFraction) * targetWidth;
     if (immediate || reducedMotion.matches) { cameraCenter = targetCenter; cameraWidth = targetWidth; }
   }
   function updateCamera(now: number): void {
@@ -107,7 +108,7 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     const height = cameraWidth * Math.max(1, canvas.clientHeight) / Math.max(1, canvas.clientWidth);
     camera.left = -cameraWidth / 2; camera.right = cameraWidth / 2;
     camera.top = height / 2; camera.bottom = -height / 2;
-    camera.position.set(cameraCenter, 26, 22);
+    camera.position.set(cameraCenter, 26, 18);
     camera.lookAt(cameraCenter, 0, 0);
     camera.updateProjectionMatrix();
   }
@@ -206,8 +207,8 @@ export function createLobbyGrid(canvas: HTMLCanvasElement, labels: HTMLElement) 
     dispose(): void {
       disposed = true; cancelAnimationFrame(frame); observer.disconnect();
       for (const car of cars.values()) { car.visual.dispose(); car.label.remove(); }
-      cars.clear(); geometry.forEach(item => item.dispose()); asphalt.dispose();
-      checkerLight.dispose(); checkerDark.dispose(); grit.dispose(); lineGeometry.dispose(); lineMaterial.dispose(); renderer.dispose();
+      cars.clear(); geometry.forEach(item => item.dispose()); asphalt.dispose(); edge.dispose();
+      checkerLight.dispose(); checkerDark.dispose(); lineGeometry.dispose(); lineMaterial.dispose(); key.shadow.dispose(); renderer.dispose();
     },
   };
 }

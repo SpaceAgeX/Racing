@@ -1,10 +1,11 @@
 import {
-  AmbientLight, BoxGeometry, Color, DirectionalLight, Fog, Group, Mesh,
+  BoxGeometry, Group, Mesh,
   MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, WebGLRenderer,
 } from 'three';
 import { createCarVisual } from './car.ts';
 import { createVehicleState } from '../simulation/vehicle.ts';
 import { getActiveAccentColor, onActiveAccentColorChange } from '../ui/accent.ts';
+import { addStagingAtmosphere, stagingAsphalt, stagingColors } from './staging-scene.ts';
 
 // Local car forward is -Z. The finish stripe is at Z = 0.
 const finishSeconds = 2.5;
@@ -24,9 +25,8 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.shadowMap.enabled = true;
   const scene = new Scene();
-  scene.background = new Color(0x111417);
-  // The road ends deep in full fog, so no distant geometry edge is visible.
-  scene.fog = new Fog(0x111417, 24, 48);
+  // The shared atmosphere fades the road into the same near-black backdrop.
+  const key = addStagingAtmosphere(scene);
   const camera = new PerspectiveCamera(42, 1, 0.1, 100);
   const resources: Mesh[] = [];
   const environment = new Group();
@@ -41,7 +41,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
     return mesh;
   }
 
-  const road = new Mesh(new PlaneGeometry(12, 90), new MeshStandardMaterial({ color: 0x252c30, roughness: 1 }));
+  const road = new Mesh(new PlaneGeometry(12, 90), stagingAsphalt());
   road.rotation.x = -Math.PI / 2;
   road.position.set(0, -0.065, 11);
   road.receiveShadow = true;
@@ -49,7 +49,7 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   resources.push(road);
 
   for (let side = -1; side <= 1; side += 2) {
-    addBox(0.09, 0.012, 90, 0x747f83, side * 5.7, -0.05, 11);
+    addBox(0.09, 0.012, 90, stagingColors.edge, side * 5.7, -0.05, 11);
   }
 
   // Individual tiles keep the finish line crisp from a low camera angle.
@@ -59,31 +59,10 @@ export function createMenuBackdrop(canvas: HTMLCanvasElement) {
   for (let row = 0; row < 4; row++) {
     for (let column = 0; column < tilesAcross; column++) {
       addBox(tileWidth - 0.006, 0.012, tileLength - 0.006,
-        (row + column) % 2 === 0 ? 0xe4e9ea : 0x121719,
+        (row + column) % 2 === 0 ? stagingColors.checkerLight : stagingColors.checkerDark,
         -5.625 + (column + 0.5) * tileWidth, -0.048, (row - 1.5) * tileLength);
     }
   }
-
-  scene.add(new AmbientLight(0xb8cad1, 1.05));
-  const key = new DirectionalLight(0xfff2e3, 3.8);
-  key.position.set(-5, 11, -4);
-  key.target.position.set(0, 0, 3);
-  key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.left = -13;
-  key.shadow.camera.right = 13;
-  key.shadow.camera.top = 17;
-  key.shadow.camera.bottom = -17;
-  key.shadow.camera.near = 0.5;
-  key.shadow.camera.far = 35;
-  key.shadow.normalBias = 0.025;
-  scene.add(key, key.target);
-  const fill = new DirectionalLight(0x9dc6e2, 1.7);
-  fill.position.set(5, 5, 12);
-  scene.add(fill);
-  const rim = new DirectionalLight(0xd7e7f0, 1.0);
-  rim.position.set(7, 7, -8);
-  scene.add(rim);
 
   const visual = createCarVisual(Number.parseInt(accent.slice(1), 16));
   const state = createVehicleState();

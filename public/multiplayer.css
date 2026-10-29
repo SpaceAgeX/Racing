@@ -25,12 +25,15 @@
 .multiplayer-row > button { grid-column: 2; grid-row: 1/3; min-width: 100px; padding: 10px 18px; border: 1px solid var(--auth-accent); border-radius: 5px; background: transparent; color: var(--auth-text-accent); font: 700 13px 'DM Sans', sans-serif; cursor: pointer; }
 .multiplayer-row > button:hover:not(:disabled) { background: color-mix(in srgb, var(--auth-accent) 16%, transparent); }
 .multiplayer-row > button:disabled { border-color: #ffffff2b; color: #879299; cursor: default; }
+.screen-home #home-join-panel .multiplayer-card button:focus-visible { outline-color: var(--auth-focus); }
+.multiplayer-race .race-toolbar button:focus-visible { outline-color: var(--auth-focus); }
+.multiplayer-race #round-cancel-hint { color: var(--auth-text-accent); }
 .multiplayer-empty { padding: 50px 16px; color: #aebbc1; text-align: center; }
 .multiplayer-status { margin-top: 16px; padding: 0; background: none; color: #aebbc1; font-size: 12px; }
 .screen-lobby { display: block; overflow: hidden; padding: 0; background: #111417; }
 .screen-lobby::before { display: none; }
 .screen-lobby .lobby-setup { width: 100%; min-height: 100%; padding: 0; margin: 0; border: 0; border-radius: 0; background: #111417; box-shadow: none; backdrop-filter: none; font-family: 'DM Sans', system-ui, sans-serif; }
-.lobby-overhaul-shell { display: grid; grid-template-rows: auto minmax(225px, 40fr) minmax(255px, 42fr); gap: clamp(8px, 1.2vh, 16px); width: min(1700px, 100%); height: 100svh; min-height: 0; margin: 0 auto; padding: clamp(12px, 1.5vw, 24px); }
+.lobby-overhaul-shell { display: grid; grid-template-rows: auto minmax(200px, 1.1fr) minmax(330px, .9fr); gap: clamp(8px, 1.2vh, 16px); width: min(1700px, 100%); height: 100svh; min-height: 0; margin: 0 auto; padding: clamp(12px, 1.5vw, 24px); }
 .lobby-overhaul-header { display: flex; align-items: center; gap: clamp(12px, 2vw, 28px); min-height: 62px; }
 .lobby-overhaul-header > .back-button { align-self: flex-start; padding: 10px 0; border: 0; background: transparent; color: #cbd1d5; }
 .lobby-overhaul-header > .back-button:hover { color: var(--auth-text-accent); }
@@ -40,65 +43,94 @@
 #lobby-room-name { color: #f0f3f5; font-weight: 700; }
 .lobby-driver-count { margin-left: auto; align-self: center; color: #c5d0d4; font: 700 12px 'DM Sans', sans-serif; white-space: nowrap; letter-spacing: .09em; }
 .lobby-overhaul-header #lobby-close-panel { margin-left: auto; }
+.screen-lobby .menu-eyebrow, .screen-lobby .setup-label, .lobby-track-dialog .menu-eyebrow, .race-setup-card .menu-eyebrow { color: var(--auth-text-accent); }
 .lobby-grid-stage { position: relative; min-height: 0; overflow: hidden; border: 0; border-radius: 4px; background: #111417; }
-.lobby-grid-stage::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 35px 20px #111417; }
-.lobby-grid-stage canvas { display: block; width: 100%; height: 100%; }
-#lobby-grid-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lobby-grid-stage::after { content: ''; position: absolute; z-index: 1; inset: 0; pointer-events: none; box-shadow: inset 0 0 35px 20px #111417; }
+#lobby-grid-canvas { display: block; width: 100%; height: 100%; }
+#lobby-grid-labels { position: absolute; z-index: 2; inset: 0; pointer-events: none; overflow: hidden; }
 .lobby-grid-label { position: absolute; display: flex; align-items: center; justify-content: center; gap: 5px; max-width: 175px; color: #f3f6f7; font: 700 11px 'DM Sans', system-ui, sans-serif; white-space: nowrap; text-shadow: 0 1px 5px #000, 0 2px 9px #000; transform: translate(-50%, -100%); }
 .lobby-grid-label.is-lower { transform: translate(-50%, 0); }
 .lobby-grid-label img { flex: none; width: 17px; height: 13px; object-fit: cover; border-radius: 2px; box-shadow: 0 1px 4px #000a; }
 .lobby-grid-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .lobby-grid-label small { flex: none; color: #cad4d7; font-size: 8px; letter-spacing: .06em; }
 .lobby-grid-label small.is-you { color: var(--auth-text-accent); }
+.lobby-track-overlay { position: absolute; z-index: 3; top: 50%; left: clamp(14px, 2.2vw, 34px); width: min(230px, 21%); transform: translateY(-50%); }
+.lobby-track-overlay .setup-label { display: block; margin-bottom: 9px; }
+.lobby-track-display { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: #f4f6f7; text-align: left; font: inherit; cursor: pointer; }
+.lobby-track-display:disabled { cursor: default; opacity: 1; }
+.lobby-track-display canvas { display: block; flex: none; width: 66px; height: 66px; border: 1px solid #ffffff26; border-radius: 6px; background: #202d35; }
+.lobby-track-display:hover:not(:disabled) canvas, .lobby-track-display:focus-visible canvas { border-color: var(--auth-accent); }
+.lobby-track-copy { display: grid; min-width: 0; gap: 5px; }
+.lobby-track-copy strong { overflow: hidden; font: 700 22px/1 'Barlow Condensed', Impact, sans-serif; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+.lobby-track-copy small { color: #aebbc0; font: 11px/1.35 'DM Sans', sans-serif; }
+.lobby-track-overlay .lobby-secondary-button { display: block; margin-top: 10px; padding: 3px 0; }
 .lobby-overhaul-bottom { display: grid; grid-template-columns: minmax(0, 1.28fr) minmax(360px, 1fr); gap: clamp(14px, 2vw, 32px); min-height: 0; }
 .lobby-chat-slot, .lobby-controls-panel { min-width: 0; min-height: 0; }
-.lobby-chat-slot { overflow: hidden; border: 1px solid #ffffff20; border-radius: 8px; background: #1a2226; }
-.lobby-chat-slot .room-chat.is-lobby-panel { position: static; z-index: auto; width: 100%; height: 100%; }
-.lobby-chat-slot .chat-panel { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 16px 18px; border: 0; border-radius: 0; background: transparent; }
+.lobby-chat-slot { overflow: hidden; border: 1px solid #ffffff1d; border-radius: 8px; background: #1b2328; }
+.lobby-chat-slot .room-chat.is-lobby-panel { position: static; z-index: auto; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+.lobby-chat-slot .chat-panel { display: flex; flex: 1; flex-direction: column; width: 100%; height: auto; min-height: 0; overflow: hidden; padding: 16px 18px; border: 0; border-radius: 0; background: transparent; }
 .lobby-chat-slot .chat-panel header { flex: none; padding-bottom: 10px; color: #e9eef0; font: 700 15px 'Barlow Condensed', Impact, sans-serif; letter-spacing: .08em; }
-.lobby-chat-slot .chat-messages { flex: 1; min-height: 0; height: auto; padding: 6px 0; scrollbar-width: thin; font-size: 12px; }
-.lobby-chat-slot .chat-panel form { flex: none; padding-top: 10px; border-top: 1px solid #ffffff1b; }
+.lobby-chat-slot .chat-messages { flex: 1 1 0; min-height: 0; height: auto; overflow-y: auto; padding: 6px 0; scrollbar-width: thin; font-size: 12px; }
+.lobby-chat-slot .chat-messages strong { color: var(--auth-text-accent); }
+.lobby-chat-slot .chat-panel form { display: flex; flex: none; min-height: 46px; padding-top: 10px; border-top: 1px solid #ffffff1b; }
 .lobby-chat-slot .chat-panel input { border-color: #ffffff30; background: #111a1e; }
-.lobby-chat-slot .chat-panel form button { border-color: var(--auth-accent); background: var(--auth-accent); color: #10161a; font-weight: 700; }
+.lobby-chat-slot .chat-panel form button { flex: none; border-color: var(--auth-accent); background: var(--auth-accent); color: var(--auth-button-text, #111417); font-weight: 700; }
 .lobby-controls-panel { padding: 2px 0; }
-.lobby-panel-heading h2, .lobby-controls-panel h2 { margin: 5px 0 12px; color: #f4f6f7; font: 700 27px/1 'Barlow Condensed', Impact, sans-serif; text-transform: uppercase; }
-.lobby-controls-panel { display: flex; flex-direction: column; gap: 7px; overflow-y: auto; scrollbar-width: thin; }
-.lobby-track-summary { display: grid; gap: 5px; padding-bottom: 7px; border-bottom: 1px solid #ffffff1b; }
-.lobby-track-details { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.lobby-track-details canvas { width: 58px; height: 58px; flex: none; margin: 0; border-radius: 5px; background: #202d35; }
-.lobby-track-details h2 { margin: 0 0 5px; }
-.lobby-track-details p { margin: 0; color: #9eacb2; font-size: 11px; }
+.lobby-controls-panel h2 { margin: 5px 0 14px; color: #f4f6f7; font: 700 27px/1 'Barlow Condensed', Impact, sans-serif; text-transform: uppercase; }
+.lobby-controls-panel { display: flex; flex-direction: column; gap: 7px; overflow: hidden; }
 .lobby-secondary-button { justify-self: start; width: max-content; padding: 8px 0; border: 0; background: none; color: var(--auth-text-accent); font: 700 12px 'DM Sans', sans-serif; cursor: pointer; }
 .lobby-secondary-button:hover { text-decoration: underline; }
-.lobby-colors-block .trial-color-swatches { display: grid; grid-template-columns: repeat(8, 30px); gap: 7px; }
-.lobby-colors-block .trial-color-swatch { width: 30px; height: 30px; }
-.lobby-colors-block .trial-selected-color { margin-top: 10px; }
-.lobby-setup-footer { display: grid; gap: 6px; margin-top: auto; }
-.lobby-setup-footer .trial-start-button { max-width: none; width: 100%; min-height: 48px; }
-.lobby-setup-footer #lobby-enter-track { min-height: 38px; border-color: #ffffff2b; background: transparent; color: #d6e0e4; }
-.lobby-setup-footer #lobby-enter-track:hover { background: #ffffff12; }
-.lobby-status { min-height: 16px; color: #aebbc1; font-size: 12px; }
+.lobby-colors-block .trial-color-swatches { display: grid; grid-template-columns: repeat(5, 36px); gap: 11px; margin: 0 0 13px; }
+.lobby-colors-block .trial-color-swatch { width: 36px; height: 36px; }
+.lobby-colors-block .trial-selected-color { margin: 0 0 8px; }
+.lobby-setup-footer { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; gap: 6px; margin-top: auto; }
+.lobby-setup-footer #lobby-enter-track { display: flex; align-items: center; justify-content: space-between; justify-self: stretch; max-width: none; width: 100%; min-height: 50px; padding: 11px 18px; border: 1px solid var(--auth-accent); border-radius: 7px; background: var(--auth-accent); color: var(--auth-button-text, #111417); font: 700 14px 'DM Sans', sans-serif; }
+.lobby-setup-footer #lobby-enter-track span { font-size: 22px; line-height: 1; }
+.lobby-setup-footer #lobby-enter-track:hover:not(:disabled) { background: var(--auth-accent); filter: brightness(1.08); }
+.lobby-track-dialog .setup-label { color: var(--auth-text-accent); }
+.lobby-track-display:focus-visible, .lobby-secondary-button:focus-visible, .lobby-colors-block .trial-color-swatch:focus-visible,
+.lobby-chat-slot input:focus-visible, .lobby-chat-slot button:focus-visible, .lobby-setup-footer button:focus-visible,
+.race-setup-card button:focus-visible, .race-setup-card input:focus-visible, .race-setup-card select:focus-visible { outline: 2px solid var(--auth-focus); outline-offset: 3px; }
+.race-setup-card .trial-start-button { border-color: var(--auth-accent); background: var(--auth-accent); color: var(--auth-button-text, #111417); }
+.race-setup-card .trial-start-button:hover:not(:disabled) { background: var(--auth-accent); filter: brightness(1.08); }
+.race-setup-checkbox input { accent-color: var(--auth-accent); }
+.race-setup-hold > span { background: var(--auth-accent); }
+.lobby-status { min-height: 16px; margin: 0; padding: 0; border-radius: 0; background: none; color: #aebbc1; font-size: 12px; }
 .lobby-track-dialog .trial-browser-main { display: flex; min-height: 0; }
 .lobby-track-dialog .trial-board-panel { height: 100%; }
 .lobby-track-dialog .trial-dialog-side { gap: 8px; }
 .lobby-track-dialog .trial-dialog-side .trial-start-button { margin-top: auto; }
 .lobby-track-dialog .trial-board-rows li { min-height: 27px; }
 .screen-lobby.is-overlay { padding: 12px; background: #111417e8; }
-.screen-lobby.is-overlay .lobby-overhaul-shell { height: min(100%, 900px); min-height: 0; overflow-y: auto; border: 1px solid #ffffff33; border-radius: 10px; background: #111417; }
-@media (max-width: 800px) {
+.screen-lobby.is-overlay .lobby-overhaul-shell { height: min(100%, 900px); min-height: 0; overflow: hidden; border: 1px solid #ffffff33; border-radius: 10px; background: #111417; }
+@media (max-width: 900px) {
   .screen-lobby { overflow: auto; }
-  .lobby-overhaul-shell { height: auto; min-height: 100svh; grid-template-rows: auto minmax(210px, 35vh) minmax(280px, auto); }
+  .lobby-overhaul-shell { height: auto; min-height: 100svh; grid-template-rows: auto minmax(260px, 35vh) minmax(280px, auto); }
+  .lobby-grid-stage { display: grid; grid-template-rows: 78px minmax(180px, 1fr); }
+  #lobby-grid-canvas { grid-row: 2; grid-column: 1; }
+  #lobby-grid-labels { top: 78px; }
+  .lobby-track-overlay { position: relative; top: auto; left: auto; grid-row: 1; grid-column: 1; display: flex; align-items: center; gap: 14px; width: 100%; padding: 8px 12px; transform: none; }
+  .lobby-track-overlay .setup-label { flex: none; margin: 0; }
+  .lobby-track-display { width: auto; max-width: 280px; }
+  .lobby-track-display canvas { width: 48px; height: 48px; }
+  .lobby-track-overlay .lobby-secondary-button { flex: none; margin: 0 0 0 auto; }
   .lobby-overhaul-bottom { grid-template-columns: 1fr; }
   .lobby-chat-slot { height: 230px; }
-  .lobby-colors-block .trial-color-swatches { grid-template-columns: repeat(8, 34px); }
+  .lobby-controls-panel { min-height: 290px; }
 }
 @media (max-width: 540px) {
   .multiplayer-entry-header { grid-template-columns: 1fr; }
   .multiplayer-entry-header #home-create-lobby { width: 100%; }
   .multiplayer-row { padding-inline: 4px; }
-  .lobby-overhaul-shell { grid-template-rows: auto minmax(180px, 28vh) auto; }
+  .lobby-overhaul-shell { grid-template-rows: auto minmax(250px, 35vh) auto; }
   .lobby-overhaul-header { gap: 12px; }
-  .lobby-colors-block .trial-color-swatches { grid-template-columns: repeat(5, 34px); }
+  .lobby-driver-count { font-size: 10px; }
+  .lobby-track-overlay { gap: 8px; }
+  .lobby-track-overlay .setup-label { display: none; }
+  .lobby-track-display canvas { width: 44px; height: 44px; }
+  .lobby-track-copy strong { font-size: 18px; }
+  .lobby-track-copy small { font-size: 10px; }
+  .lobby-track-overlay .lobby-secondary-button { font-size: 11px; }
   .lobby-grid-label { max-width: 88px; font-size: 9px; }
   .lobby-grid-label small { font-size: 7px; }
 }

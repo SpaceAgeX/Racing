@@ -37,8 +37,8 @@ export async function startMultiplayerRace(page: Page): Promise<void> {
     await page.locator('#lobby-enter-track').click();
     await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
   }
-  if (await page.locator('#lobby-screen').isVisible()) await page.locator('#lobby-start').click();
-  else await page.locator('#round-setup-toggle').click();
+  if (await page.locator('#lobby-screen').isVisible()) await page.locator('#lobby-close-panel').click();
+  await page.locator('#round-setup-toggle').click();
   await page.locator('#lobby-round-confirm').click();
   await expect(page.locator('#race-screen')).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('#race-room-status')).toHaveText('Race in progress', { timeout: 20_000 });
