@@ -7,6 +7,7 @@ import { createCarVisual } from './rendering/car.ts';
 import { createFollowCamera } from './rendering/camera.ts';
 import { createScene } from './rendering/scene.ts';
 import { createMenuBackdrop } from './rendering/menu-backdrop.ts';
+import { createMultiplayerBrowserScene } from './rendering/multiplayer-browser-scene.ts';
 import { FixedStepClock, FIXED_TIMESTEP, PAUSE_THRESHOLD } from './simulation/fixed-step.ts';
 import { createLapTimer, resetCurrentLap, stepLapTimer } from './simulation/lap-timer.ts';
 import { createMinimap } from './ui/minimap.ts';
@@ -99,6 +100,7 @@ interface HomeScreenController {
   showLanding(): void;
   showMultiplayer(): void;
   showTimeTrialSetup(): void;
+  setBrowserSceneActive(active: boolean): void;
   dispose(): void;
 }
 
@@ -586,13 +588,15 @@ function createHomeScreen(root: HTMLElement, callbacks: {
         </nav>
       </section>
       <section id="home-multiplayer-menu" class="home-multiplayer" hidden>
-        <header class="multiplayer-entry-header">
-          <button id="home-back" class="back-button" type="button">&#8592; Back</button>
-          <div><span class="menu-eyebrow">ONLINE RACING</span><h1>MULTIPLAYER</h1><p class="multiplayer-account-name">Playing as <strong id="home-username"></strong></p></div>
-          <button id="home-create-lobby" class="trial-start-button" type="button">Create Lobby <span aria-hidden="true">→</span></button>
-        </header>
-        <section id="home-join-panel"><div class="multiplayer-list-header"><span class="setup-label">ONLINE NOW</span><h2>Available lobbies</h2></div><div id="home-lobby-list" class="lobby-list"></div></section>
-        <div id="home-status" class="multiplayer-status">Connect to view open lobbies.</div>
+        <div class="multiplayer-browser-content">
+          <header class="multiplayer-entry-header">
+            <button id="home-back" class="back-button" type="button">&#8592; Back</button>
+            <div><span class="menu-eyebrow">ONLINE RACING</span><h1>MULTIPLAYER</h1><p class="multiplayer-account-name">Playing as <strong id="home-username"></strong></p>
+              <button id="home-create-lobby" class="trial-start-button" type="button">Create Lobby <span aria-hidden="true">&rarr;</span></button></div>
+          </header>
+          <section id="home-join-panel"><div class="multiplayer-list-header"><span class="setup-label">ONLINE NOW</span><h2>Available lobbies</h2></div><div id="home-lobby-list" class="lobby-list"></div><div id="home-status" class="multiplayer-status">Connect to view open lobbies.</div></section>
+        </div>
+        <div class="multiplayer-browser-scene" aria-hidden="true"><canvas id="multiplayer-browser-canvas"></canvas></div>
       </section>
     </div>
   `;
@@ -604,6 +608,8 @@ function createHomeScreen(root: HTMLElement, callbacks: {
   const homeShell = root.querySelector<HTMLElement>('.home-shell')!;
   const landing = root.querySelector<HTMLElement>('#home-landing')!;
   const multiplayerMenu = root.querySelector<HTMLElement>('#home-multiplayer-menu')!;
+  const browserCanvas = root.querySelector<HTMLCanvasElement>('#multiplayer-browser-canvas')!;
+  let browserScene: ReturnType<typeof createMultiplayerBrowserScene> | null = null;
   root.querySelector<HTMLButtonElement>('#home-time-trial')!.addEventListener('click', callbacks.onTimeTrial);
   root.querySelector<HTMLButtonElement>('#home-multiplayer')!.addEventListener('click', callbacks.onMultiplayer);
   root.querySelector<HTMLButtonElement>('#home-back')!.addEventListener('click', () => { callbacks.onBackToLanding(); });
@@ -664,7 +670,11 @@ function createHomeScreen(root: HTMLElement, callbacks: {
     showLanding(): void { homeShell.hidden = false; landing.hidden = false; multiplayerMenu.hidden = true; },
     showMultiplayer(): void { homeShell.hidden = false; landing.hidden = true; multiplayerMenu.hidden = false; renderLobbies(lobbySummaries); },
     showTimeTrialSetup(): void { homeShell.hidden = true; landing.hidden = true; multiplayerMenu.hidden = true; },
-    dispose(): void { createButton.replaceWith(createButton.cloneNode(true)); },
+    setBrowserSceneActive(active): void {
+      if (active && !browserScene) browserScene = createMultiplayerBrowserScene(browserCanvas);
+      else if (!active && browserScene) { browserScene.dispose(); browserScene = null; }
+    },
+    dispose(): void { browserScene?.dispose(); createButton.replaceWith(createButton.cloneNode(true)); },
   };
 }
 
@@ -771,6 +781,7 @@ export function startPrototype(canvas: HTMLCanvasElement, username = 'Player') {
       document.querySelector('#home-settings-toggle')?.setAttribute('aria-expanded', 'false');
     }
     menuBackdrop.setActive(mode === 'home');
+    homeScreen.setBrowserSceneActive(mode === 'multiplayer');
     setScreenVisibility(homeScreenRoot, mode === 'home' || mode === 'multiplayer' || mode === 'time-trial-setup');
     setScreenVisibility(lobbyScreenRoot, mode === 'lobby' || mode === 'race' && lobbyPanelOpen);
     lobbyScreen?.setActive(mode === 'lobby');

@@ -15,7 +15,7 @@ export function stagingAsphalt(): MeshStandardMaterial {
 }
 
 /** The same asphalt, raised edge strips, and checkered finish for both staging views. */
-export function addStagingRoad(scene: Scene, options: { length: number; center: number; horizontal?: boolean; width?: number }) {
+export function addStagingRoad(scene: Scene, options: { length: number; center: number; horizontal?: boolean; physical?: boolean; width?: number }) {
   const group = new Group();
   const width = options.width ?? 12;
   if (options.horizontal) group.rotation.y = Math.PI / 2;
@@ -29,8 +29,8 @@ export function addStagingRoad(scene: Scene, options: { length: number; center: 
   };
   let checkerGeometry: PlaneGeometry | null = null;
   let checkerMaterials: MeshStandardMaterial[] = [];
-  if (options.horizontal) {
-    // Only the lobby road gains a shallow slab; the main-menu scene stays as it was.
+  if (options.horizontal || options.physical) {
+    // The staging grid and browser road share a shallow slab; the menu keeps its plane.
     const roadThickness = .45;
     const roadTop = -.065;
     const sideMaterial = () => new MeshStandardMaterial({ color: stagingColors.asphaltSide, roughness: 1 });
@@ -102,11 +102,11 @@ export function addStagingRoad(scene: Scene, options: { length: number; center: 
   } };
 }
 
-export function addStagingAtmosphere(scene: Scene, horizontal = false): DirectionalLight {
+export function addStagingAtmosphere(scene: Scene, horizontal = false, fog = true): DirectionalLight {
   scene.background = new Color(stagingColors.background);
   // The lobby's long, horizontal road must stay sharp all the way to the viewport edge.
   // The menu retains its short-range cinematic fog.
-  scene.fog = horizontal ? null : new Fog(stagingColors.background, 24, 48);
+  scene.fog = horizontal || !fog ? null : new Fog(stagingColors.background, 24, 48);
   scene.add(new AmbientLight(0xb8cad1, 1.05));
   const key = new DirectionalLight(0xfff2e3, 3.8);
   if (horizontal) { key.position.set(-6, 11, 5); key.target.position.set(5, 0, 0); }
